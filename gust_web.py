@@ -171,6 +171,7 @@ main { padding: 16px; max-width: 1200px; }
 .ch-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
            padding: 8px 10px; cursor: default; transition: border-color .2s; }
 .ch-card.home    { border-color: var(--accent); }
+.ch-card.emerg-active { border: 2px solid #e24b4a !important; background: rgba(226,75,74,.06); }
 .ch-card.active  { border-color: var(--green); background: rgba(63,185,80,.08); }
 .ch-card .ch-num { font-size: 18px; font-weight: bold; color: var(--accent); }
 .ch-card .ch-freq { font-size: 11px; color: var(--text2); margin-top: 2px; }
@@ -188,9 +189,14 @@ main { padding: 16px; max-width: 1200px; }
 .frame-row .ch   { color: var(--accent); width: 20px; text-align: center; }
 .frame-row .from { color: var(--blue); font-weight: bold; width: 70px; }
 .frame-row .type { color: var(--green); width: 90px; }
+.frame-row .snr  { width: 58px; text-align: right; font-weight: bold; font-size: 11px; white-space: nowrap; }
+.frame-row .off  { color: var(--text2); width: 52px; text-align: right; font-size: 11px; white-space: nowrap; }
 .frame-row .data { color: var(--text); flex: 1; }
 .frame-row.emergency .type { color: var(--red); font-weight: bold; }
 .frame-row.emergency      { background: rgba(248,81,73,.08); }
+.snr-hi  { color: #3fb950; }   /* > 15 dB  — stark */
+.snr-mid { color: #e3b341; }   /* 8–15 dB  — ok    */
+.snr-lo  { color: #f85149; }   /* < 8 dB   — schwach */
 
 /* ── SECTION TITLES ── */
 h2 { font-size: 13px; color: var(--text2); text-transform: uppercase;
@@ -292,7 +298,7 @@ h2:first-child { margin-top: 0; }
 <body>
 
 <header>
-  <h1>OE3MODE <span>HF Telemetrie &amp; Gateway Dashboard</span></h1>
+  <h1>GUST <span>Generic Universal Shortwave Telemetry</span></h1>
   <span id="callsign-badge">–</span>
   <span id="ws-indicator" title="WebSocket Status"></span>
   <button id="theme-btn" onclick="toggleTheme()" title="Theme wechseln">🌙 Light</button>
@@ -659,15 +665,33 @@ function buildChannelGrid(homeChannel) {
     </div>`).join('');
 }
 
-function updateChannelCard(ch, from, typeName, tsStr) {
+function snrClass(snr) {
+  if (snr == null) return '';
+  return snr > 15 ? 'snr-hi' : snr >= 8 ? 'snr-mid' : 'snr-lo';
+}
+function snrLabel(snr) {
+  if (snr == null) return '';
+  return (snr > 0 ? '+' : '') + snr.toFixed(1) + ' dB';
+}
+
+function updateChannelCard(ch, from, typeName, tsStr, snr, isEmerg) {
   const lastEl = document.getElementById('ch-last-' + ch);
+  const snrEl  = document.getElementById('ch-snr-'  + ch);
   const timeEl = document.getElementById('ch-time-' + ch);
   const card   = document.getElementById('ch-card-' + ch);
   if (!lastEl) return;
   lastEl.textContent = from + ' · ' + typeName;
+  if (snrEl) {
+    snrEl.textContent  = snr != null ? snrLabel(snr) : '';
+    snrEl.className    = 'ch-snr ' + snrClass(snr);
+  }
   timeEl.textContent = tsStr;
-  card.classList.add('active');
-  setTimeout(() => card.classList.remove('active'), 8000);
+  if (isEmerg) {
+    card.classList.add('emerg-active');
+  } else {
+    card.classList.add('active');
+    setTimeout(() => card.classList.remove('active'), 8000);
+  }
 }
 
 // ═══════════════════════════ RX FEED ══════════════════════════
@@ -687,12 +711,19 @@ function appendRxFrame(frame) {
   const dat = frameDataSummary(frame);
   const isEmerg = (frame.frame_type === 0x20 || frame.frame_type === 0x21);
 
+  const snr  = frame.snr_db  ?? frame._snr_db  ?? null;
+  const off  = frame.freq_offset_hz ?? frame.offset_hz ?? null;
+  const offStr  = off  != null ? (off > 0 ? '+' : '') + off.toFixed(0) + ' Hz' : '';
+  const snrCls  = snrClass(snr);
+
   const row = document.createElement('div');
   row.className = 'frame-row' + (isEmerg ? ' emergency' : '');
   row.innerHTML = `<span class="ts">${ts}</span>
     <span class="ch">${ch}</span>
     <span class="from">${frm}</span>
     <span class="type">${typ}</span>
+    <span class="snr ${snrCls}">${snr != null ? snrLabel(snr) : '–'}</span>
+    <span class="off">${offStr}</span>
     <span class="data">${dat}</span>`;
   feed.appendChild(row);
 
@@ -702,7 +733,7 @@ function appendRxFrame(frame) {
   if (document.getElementById('autoscroll').checked)
     feed.scrollTop = feed.scrollHeight;
 
-  updateChannelCard(ch, frm, typ, ts);
+  updateChannelCard(ch, frm, typ, ts, snr, isEmerg);
 }
 
 function frameDataSummary(f) {
