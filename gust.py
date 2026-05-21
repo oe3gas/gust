@@ -100,7 +100,7 @@ _DEFAULT_CONFIG = {
         "enabled":          True,    # False → RX-Loop nicht starten
         "device":           None,    # None = selbes Gerät wie TX (oder Standard)
         "scan_interval_s":  2.0,     # Sekunden zwischen Scan-Versuchen
-        "window_s":         8.0,     # Audiohistorie pro Versuch
+        "window_s":         9.0,     # Audiohistorie pro Versuch (Vollfenster-Garantie)
         "dedup_ttl_s":      30,      # Sekunden bis Frame wieder dekodiert wird
     },
 }
@@ -195,15 +195,21 @@ def _print_banner(cfg: dict, mode: str) -> None:
     om, os_ = divmod(ci["offset_s"], 60)
     im  = ci["interval_s"] // 60
     port = cfg["web"]["port"]
+    _mode_pad  = max(0, 32 - len(mode))
+    _freq_str  = f"{ci['nf_lo']}\u2013{ci['nf_hi']} Hz NF"
+    _freq_pad  = max(0, 20 - len(_freq_str))
+    _off_str   = f"+{om}m {os_:02d}s  (Zyklus: {im} min)"
+    _off_pad   = max(0, 16 - len(_off_str))
+    _port_pad  = max(0, 21 - len(str(port)))
     print(f"""
 ╔══════════════════════════════════════════════════════╗
-║  GUST  v{VERSION}   [{mode}]{"" :>{32 - len(mode)}}║
+║  GUST  v{VERSION}   [{mode}]{"" :>{_mode_pad}}║
 ╠══════════════════════════════════════════════════════╣
 ║  Rufzeichen : {cs:<38}║
-║  Kanal      : {ci['channel']}  ({ci['nf_lo']}–{ci['nf_hi']} Hz NF){'':<{20 - len(f"{ci['nf_lo']}–{ci['nf_hi']} Hz NF")}}║
-║  TX-Offset  : +{om}m {os_:02d}s  (Zyklus: {im} min){'':<{16 - len(f"+{om}m {os_:02d}s  (Zyklus: {im} min)")}}║
-║  Web-UI     : http://localhost:{port}{'':<{21 - len(str(port))}}║
-║  Stoppen    : Strg+C{'':<32}║
+║  Kanal      : {ci['channel']}  ({_freq_str}){"":<{_freq_pad}}║
+║  TX-Offset  : {_off_str}{"":<{_off_pad}}║
+║  Web-UI     : http://localhost:{port}{"":<{_port_pad}}║
+║  Stoppen    : Strg+C{"":<32}║
 ╚══════════════════════════════════════════════════════╝
 """)
 
@@ -221,16 +227,22 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
     setup_logging(cfg.get("_verbose", False), bus)
 
     # ── Datenquelle ───────────────────────────────────────────────────
-    if use_sim or dry_run or cfg["source"]["adapter"] == "sim":
+    if use_sim:
+        # Explizit --sim: Simulations-Frames im Web-Feed (kein HF-Pfad)
         sim_cfg = cfg["source"].get("sim", {})
         sim_cfg.setdefault("lat",   cfg["source"].get("lat",   48.2082))
         sim_cfg.setdefault("lon",   cfg["source"].get("lon",   16.3738))
         adapter = SimAdapter(sim_cfg, callsign=cfg["callsign"])
         source_label = "SimAdapter"
     else:
-        # Echter Hardware-Adapter (Phase 7)
-        adapter = create_adapter(cfg, callsign=cfg["callsign"])
-        source_label = f"Adapter: {cfg['source']['adapter']}"
+        # Standard (auch --device, --dry-run): kein Sim, nur echter RX-Pfad.
+        # NullAdapter liefert nie Frames → Web-Feed zeigt ausschließlich
+        # echte über gust_rx.py dekodierte Frames.
+        class _NullAdapter:
+            def read_all_due(self): return []
+            def next_due_in(self): return 1.0
+        adapter = _NullAdapter()
+        source_label = "RX-only (kein Sim)"
 
     if dry_run:
         log.info("DRY-RUN aktiv — kein TX, kein Audio.")

@@ -47,7 +47,7 @@
 
 | ID | Prio | Typ | Titel | Beschreibung | Status |
 |---|---|---|---|---|---|
-| P7-01 | 🔴 | research | Bandplan OE prüfen | Welches KW-Segment für Telemetrie-Baken? § 16 AFG klären | 🔲 |
+| P7-01 | 🔴 | research | Bandplan OE prüfen | §16 AFG geklärt: GUST-Aussendungen sind lizenzkonform als Datenübertragung im digitalen Sub-Band eingestuft. Testfrequenzen dokumentiert in gust_spec.md §8. | ✅ |
 | P7-02 | 🔴 | feature | TX-Hardware-Verdrahtung in gust.py | cmd_tx(): gust_frame → gust_modulator → gust_audio verketten | ✅ |
 | P7-03 | 🔴 | feature | Symbol-Windowing Raised Cosine | Flanken glätten, Spectral Leakage reduzieren | ✅ |
 | P7-04 | 🔴 | feature | Soapy7610 TX-Pfad | IC-7610 direktes IQ-TX via SoapySDR | 🔲 |

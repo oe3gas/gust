@@ -225,6 +225,7 @@ def transmit(
     use_fec:    bool = True,
     add_silence_ms: int = 200,
     window:     bool = False,
+    test:       bool = False,
 ) -> tuple:
     """
     Vollständige TX-Pipeline: Payload → moduliertes Audio.
@@ -252,7 +253,7 @@ def transmit(
     if channel is None:
         channel, _ = assign_channel(callsign)
 
-    frame_body = build_frame(frame_type, callsign, payload, channel)
+    frame_body = build_frame(frame_type, callsign, payload, channel, test=test)
     symbols    = frame_to_symbol_stream(frame_body, use_fec=use_fec)
     signal     = modulate_channel(symbols, channel, window=window)
 
@@ -526,6 +527,7 @@ def _build_result_direct(data_symbols, sync_found, sync_offset, det_ch, det_offs
                         "type_name":       pars["type_name"],
                         "channel":         pars["channel"],
                         "from":            pars["from"],
+                        "test":            pars.get("test", False),
                         "crc_ok":          True,
                         "payload_decoded": dp(pars["type"], pars["payload"]),
                         "_rs_bytes_used":  n,
@@ -543,6 +545,7 @@ def _build_result_direct(data_symbols, sync_found, sync_offset, det_ch, det_offs
                 "type":            pars["type"],
                 "type_name":       pars["type_name"],
                 "from":            pars["from"],
+                "test":            pars.get("test", False),
                 "crc_ok":          pars["crc_ok"],
                 "payload_decoded": dp(pars["type"], pars["payload"]),
             })
@@ -728,6 +731,7 @@ def receive(
                             "type_name":       parsed["type_name"],
                             "channel":         parsed["channel"],
                             "from":            parsed["from"],
+                            "test":            parsed.get("test", False),
                             "crc_ok":          True,
                             "payload_decoded": decode_payload(
                                 parsed["type"], parsed["payload"]
@@ -748,6 +752,7 @@ def receive(
                     "type":            parsed.get("type"),
                     "type_name":       parsed.get("type_name"),
                     "from":            parsed.get("from"),
+                    "test":            parsed.get("test", False),
                     "crc_ok":          parsed.get("crc_ok", False),
                     "payload_decoded": decode_payload(
                         parsed.get("type", 0), parsed.get("payload", b"")

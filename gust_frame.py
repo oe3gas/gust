@@ -560,13 +560,13 @@ def decode_cq(payload: bytes) -> dict:
 # ═══════════════════════════════════════════════════════════════════════
 
 def build_frame(frame_type: int, callsign: str, payload: bytes,
-                channel: int) -> bytes:
+                channel: int, test: bool = False) -> bytes:
     """
     Baut den vollständigen GUST Frame-Body (ohne SYNC, ohne RS-FEC).
 
     Aufbau v0.3:  TYPE(1) | CHANNEL(1) | FROM(4) | PAYLOAD(1–20) | CRC(2)
 
-    CHANNEL-Byte: Bits 3–0 = Kanal 0–9, Bits 7–4 = reserviert (0x00)
+    CHANNEL-Byte: Bits 3–0 = Kanal 0–9, Bit 7 = TEST-Flag, Bits 4–6 = reserviert
     CRC deckt: TYPE + CHANNEL + FROM + PAYLOAD (alles außer CRC selbst)
     SYNC wird erst in frame_to_symbol_stream() vorangestellt.
 
@@ -575,7 +575,8 @@ def build_frame(frame_type: int, callsign: str, payload: bytes,
     if not (1 <= len(payload) <= 20):
         raise ValueError(f"Payload-Länge {len(payload)} außerhalb 1–20 Byte")
     from_bytes = encode_callsign(callsign)
-    body_without_crc = (bytes([frame_type, channel & 0x0F])
+    ch_byte = (channel & 0x0F) | (FRAME_FLAG_TEST if test else 0)
+    body_without_crc = (bytes([frame_type, ch_byte])
                         + from_bytes + payload)
     crc = crc16_bytes(body_without_crc)
     return body_without_crc + crc
@@ -599,6 +600,7 @@ def parse_frame(data: bytes) -> Optional[dict]:
         "type":      body[0],
         "type_name": frame_type_name(body[0]),
         "channel":   body[1] & 0x0F,
+        "test":      bool(body[1] & FRAME_FLAG_TEST),
         "from":      decode_callsign(body[2:6]),
         "payload":   body[6:],
         "crc_ok":    crc_ok,
@@ -782,6 +784,7 @@ def symbol_stream_stats(symbols: list) -> dict:
 # Kein Koordinationsaufwand, Pure ALOHA (Kollisionsanalyse → Spec §4.2)
 
 N_CHANNELS       = 10       # Standard-SSB-kompatibel (2,5 kHz Gesamtbandbreite)
+FRAME_FLAG_TEST  = 0x80     # Bit 7 im CHANNEL-Byte: Frame ist ein Testframe
 CHANNEL_BW_HZ    = 250      # Bandbreite je Kanal (= MFSK-8 Tonabstand × 8)
 CHANNEL_BASE_HZ  = 400.0    # NF-Unterkante Kanal 0 (Hz)
 

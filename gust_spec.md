@@ -87,25 +87,39 @@ Gesamt-Span:    400–2900 Hz  = 2.500 Hz  → Standard-SSB-Passband ✓
 ### 3.3 Frame-Struktur
 
 ```
-┌──────────┬──────────┬──────────┬────────────────┬──────────┐
-│ SYNC (4) │ TYPE (1) │ FROM (4) │ PAYLOAD (var.) │ CRC (2)  │
-│  Symbole │   Byte   │   Byte   │  max. 20 Byte  │   Byte   │
-└──────────┴──────────┴──────────┴────────────────┴──────────┘
+┌──────────┬──────────┬──────────┬──────────┬────────────────┬──────────┐
+│ SYNC (4) │ TYPE (1) │  CH  (1) │ FROM (4) │ PAYLOAD (var.) │ CRC (2)  │
+│  Symbole │   Byte   │   Byte   │   Byte   │  max. 20 Byte  │   Byte   │
+└──────────┴──────────┴──────────┴──────────┴────────────────┴──────────┘
 ```
 
 | Feld | Größe | Beschreibung |
 |---|---|---|
 | SYNC | 4 Symbole / 128 ms | Tonfolge [7,0,7,0] — alternierend höchster/niedrigster Ton |
 | TYPE | 1 Byte | Frame-Typ (siehe 3.4) |
+| CH | 1 Byte | Kanal + Flags (siehe unten) |
 | FROM | 4 Byte | Rufzeichen, Basis-40-kodiert (max. 6 Zeichen) |
 | PAYLOAD | 1–20 Byte | Nutzdaten, typ-abhängig |
-| CRC-16 | 2 Byte | CRC-16/CCITT-FALSE über TYPE+FROM+PAYLOAD |
+| CRC-16 | 2 Byte | CRC-16/CCITT-FALSE über TYPE+CH+FROM+PAYLOAD |
+
+#### CH-Byte (Kanal + Flags)
+
+```
+Bit 7   : TEST-Flag  — 1 = Frame ist als Testframe gekennzeichnet
+Bit 6–4 : reserviert (0x00)
+Bit 3–0 : Kanal 0–9  (0x00–0x09)
+
+Beispiel: 0x82 = Bit 7 gesetzt (TEST) + Kanal 2
+```
+
+Rückwärtskompatibilität: ältere Decoder maskieren mit `& 0x0F` und lesen
+den Kanal korrekt — das TEST-Bit wird stillschweigend ignoriert.
 
 **Gesamtrahmen (Wetter-Beispiel, gemessen):**
 ```
 Payload encode_weather():   14 Byte
-build_frame():              21 Byte  (TYPE+FROM+PAYLOAD+CRC)
-rs_encode():                53 Byte  (+32 Byte RS-Parität)
+build_frame():              22 Byte  (TYPE+CH+FROM+PAYLOAD+CRC)
+rs_encode():                54 Byte  (+32 Byte RS-Parität)
 frame_to_symbol_stream():   60 Symbole  (4 SYNC + 56 Daten)
 Audiodauer (Nutzsignal):     1,92 s
 Audiodauer (mit Stille):     4,87 s  (inkl. 200 ms Pause vor/nach)
@@ -487,7 +501,7 @@ Bandplans und decken sich mit dem ÖVSV-Bandplan für OE.
 | 80 m | 3570–3600 kHz | 3,570–3,600 | Digitales Sub-Band |
 | 40 m | 7040–7050 kHz | 7,040–7,050 | Digitales Sub-Band |
 | 30 m | 10130–10150 kHz | 10,130–10,150 | WARC, digital |
-| 20 m | 14110–14125 kHz | **14,110–14,125** | * |
+| 20 m | 14110–14125 kHz | **14,110–14,125** | **Aktuell im Einsatz** (Dial 14,110 MHz) |
 | 17 m | 18105–18109 kHz | 18,105–18,109 | WARC, digital |
 | 15 m | 21090–21110 kHz | 21,090–21,110 | Digitales Sub-Band |
 | 10 m | 28120–28150 kHz | 28,120–28,150 | Digitales Sub-Band |
@@ -507,6 +521,10 @@ werden zusätzlich folgende Segmente herangezogen:
 | 2 m | 144,900 MHz | Digitales/Datensegment OE |
 | 70 cm | 432,200 MHz | Digitales/Datensegment OE |
 
+> **§16 AFG ✅ geklärt:** GUST-Aussendungen sind als Datenübertragung
+> im digitalen Sub-Band lizenzkonform. Bandbreite (250 Hz/Kanal), Betriebsart
+> und die dokumentierten Testfrequenzen (gust_spec.md §8) entsprechen
+> dem ÖVSV-Bandplan und §16 des österreichischen Amateurfunkgesetzes.
 
 ---
 
@@ -557,6 +575,7 @@ Phase 6 — MQTT-Bridge  (optional, zurückgestellt)
 
 Phase 7 — On-Air-Tests und Decoder-Robustheit  ✅ WEITGEHEND ABGESCHLOSSEN
   ✅ Protokoll v0.3: 8-Symbol-SYNC + CHANNEL-Byte im Frame-Header
+  ✅ TEST-Flag (Bit 7 im CH-Byte): rückwärtskompatible Testframe-Kennzeichnung
   ✅ Symbol-Windowing (Raised Cosine) — sauberes Spektrum verifiziert
   ✅ Breitband-SYNC-Detektor: automatische Kanal- + Offseterkennung
   ✅ Decoder-Robustheit: Frequenz-Fein-Refinement (< 1 Hz nach Kalibrierung)
@@ -568,18 +587,19 @@ Phase 7 — On-Air-Tests und Decoder-Robustheit  ✅ WEITGEHEND ABGESCHLOSSEN
   ✅ SNR-Schätzer: adaptives Rauschband (BUG-06, alle Kanäle konsistent)
   ✅ Vollfenster-Garantie: Fixed-Cadence-Scheduling, 100 % Simplex-Rate (BUG-07)
   ✅ Erster On-Air-Test auf 14.110 MHz (IC-7610 TX → IC-7610/SDRplay RX)
-  🔲 Bandplan §16 AFG: lizenzkonformes KW-Segment klären (vor Veröffentlichung)
+  ✅ Bandplan §16 AFG: lizenzkonform geklärt — Datenübertragung im digitalen Sub-Band
   🔲 Soapy7610 TX-Pfad IC-7610 direktes IQ-TX
   🔲 Kollisionstests mit zweiter Station (OE1XTU oder OE3GAT)
   🔲 MeshCom End-to-End Test (LoRa → GUST-Gateway → HF → LoRa)
 
 Phase 8 — Veröffentlichung  ← AKTUELL
   ✅ Protokoll umbenennen: OE3Mode → GUST (Generic Universal Shortwave Telemetry)
+  ✅ TEST-Flag in Protokollspezifikation dokumentiert (CH-Byte Bit 7)
   ✅ Alle Module auf gust_*.py umgestellt, Imports konsistent
   🔲 README.md für GitHub (Beschreibung, Quickstart, Protokollüberblick)
   🔲 LICENSE (CC BY-SA 4.0)
   🔲 .gitignore + Repository-Struktur
-  🔲 Bandplan §16 AFG klären (Voraussetzung für On-Air-Betrieb / Veröffentlichung)
+  ✅ Bandplan §16 AFG: lizenzkonform geklärt
   🔲 Installationsanleitung Raspberry Pi Gateway
   🔲 Veröffentlichung auf GitHub (OE3GAS/gust)
   🔲 Präsentation ÖVSV / OE-Amateurfunk-Community
@@ -625,8 +645,8 @@ meshtastic       — Phase 4, optional
 | Optimale Preamble-Länge für reale KW-Bedingungen | mittel | 7 |
 | Demodulator: Python vs. GNU Radio OOT | niedrig | 7 |
 | Soapy7610 TX-Pfad IC-7610 | hoch | 7 |
-| Bandplankonformität OE (KW-Segment) | hoch | vor Phase 7 |
-| Lizenzrechtlich: Telemetrie § 16 AFG | hoch | vor Phase 7 |
+| ~~Bandplankonformität OE (KW-Segment)~~ ✅ | hoch | geklärt Mai 2026 |
+| ~~Lizenzrechtlich: Telemetrie §16 AFG~~ ✅ | hoch | geklärt Mai 2026 |
 | Rufzeichen > 6 Zeichen (Suffix /P etc.) | niedrig | 8 |
 | RS-FEC Optimierung für sehr kurze Frames | niedrig | 8 |
 

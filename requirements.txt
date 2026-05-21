@@ -1,0 +1,25 @@
+# OE3Mode — Python-Abhängigkeiten
+# PC:          pip install -r requirements.txt
+# Raspberry Pi: pip install -r requirements.txt --break-system-packages
+
+# Signalverarbeitung & Modulator
+numpy
+scipy
+
+# Reed-Solomon FEC
+reedsolo
+
+# Audio I/O (Gateway-Betrieb, Phase 3)
+sounddevice
+
+# Raspberry Pi GPIO / PTT-Steuerung (nur auf RPi aktiv)
+# RPi.GPIO         # auskommentiert — nicht installierbar auf PC
+
+# Meshtastic-Integration (Phase 4)
+# meshtastic       # auskommentiert — erst bei Gateway-Implementierung nötig
+
+# MQTT (Phase 4)
+# paho-mqtt        # auskommentiert — erst bei Gateway-Implementierung nötig
+
+# I²C Sensoren / BME280 (nur RPi, Phase 4)
+# smbus2           # auskommentiert — erst bei Hardware-Integration nötig

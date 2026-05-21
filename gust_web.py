@@ -194,7 +194,50 @@ main { padding: 16px; max-width: 1200px; }
 .frame-row .data { color: var(--text); flex: 1; }
 .frame-row.emergency .type { color: var(--red); font-weight: bold; }
 .frame-row.emergency      { background: rgba(248,81,73,.08); }
+.frame-row.testframe      { border-left: 3px solid #1f6feb; }
+.test-pill { display:inline-block; background:#1f6feb; color:#fff !important;
+  font-size:9px; font-weight:bold; padding:1px 6px; border-radius:3px;
+  letter-spacing:.5px; white-space:nowrap; vertical-align:middle; flex-shrink:0; }
+.frame-row { cursor: pointer; }
+.frame-row:hover { background: rgba(255,255,255,.04); }
+
+/* ── MODAL ── */
+#frame-modal { display:none; position:fixed; inset:0; z-index:1000;
+  background:rgba(0,0,0,.82); align-items:center; justify-content:center; }
+#frame-modal.open { display:flex; }
+#frame-modal-box { background:var(--bg3); border:2px solid var(--accent);
+  border-radius:8px; min-width:360px; max-width:560px;
+  width:90vw; max-height:80vh; overflow-y:auto; position:relative; }
+#frame-modal-box h3 { font-size:12px; font-weight:bold; margin:0; padding:10px 40px 10px 16px;
+  color:var(--bg); background:var(--accent); border-radius:5px 5px 0 0;
+  letter-spacing:.5px; }
+#frame-modal-body { padding:14px 16px 16px; }
+#frame-modal-close { position:absolute; top:8px; right:12px; background:none;
+  border:none; color:var(--bg); font-size:18px; cursor:pointer; line-height:1;
+  opacity:.8; }
+#frame-modal-close:hover { opacity:1; }
+.modal-row { display:flex; gap:8px; padding:4px 0;
+  border-bottom:1px solid var(--border); font-size:12px; }
+.modal-row:last-child { border-bottom:none; }
+.modal-key { color:var(--text2); width:140px; flex-shrink:0; }
+.modal-val { color:var(--text); word-break:break-all; font-weight:bold; }
+.modal-map { display:inline-block; margin-top:10px; font-size:11px;
+  color:var(--accent); text-decoration:none; }
+.modal-map:hover { text-decoration:underline; }
+[data-theme="light"] #frame-modal-box { background:#f6f8fa; }
+
+/* ── AUDIO TOGGLES ── */
+.audio-toggles { display:flex; gap:16px; align-items:center;
+  margin-bottom:8px; flex-wrap:wrap; }
+.toggle-sw { display:flex; align-items:center; gap:7px;
+  cursor:pointer; font-size:11px; color:var(--text2); user-select:none; }
+.toggle-sw input[type=checkbox] { accent-color:var(--accent);
+  width:14px; height:14px; cursor:pointer; }
+.toggle-sw:hover { color:var(--text); }
 .snr-hi  { color: #3fb950; }   /* > 15 dB  — stark */
+.test-badge { background: #1f6feb; color: #fff; font-size: 9px; font-weight: bold;
+  padding: 1px 5px; border-radius: 3px; letter-spacing: .5px; vertical-align: middle;
+  margin-left: 4px; }
 .snr-mid { color: #e3b341; }   /* 8–15 dB  — ok    */
 .snr-lo  { color: #f85149; }   /* < 8 dB   — schwach */
 
@@ -321,6 +364,16 @@ h2:first-child { margin-top: 0; }
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
     <h2 style="margin:0;">Live RX-Feed</h2>
     <label id="autoscroll-toggle"><input type="checkbox" id="autoscroll" checked> Auto-Scroll</label>
+  </div>
+  <div class="audio-toggles">
+    <label class="toggle-sw">
+      <input type="checkbox" id="toggle-audio-emerg">
+      🔔 Ton bei Emergency
+    </label>
+    <label class="toggle-sw">
+      <input type="checkbox" id="toggle-audio-mine">
+      🔔 Ton bei Nachricht für mich
+    </label>
   </div>
   <div id="rx-feed">
     <div style="color:var(--text2);padding:8px;">Warte auf RX-Frames …</div>
@@ -661,6 +714,8 @@ function buildChannelGrid(homeChannel) {
       <div class="ch-num">${ch}${ch === homeChannel ? ' ★' : ''}</div>
       <div class="ch-freq">${freq} Hz</div>
       <div class="ch-last" id="ch-last-${ch}">–</div>
+      <div id="ch-test-${ch}" style="margin-top:3px;min-height:14px"></div>
+      <div class="ch-snr"  id="ch-snr-${ch}"></div>
       <div class="ch-time" id="ch-time-${ch}"></div>
     </div>`).join('');
 }
@@ -674,21 +729,25 @@ function snrLabel(snr) {
   return (snr > 0 ? '+' : '') + snr.toFixed(1) + ' dB';
 }
 
-function updateChannelCard(ch, from, typeName, tsStr, snr, isEmerg) {
+function updateChannelCard(ch, from, typeName, tsStr, snr, isEmerg, isTest) {
   const lastEl = document.getElementById('ch-last-' + ch);
   const snrEl  = document.getElementById('ch-snr-'  + ch);
   const timeEl = document.getElementById('ch-time-' + ch);
   const card   = document.getElementById('ch-card-' + ch);
   if (!lastEl) return;
   lastEl.textContent = from + ' · ' + typeName;
+  const testEl = document.getElementById('ch-test-' + ch);
+  if (testEl) testEl.innerHTML  = isTest ? '<span class="test-pill" style="font-size:10px">TEST</span>' : '';
   if (snrEl) {
     snrEl.textContent  = snr != null ? snrLabel(snr) : '';
     snrEl.className    = 'ch-snr ' + snrClass(snr);
   }
   timeEl.textContent = tsStr;
   if (isEmerg) {
+    card.classList.remove('active');
     card.classList.add('emerg-active');
   } else {
+    card.classList.remove('emerg-active');   // Notfall-Rot zurücksetzen
     card.classList.add('active');
     setTimeout(() => card.classList.remove('active'), 8000);
   }
@@ -705,11 +764,14 @@ function appendRxFrame(frame) {
   if (placeholder) placeholder.remove();
 
   const ts  = new Date(frame.ts * 1000).toLocaleTimeString('de-AT');
-  const ch  = frame.channel ?? '?';
+  const ch  = frame.channel ?? frame.detected_channel ?? '?';
   const frm = frame.from ?? '?';
   const typ = frame.type_name ?? '?';
   const dat = frameDataSummary(frame);
-  const isEmerg = (frame.frame_type === 0x20 || frame.frame_type === 0x21);
+  const _ftype  = frame.frame_type ?? frame.type ?? 0;
+  const isEmerg = (_ftype === 0x20 || _ftype === 0x21
+               || frame.type_name === 'EMERG_BEACON'
+               || frame.type_name === 'EMERG_RSRC');
 
   const snr  = frame.snr_db  ?? frame._snr_db  ?? null;
   const off  = frame.freq_offset_hz ?? frame.offset_hz ?? null;
@@ -717,14 +779,16 @@ function appendRxFrame(frame) {
   const snrCls  = snrClass(snr);
 
   const row = document.createElement('div');
-  row.className = 'frame-row' + (isEmerg ? ' emergency' : '');
+  const isTest = !!frame.test;
+  row.className = 'frame-row' + (isEmerg ? ' emergency' : '') + (isTest ? ' testframe' : '');
   row.innerHTML = `<span class="ts">${ts}</span>
     <span class="ch">${ch}</span>
     <span class="from">${frm}</span>
-    <span class="type">${typ}</span>
+    <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0"><span class="type" style="width:auto">${typ}</span>${isTest ? '<span class="test-pill">TEST</span>' : ''}</span>
     <span class="snr ${snrCls}">${snr != null ? snrLabel(snr) : '–'}</span>
     <span class="off">${offStr}</span>
     <span class="data">${dat}</span>`;
+  row.addEventListener('click', () => openFrameModal(frame));
   feed.appendChild(row);
 
   // Maximal 100 Zeilen im DOM
@@ -733,22 +797,159 @@ function appendRxFrame(frame) {
   if (document.getElementById('autoscroll').checked)
     feed.scrollTop = feed.scrollHeight;
 
-  updateChannelCard(ch, frm, typ, ts, snr, isEmerg);
+  updateChannelCard(ch, frm, typ, ts, snr, isEmerg, isTest);
+
+  // Audio-Alerts
+  if (isEmerg && document.getElementById('toggle-audio-emerg')?.checked)
+    playAlarm();
+  const myCall = state.callsign?.toUpperCase();
+  if (myCall && (frame.type_name === 'TEXT') &&
+      (frame.payload_decoded?.dest || frame.data?.dest || '')
+        .toUpperCase() === myCall &&
+      document.getElementById('toggle-audio-mine')?.checked)
+    playNotify();
 }
 
 function frameDataSummary(f) {
-  const d = f.data;
-  if (!d) return '';
-  if (f.frame_type === 0x01)
-    return `${d.temp_c?.toFixed(1)}°C  ${d.humidity}%  ${d.pressure_hpa?.toFixed(1)} hPa  Wind: ${d.wind_kmh} km/h ${d.wind_dir}°`;
-  if (f.frame_type === 0x02)
-    return `${d.lat?.toFixed(5)}, ${d.lon?.toFixed(5)}  Alt: ${d.alt_m} m  ${d.speed_kmh} km/h`;
-  if (f.frame_type === 0x40)
-    return `→${d.to}  "${d.text}"`;
-  if (f.frame_type === 0x20)
-    return `⚠ ${d.persons} Person(en)  Verletzung: ${d.injury}  Prio: ${d.priority}`;
-  return JSON.stringify(d).slice(0, 80);
+  // Echte RX-Frames: Payload unter payload_decoded
+  // Simulator-Frames: unter data — beide abfangen
+  const d = f.payload_decoded || f.data || {};
+  const tn = f.type_name || '';
+  if (!tn && !Object.keys(d).length) return '';
+
+  // WEATHER
+  if (tn === 'WEATHER' || f.frame_type === 0x01) {
+    const rain = d.rain_mm_h > 0 ? `  🌧 ${d.rain_mm_h?.toFixed(1)} mm/h` : '';
+    return `${d.temp_c?.toFixed(1)}°C  ${d.humidity_pct}%  `
+         + `${d.pressure_hpa?.toFixed(1)} hPa  `
+         + `Wind: ${d.wind_kmh} km/h ${d.wind_deg}°${rain}`;
+  }
+
+  // POSITION
+  if (tn === 'POSITION' || f.frame_type === 0x02) {
+    const spd = d.speed_kmh > 0 ? `  ${d.speed_kmh} km/h  ${d.heading_deg}°` : '';
+    return `${d.lat_deg?.toFixed(5)}, ${d.lon_deg?.toFixed(5)}`
+         + `  Alt: ${d.alt_m} m${spd}`;
+  }
+
+  // TEXT / QSO
+  if (tn === 'TEXT' || f.frame_type === 0x40) {
+    const dest = d.dest || d.to || '?';
+    return `→ ${dest}  "${d.text}"`;
+  }
+
+  // CQ
+  if (tn === 'CQ' || f.frame_type === 0x41)
+    return `CQ CQ CQ de ${f.from || '?'}`;
+
+  // EMERGENCY BEACON / EMERG_RSRC
+  if (tn === 'EMERG_BEACON' || tn === 'EMERG_RSRC'
+      || f.frame_type === 0x20 || f.frame_type === 0x21) {
+    const inj  = ['unbekannt','leicht','schwer','kritisch'][d.injury_code] || d.injury_code;
+    const prio = d.priority_str || d.priority || '?';
+    const snip = d.text_snippet ? `  "${d.text_snippet}"` : '';
+    const pos  = (d.lat_deg != null && d.lon_deg != null)
+      ? `  📍 ${d.lat_deg.toFixed(4)}, ${d.lon_deg.toFixed(4)}` : '';
+    return `⚠ ${d.persons} Person(en)  Verletzung: ${inj}  Prio: ${prio}${pos}${snip}`;
+  }
+
+  // SENSOR / Stations-Telemetrie
+  if (tn === 'SENSOR' || f.frame_type === 0x03)
+    return `${(d.voltage_mv/1000)?.toFixed(2)} V  ${d.current_ma} mA  `
+         + `${d.temp_c?.toFixed(1)}°C  CPU: ${d.cpu_pct}%`;
+
+  // Fallback: alle Felder als kompaktes JSON
+  return JSON.stringify(d).slice(0, 100);
 }
+
+// ═══════════════════════════ AUDIO ══════════════════════════════
+let _audioCtx = null;
+function _getCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  return _audioCtx;
+}
+function _beep(freq, dur, vol=0.25, type='sine') {
+  try {
+    const ctx = _getCtx();
+    const osc = ctx.createOscillator();
+    const g   = ctx.createGain();
+    osc.connect(g); g.connect(ctx.destination);
+    osc.type = type; osc.frequency.value = freq;
+    g.gain.setValueAtTime(vol, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + dur + 0.05);
+  } catch(e) {}
+}
+function playAlarm() {
+  // Dreiton-Alarm: hohe, absteigende Töne
+  _beep(1200, 0.18, 0.35, 'square');
+  setTimeout(() => _beep(900, 0.18, 0.35, 'square'), 220);
+  setTimeout(() => _beep(600, 0.28, 0.35, 'square'), 440);
+}
+function playNotify() {
+  // Weicher Doppelton
+  _beep(880, 0.12, 0.2, 'sine');
+  setTimeout(() => _beep(1100, 0.18, 0.2, 'sine'), 160);
+}
+
+// ═══════════════════════════ MODAL ═══════════════════════════════
+function openFrameModal(frame) {
+  const d  = frame.payload_decoded || frame.data || {};
+  const tn = frame.type_name || '?';
+  const ch = frame.channel  ?? frame.detected_channel ?? '?';
+  const ts = frame.ts ? new Date(frame.ts*1000).toLocaleTimeString('de-AT') : '?';
+
+  document.getElementById('modal-title').textContent =
+    `${tn} · Kanal ${ch} · ${frame.from || '?'} · ${ts}`;
+
+  const rows = [];
+  const add = (k, v) => rows.push(`<div class="modal-row">
+    <span class="modal-key">${k}</span>
+    <span class="modal-val">${v !== null && v !== undefined ? v : '–'}</span></div>`);
+
+  add('Typ',      tn);
+  add('Von',      frame.from || '?');
+  add('Kanal',    ch);
+  add('SNR',      frame._snr_db != null ? `${frame._snr_db.toFixed(1)} dB` : '–');
+  add('Offset',   frame.freq_offset_hz != null ? `${frame.freq_offset_hz.toFixed(1)} Hz` : '–');
+  add('RS-Fehler', frame.rs_errors ?? '–');
+  if (frame.test) add('🔬 Testframe', 'JA — Frame ist als Test gekennzeichnet');
+
+  // Payload-Felder
+  if (Object.keys(d).length) {
+    rows.push('<div style="height:6px"></div>');
+    for (const [k, v] of Object.entries(d)) {
+      if (k === 'flags') continue;
+      let val = v;
+      if (typeof v === 'number' && (k === 'lat_deg' || k === 'lon_deg'))
+        val = v.toFixed(6) + '°';
+      else if (typeof v === 'boolean')
+        val = v ? '✓ ja' : '– nein';
+      add(k, val);
+    }
+  }
+
+  // Map-Link wenn Position vorhanden
+  let mapHtml = '';
+  if (d.lat_deg != null && d.lon_deg != null)
+    mapHtml = `<a class="modal-map" href="https://www.openstreetmap.org/?mlat=${d.lat_deg}&mlon=${d.lon_deg}&zoom=15" target="_blank">
+      🗺 Position auf OpenStreetMap öffnen</a>`;
+
+  document.getElementById('modal-content').innerHTML = rows.join('') + mapHtml;
+  document.getElementById('frame-modal').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('frame-modal').classList.remove('open');
+}
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+
+// Toggle-Zustand in localStorage speichern
+['toggle-audio-emerg','toggle-audio-mine'].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.checked = localStorage.getItem(id) === 'true';
+  el.addEventListener('change', () => localStorage.setItem(id, el.checked));
+});
 
 // ═══════════════════════════ WEBSOCKET ════════════════════════
 function connectWsRx() {
@@ -912,6 +1113,17 @@ function fmtTs(ts) {
   setInterval(loadStatus, 30000);
 })();
 </script>
+<!-- ══ FRAME DETAIL MODAL ══ -->
+<div id="frame-modal" onclick="if(event.target===this)closeModal()">
+  <div id="frame-modal-box">
+    <h3 id="modal-title">Frame Details</h3>
+    <button id="frame-modal-close" onclick="closeModal()">✕</button>
+    <div id="frame-modal-body">
+      <div id="modal-content"></div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
 """
@@ -1263,6 +1475,11 @@ class WebServer:
                 data  = event.get("data", {})
 
                 if etype == "rx_frame":
+                    # ts aus dem Event-Umschlag in data injizieren,
+                    # damit frame.ts im JavaScript verfügbar ist.
+                    import time as _time
+                    if "ts" not in data:
+                        data = {**data, "ts": event.get("ts", _time.time())}
                     await self.broadcast_rx_frame(data)
                     self._publish_log("INFO",
                         f"RX: {data.get('from','?')} [{data.get('type_name','?')}] "

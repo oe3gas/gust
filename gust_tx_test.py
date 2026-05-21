@@ -133,7 +133,7 @@ def random_frame():
         return callsign, FrameType.TEXT,         "TEXT",      _text_payload()
 
 
-def make_dual_iq(callsign, frame_type, payload, ch_a, ch_b, use_fec=True):
+def make_dual_iq(callsign, frame_type, payload, ch_a, ch_b, use_fec=True, test_flag=True):
     """
     Erzeugt ein gemischtes IQ-Signal für zwei Kanäle gleichzeitig.
 
@@ -157,11 +157,13 @@ def make_dual_iq(callsign, frame_type, payload, ch_a, ch_b, use_fec=True):
     audio_a, used_a, _ = transmit(
         frame_type, callsign, payload,
         channel=ch_a, use_fec=use_fec, window=True, add_silence_ms=100,
+        test=test_flag,
     )
     print(f"  [DUAL] NF Kanal {ch_b} ...", flush=True)
     audio_b, used_b, _ = transmit(
         frame_type, callsign, payload,
         channel=ch_b, use_fec=use_fec, window=True, add_silence_ms=100,
+        test=test_flag,
     )
 
     print(f"  [DUAL] IQ-Konvertierung Kanal {used_a} ...", flush=True)
@@ -292,6 +294,7 @@ def run(args):
                 try:
                     iq_dual, used_a, used_b, duration = make_dual_iq(
                         callsign, ft, payload, ch_a, ch_b,
+                        test_flag=not args.no_test,
                     )
                 except Exception as e:
                     print(f"{ts()}  FEHLER Dual-IQ: {e}", flush=True)
@@ -322,6 +325,7 @@ def run(args):
                     audio, channel, _ = transmit(
                         ft, callsign, payload, channel=fixed_ch,
                         use_fec=True, window=True, add_silence_ms=100,
+                        test=(not args.no_test),
                     )
                 except Exception as e:
                     print(f"{ts()}  FEHLER Frame: {e}", flush=True)
@@ -387,8 +391,9 @@ def run(args):
 
             # Pause (außer nach letzter Sendung)
             if args.count == 0 or tx_count < args.count:
-                print(f"{ts()}  Pause {args.pause:.0f}s ...", flush=True)
-                time.sleep(args.pause)
+                _pause = random.uniform(1.0, args.pause)
+                print(f"{ts()}  Pause {_pause:.1f}s ...", flush=True)
+                time.sleep(_pause)
 
     except KeyboardInterrupt:
         print(f"\n{ts()}  Strg+C — beende ...", flush=True)
@@ -412,7 +417,7 @@ def main():
     parser.add_argument("--max-gain",  type=int,   default=MAX_GAIN_DB,
                         help=f"Max VGA Gain dB (Standard: {MAX_GAIN_DB})")
     parser.add_argument("--pause",     type=float, default=PAUSE_S,
-                        help=f"Pause zwischen Sendungen in s (Standard: {PAUSE_S})")
+                        help=f"Maximale Pause zwischen Sendungen in s — tatsächliche Pause zufällig 1..max (Standard: {PAUSE_S})")
     parser.add_argument("--log",       default=LOG_FILE,
                         help=f"CSV-Logfile (Standard: {LOG_FILE})")
     parser.add_argument("--dual-only", action="store_true",
@@ -425,6 +430,8 @@ def main():
     parser.add_argument("--gain-sequence", default=None,
                         help="Exakte Gain-Folge statt zufällig, z.B. "
                              "'28,26,24,22,20'. Setzt --count automatisch.")
+    parser.add_argument("--no-test",   action="store_true",
+                        help="TEST-Flag NICHT setzen (Standard: alle Frames aus gust_tx_test.py sind Testframes)")
     parser.add_argument("--dry-run",   action="store_true",
                         help="Kein HackRF TX — nur Frame-Erzeugung testen")
     args = parser.parse_args()
