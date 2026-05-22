@@ -166,6 +166,32 @@ main { padding: 16px; max-width: 1200px; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
+/* ── AUDIO-METER (RX-Eingangs-Diagnose) ── */
+#audio-meter { background: var(--bg2); border: 1px solid var(--border);
+               border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
+#audio-meter .am-row { display: flex; align-items: center; gap: 10px;
+                        font-size: 11px; color: var(--text2); margin: 3px 0; }
+#audio-meter .am-label { width: 38px; flex-shrink: 0; color: var(--text2); }
+#audio-meter .am-bar   { flex: 1; height: 10px; background: var(--bg3);
+                          border: 1px solid var(--border); border-radius: 3px;
+                          overflow: hidden; position: relative; }
+#audio-meter .am-fill  { height: 100%; background: var(--green);
+                          width: 0%; transition: width .15s linear; }
+#audio-meter .am-fill.warn { background: var(--orange); }
+#audio-meter .am-fill.clip { background: var(--red); }
+#audio-meter .am-val   { width: 70px; flex-shrink: 0; text-align: right;
+                          font-family: 'Courier New', monospace;
+                          color: var(--text); font-size: 11px; }
+#audio-meter .am-hdr   { display: flex; justify-content: space-between;
+                          align-items: center; font-size: 11px;
+                          color: var(--text2); margin-bottom: 4px; }
+#audio-meter .am-status { color: var(--text); font-weight: bold; }
+#audio-meter.silent  .am-status { color: var(--text2); }
+#audio-meter.ok      .am-status { color: var(--green); }
+#audio-meter.weak    .am-status { color: var(--orange); }
+#audio-meter.clip    .am-status { color: var(--red); }
+#audio-meter.nosig   .am-status { color: var(--red); }
+
 /* ── CHANNEL GRID ── */
 #channel-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px; }
 .ch-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
@@ -358,6 +384,24 @@ h2:first-child { margin-top: 0; }
 
 <!-- ══════════════════════════════════════════════════════ TAB: MONITOR -->
 <div id="tab-monitor" class="tab-panel active">
+  <h2>Audio-Eingang (RX)</h2>
+  <div id="audio-meter" class="nosig">
+    <div class="am-hdr">
+      <span>🎤 <span id="am-device">–</span></span>
+      <span class="am-status" id="am-status">Kein Audio-Signal</span>
+    </div>
+    <div class="am-row">
+      <span class="am-label">RMS</span>
+      <div class="am-bar"><div class="am-fill" id="am-rms-fill"></div></div>
+      <span class="am-val" id="am-rms-val">–</span>
+    </div>
+    <div class="am-row">
+      <span class="am-label">Peak</span>
+      <div class="am-bar"><div class="am-fill" id="am-peak-fill"></div></div>
+      <span class="am-val" id="am-peak-val">–</span>
+    </div>
+  </div>
+
   <h2>Kanalübersicht — 10 Kanäle (400–2900 Hz NF)</h2>
   <div id="channel-grid"></div>
 
@@ -862,6 +906,83 @@ function frameDataSummary(f) {
   return JSON.stringify(d).slice(0, 100);
 }
 
+// ═══════════════════════════ AUDIO-METER (RX-Eingang) ════════════
+// Zeigt RMS/Peak des RX-Audios als horizontale Balken.
+// Skala: -60 dB (links) → 0 dB (rechts).
+// Status:
+//   "Stille"           — kein/sehr leises Signal (RMS < -55 dB)
+//   "Sehr leise"       — -55 .. -40 dB
+//   "OK"               — -40 ..  -6 dB
+//   "Clipping!"        — Peak > -1 dB
+//   "Kein Audio-Signal" — länger als 2 s keine Events
+const AM_MIN_DB = -60, AM_MAX_DB = 0;
+let _amTimer = null;
+
+function _dbToPct(db) {
+  if (db == null || db <= AM_MIN_DB) return 0;
+  if (db >= AM_MAX_DB) return 100;
+  return ((db - AM_MIN_DB) / (AM_MAX_DB - AM_MIN_DB)) * 100;
+}
+
+function updateAudioMeter(d) {
+  const box = document.getElementById('audio-meter');
+  if (!box) return;
+  const rmsDb  = d.rms_db  ?? null;
+  const peakDb = d.peak_db ?? null;
+
+  document.getElementById('am-device').textContent  = d.device || 'Audio-Eingang';
+  document.getElementById('am-rms-val').textContent =
+    rmsDb  != null ? rmsDb.toFixed(1) + ' dB' : '–';
+  document.getElementById('am-peak-val').textContent =
+    peakDb != null ? peakDb.toFixed(1) + ' dB' : '–';
+
+  const rmsFill  = document.getElementById('am-rms-fill');
+  const peakFill = document.getElementById('am-peak-fill');
+  rmsFill.style.width  = _dbToPct(rmsDb)  + '%';
+  peakFill.style.width = _dbToPct(peakDb) + '%';
+
+  // Farbcodierung am Peak orientiert (Clip-Erkennung)
+  peakFill.className = 'am-fill';
+  rmsFill.className  = 'am-fill';
+  if (d.clipping || (peakDb != null && peakDb > -1)) {
+    peakFill.classList.add('clip');
+    rmsFill.classList.add('clip');
+  } else if (peakDb != null && peakDb > -6) {
+    peakFill.classList.add('warn');
+  }
+
+  // Status-Klassifikation (am RMS orientiert)
+  box.className = '';
+  let status;
+  if (d.clipping) {
+    box.classList.add('clip');
+    status = '⚠ Clipping — Eingangspegel reduzieren!';
+  } else if (rmsDb == null || rmsDb < -55) {
+    box.classList.add('silent');
+    status = 'Stille — kein nennenswertes Signal';
+  } else if (rmsDb < -40) {
+    box.classList.add('weak');
+    status = 'Sehr leise — möglicherweise zu wenig Pegel';
+  } else {
+    box.classList.add('ok');
+    status = '✓ Signal erkannt';
+  }
+  document.getElementById('am-status').textContent = status;
+
+  // Watchdog: wenn 2 s lang kein Event mehr kommt, "Kein Audio-Signal"
+  clearTimeout(_amTimer);
+  _amTimer = setTimeout(() => {
+    const b = document.getElementById('audio-meter');
+    if (!b) return;
+    b.className = 'nosig';
+    document.getElementById('am-status').textContent = 'Kein Audio-Signal (RX-Loop inaktiv?)';
+    document.getElementById('am-rms-fill').style.width  = '0%';
+    document.getElementById('am-peak-fill').style.width = '0%';
+    document.getElementById('am-rms-val').textContent  = '–';
+    document.getElementById('am-peak-val').textContent = '–';
+  }, 2000);
+}
+
 // ═══════════════════════════ AUDIO ══════════════════════════════
 let _audioCtx = null;
 function _getCtx() {
@@ -967,10 +1088,11 @@ function connectWsRx() {
   state.wsRx.onmessage = (evt) => {
     try {
       const msg = JSON.parse(evt.data);
-      if (msg.type === 'rx_frame')  appendRxFrame(msg.data);
-      if (msg.type === 'status')    applyStatusPush(msg.data);
-      if (msg.type === 'tx_done')   log2ui('INFO', 'TX abgeschlossen: ' + (msg.data?.type_name||'?'));
-      if (msg.type === 'ping')      state.wsRx.send(JSON.stringify({type:'pong'}));
+      if (msg.type === 'rx_frame')       appendRxFrame(msg.data);
+      if (msg.type === 'status')         applyStatusPush(msg.data);
+      if (msg.type === 'rx_audio_level') updateAudioMeter(msg.data);
+      if (msg.type === 'tx_done')        log2ui('INFO', 'TX abgeschlossen: ' + (msg.data?.type_name||'?'));
+      if (msg.type === 'ping')           state.wsRx.send(JSON.stringify({type:'pong'}));
     } catch(e) { /* ignore malformed */ }
   };
   state.wsRx.onerror = () => { ind.className = 'error'; };
@@ -1497,6 +1619,16 @@ class WebServer:
 
                 elif etype == "status":
                     msg = json.dumps({"type": "status", "data": data})
+                    for ws in list(self._ws_rx_clients):
+                        try:
+                            await ws.send_str(msg)
+                        except Exception:
+                            pass
+
+                elif etype == "rx_audio_level":
+                    # Pegel-Updates an alle Monitor-Clients durchreichen.
+                    # Hochfrequent (~4 Hz) — kein Log-Spam erzeugen.
+                    msg = json.dumps({"type": "rx_audio_level", "data": data})
                     for ws in list(self._ws_rx_clients):
                         try:
                             await ws.send_str(msg)

@@ -64,10 +64,11 @@ class EventType:
     Alle definierten Event-Typen im GUST-System.
     Wert ist immer ein String → direkt im JSON-Serializer verwendbar.
     """
-    RX_FRAME = "rx_frame"   # Dekodierter Empfangsframe vom RX-Decoder
-    TX_DONE  = "tx_done"    # Gesendeter Frame wurde übertragen
-    STATUS   = "status"     # Periodischer System-Status (alle 60 s)
-    LOG      = "log"        # Systemlog-Eintrag (Level + Nachricht)
+    RX_FRAME       = "rx_frame"        # Dekodierter Empfangsframe vom RX-Decoder
+    RX_AUDIO_LEVEL = "rx_audio_level"  # RMS/Peak des RX-Audios (Diagnose-Pegelmeter)
+    TX_DONE        = "tx_done"         # Gesendeter Frame wurde übertragen
+    STATUS         = "status"          # Periodischer System-Status (alle 60 s)
+    LOG            = "log"             # Systemlog-Eintrag (Level + Nachricht)
 
     # Zukünftige Typen (Phase 6+)
     MQTT_RX  = "mqtt_rx"    # Frame via MQTT eingelangt (MQTTBridge)
@@ -428,6 +429,43 @@ def make_tx_done_event(frame: dict,
         data["duration_s"] = round(duration_s, 3)
     return {
         "type": EventType.TX_DONE,
+        "data": data,
+    }
+
+
+def make_audio_level_event(rms: float, peak: float,
+                            device: Optional[str] = None) -> dict:
+    """
+    Diagnose-Event für den RX-Audiopegel.
+
+    Wird periodisch (typisch alle 250 ms) vom AudioRXLoop publiziert,
+    damit das Web-UI sehen kann ob überhaupt Audio vom Eingang kommt.
+    Ohne dieses Signal dekodiert GUST entweder Stille oder Fremdsignale
+    auf dem falschen Gerät.
+
+    Args:
+        rms:    Quadratischer Mittelwert des Audio-Slices (0.0–1.0)
+        peak:   Spitzenwert |max| (0.0–1.0); >0.98 = Clipping
+        device: Optionale Gerätekennung (für UI-Anzeige)
+
+    dB-Werte (20·log10) werden hier mitberechnet, damit Empfänger sie
+    nicht selbst umrechnen müssen. -100 dB als Floor für Stille.
+    """
+    import math
+    def _to_db(x: float) -> float:
+        return round(20.0 * math.log10(x), 1) if x > 1e-5 else -100.0
+
+    data = {
+        "rms":      round(float(rms),  6),
+        "peak":     round(float(peak), 6),
+        "rms_db":   _to_db(rms),
+        "peak_db":  _to_db(peak),
+        "clipping": bool(peak > 0.98),
+    }
+    if device is not None:
+        data["device"] = device
+    return {
+        "type": EventType.RX_AUDIO_LEVEL,
         "data": data,
     }
 

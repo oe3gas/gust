@@ -337,7 +337,7 @@ class AudioRXLoop:
             return
 
         try:
-            from gust_eventbus import make_rx_frame_event
+            from gust_eventbus import make_rx_frame_event, make_audio_level_event
             print(f"{_ts()}  [RX] gust_eventbus importiert ✓", flush=True)
         except Exception as e:
             print(f"{_ts()}  [RX] FEHLER gust_eventbus: {e}", flush=True)
@@ -393,6 +393,34 @@ class AudioRXLoop:
 
         self._running = True
         loop = asyncio.get_running_loop()
+        level_task: Optional[asyncio.Task] = None
+
+        # ── Audio-Level-Publisher ─────────────────────────────────────
+        # Publiziert alle 250 ms RMS+Peak eines kurzen Slices aus dem
+        # Ringpuffer. Damit zeigt das Web-UI ob der Audio-Eingang
+        # überhaupt Signal sieht. Pausiert bei TX (self._muted).
+        AUDIO_LEVEL_INTERVAL_S = 0.25
+        AUDIO_LEVEL_SLICE_S    = 0.2
+
+        async def _level_publisher():
+            while True:
+                try:
+                    await asyncio.sleep(AUDIO_LEVEL_INTERVAL_S)
+                    if self._muted or self._bus is None:
+                        continue
+                    chunk = receiver.get_snapshot(seconds=AUDIO_LEVEL_SLICE_S)
+                    if chunk is None or len(chunk) == 0:
+                        continue
+                    rms  = float(np.sqrt(np.mean(chunk ** 2)))
+                    peak = float(np.max(np.abs(chunk)))
+                    dev  = str(self._device) if self._device is not None else "Standard"
+                    await self._bus.publish(
+                        make_audio_level_event(rms=rms, peak=peak, device=dev)
+                    )
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    log.debug("[RX] Level-Publisher: %s", e)
 
         try:
             print(f"{_ts()}  [RX] receiver.start() wird aufgerufen ...", flush=True)
@@ -401,6 +429,9 @@ class AudioRXLoop:
             # Kurz warten damit der Puffer erste Samples enthält
             await asyncio.sleep(min(self._window, 3.0))
             print(f"{_ts()}  [RX] Warten beendet — Scan-Loop startet", flush=True)
+
+            # Level-Publisher starten (parallel zum Scan-Loop)
+            level_task = asyncio.create_task(_level_publisher(), name="rx_level")
 
             # Fixed-Cadence-Scheduling: Der nächste Snapshot wird auf einen
             # festen Zeitplan (next_tick += interval) gelegt, NICHT erst nach
@@ -538,6 +569,12 @@ class AudioRXLoop:
             log.error("[RX] Unerwarteter Fehler: %s", e, exc_info=True)
         finally:
             self._running = False
+            if level_task is not None and not level_task.done():
+                level_task.cancel()
+                try:
+                    await level_task
+                except (asyncio.CancelledError, Exception):
+                    pass
             receiver.stop()
             print(f"{_ts()}  [RX] Statistik: {self._scan_count} Scans / {self._rx_count} dekodiert / {self._dup_count} Duplikate", flush=True)
             log.info(
