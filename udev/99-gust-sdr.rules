@@ -1,0 +1,66 @@
+# ════════════════════════════════════════════════════════════════════════
+# GUST — udev-Regeln für SDR-Hardware (HackRF, SDRplay, RTL-SDR)
+# ────────────────────────────────────────────────────────────────────────
+# Zweck: Zugriff auf USB-SDR-Geräte ohne root-Rechte.
+# Geräte werden Gruppe "plugdev" zugeordnet — der User muss Mitglied sein:
+#     sudo usermod -aG plugdev $USER
+#     (Abmelden und neu anmelden, damit Gruppenmitgliedschaft greift)
+#
+# Installation (durch install.sh automatisiert):
+#     sudo cp udev/99-gust-sdr.rules /etc/udev/rules.d/99-gust-sdr.rules
+#     sudo udevadm control --reload-rules
+#     sudo udevadm trigger
+#
+# Verifikation nach Anschluss:
+#     ls -l /dev/bus/usb/*/*   (sollte Gruppe "plugdev" zeigen)
+#     hackrf_info              (sollte ohne sudo funktionieren)
+#     SDRplay: rsp_tcp -h      (sollte Gerät erkennen)
+# ════════════════════════════════════════════════════════════════════════
+
+# ── HackRF One (Great Scott Gadgets) ────────────────────────────────────
+# Vendor: 1d50 (OpenMoko), Product: 6089 (HackRF One)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="6089", \
+    MODE="0660", GROUP="plugdev", TAG+="uaccess", SYMLINK+="hackrf-%k"
+
+# ── HackRF Jawbreaker (Beta-Hardware) ───────────────────────────────────
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="604b", \
+    MODE="0660", GROUP="plugdev", TAG+="uaccess", SYMLINK+="hackrf-jawbreaker-%k"
+
+# ── HackRF One (DFU-Modus, für Firmware-Updates) ────────────────────────
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="6089", \
+    ATTRS{bInterfaceClass}=="fe", MODE="0660", GROUP="plugdev"
+
+# ── SDRplay RSP1A ───────────────────────────────────────────────────────
+# Vendor: 1df7 (SDRplay)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1df7", ATTRS{idProduct}=="2500", \
+    MODE="0660", GROUP="plugdev", TAG+="uaccess", SYMLINK+="sdrplay-rsp1a-%k"
+
+# ── SDRplay RSPdx ───────────────────────────────────────────────────────
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1df7", ATTRS{idProduct}=="3000", \
+    MODE="0660", GROUP="plugdev", TAG+="uaccess", SYMLINK+="sdrplay-rspdx-%k"
+
+# ── SDRplay RSPdx2 ──────────────────────────────────────────────────────
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1df7", ATTRS{idProduct}=="3010", \
+    MODE="0660", GROUP="plugdev", TAG+="uaccess", SYMLINK+="sdrplay-rspdx2-%k"
+
+# ── SDRplay RSP-Duo ─────────────────────────────────────────────────────
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1df7", ATTRS{idProduct}=="3030", \
+    MODE="0660", GROUP="plugdev", TAG+="uaccess", SYMLINK+="sdrplay-rspduo-%k"
+
+# ── RTL-SDR (generisch, Realtek RTL2832U) ───────────────────────────────
+# Vendor: 0bda (Realtek), Product: 2838 (RTL2838 = RTL2832U + R820T2)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2838", \
+    MODE="0660", GROUP="plugdev", TAG+="uaccess", SYMLINK+="rtl_sdr-%k"
+
+# ── RTL-SDR (älterer Chipsatz RTL2832 + Elonics E4000) ──────────────────
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2832", \
+    MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+# ── Icom CI-V Adapter (z. B. CT-17 oder USB-Klone) ──────────────────────
+# CP210x basierte CAT-Kabel (häufig bei IC-7610/IC-705-Setups)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", \
+    MODE="0660", GROUP="dialout", SYMLINK+="icom-civ-%k"
+
+# ── FTDI-basierte CAT-Kabel (häufig) ────────────────────────────────────
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", \
+    MODE="0660", GROUP="dialout"

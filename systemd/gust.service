@@ -1,0 +1,71 @@
+# ════════════════════════════════════════════════════════════════════════
+# GUST — systemd-Unit für den Gateway-Daemon
+# ────────────────────────────────────────────────────────────────────────
+# Installation (durch install.sh automatisiert):
+#   sudo cp systemd/gust.service /etc/systemd/system/gust.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now gust.service
+#
+# Status / Logs:
+#   systemctl status gust.service
+#   journalctl -u gust.service -f
+#
+# WICHTIG: Die Platzhalter %USER%, %GROUP% und %EXEC% werden durch
+# install.sh mit den korrekten Werten ersetzt (laufender User + Pfad
+# zu `gust`, ermittelt via `which gust`).
+# ════════════════════════════════════════════════════════════════════════
+
+[Unit]
+Description = GUST — Generic Universal Shortwave Telemetry (OE3GAS)
+Documentation = https://github.com/OE3GAS/gust
+# network.target: Web-UI braucht Netzwerk-Stack
+# sound.target:   Audio-Subsystem (ALSA/PulseAudio) muss verfügbar sein
+After       = network.target sound.target
+Wants       = network.target
+
+[Service]
+# Type=simple — Hauptprozess bleibt im Vordergrund, kein Forking
+Type        = simple
+
+# User/Group: KEIN root! GUST braucht keine privilegierten Operationen.
+# install.sh setzt hier den installierenden User ein.
+User        = %USER%
+Group       = %GROUP%
+
+# Arbeitsverzeichnis = Config-Verzeichnis, gateway.json wird hier gesucht
+WorkingDirectory = %HOME%/.config/gust
+
+# EnvironmentFile optional (führendes "-" = darf fehlen ohne Fehler).
+# Geeignet für API-Key, hamlib-Override etc. ohne in gateway.json zu landen.
+EnvironmentFile = -%HOME%/.config/gust/gust.env
+
+# Daemon-Start: gust binary (Pfad wird durch install.sh ermittelt)
+# --config zeigt explizit auf die Config-Datei im WorkingDirectory.
+ExecStart   = %EXEC% --config %HOME%/.config/gust/gateway.json daemon
+
+# Reload via SIGHUP — optional, wird vom Daemon noch nicht unterstützt,
+# aber als Hinweis: Neustart erforderlich nach Config-Änderung.
+ExecReload  = /bin/kill -HUP $MAINPID
+
+# Restart-Verhalten: bei Fehler/Crash neu starten, 10 s Pause
+Restart     = on-failure
+RestartSec  = 10
+
+# Maximale Anzahl Neustarts in 60 s — verhindert Endlosschleifen
+StartLimitBurst    = 5
+StartLimitInterval = 60
+
+# Logging: alles in systemd-journal (journalctl -u gust)
+StandardOutput = journal
+StandardError  = journal
+SyslogIdentifier = gust
+
+# Sicherheits-Hardening (defensive Defaults)
+NoNewPrivileges  = true
+PrivateTmp       = true
+ProtectSystem    = full
+ProtectHome      = false
+# ProtectHome=false: Daemon braucht Lese-/Schreibzugriff auf ~/.config/gust
+
+[Install]
+WantedBy = multi-user.target

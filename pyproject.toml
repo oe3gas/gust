@@ -1,0 +1,175 @@
+# ════════════════════════════════════════════════════════════════════════
+# GUST — Generic Universal Shortwave Telemetry
+# OE3GAS — Amateurfunk-Digitalprotokoll für KW-Telemetrie
+# ────────────────────────────────────────────────────────────────────────
+# Build-System: hatchling (PEP 517/518/660)
+# Installation:
+#   pip install -e ".[dev]"                 (Entwicklung, editable)
+#   pip install --break-system-packages -e ".[rpi]"   (Raspberry Pi OS)
+# ════════════════════════════════════════════════════════════════════════
+
+[build-system]
+requires      = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name            = "gust-hf"
+version         = "0.3.1"
+description     = "GUST — Generic Universal Shortwave Telemetry (Amateurfunk-KW-Telemetrieprotokoll)"
+readme          = "README.md"
+license         = { text = "CC-BY-SA-4.0" }
+requires-python = ">=3.11"
+
+authors = [
+    { name = "OE3GAS", email = "gerhard.amon@gmail.com" },
+]
+
+keywords = [
+    "amateur-radio",
+    "ham-radio",
+    "shortwave",
+    "telemetry",
+    "mfsk",
+    "sdr",
+    "reed-solomon",
+    "hf",
+]
+
+# Klassifizierung gemäß PyPI-Trove-Klassifikatoren
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Telecommunications Industry",
+    "Intended Audience :: Science/Research",
+    "Topic :: Communications :: Ham Radio",
+    "Topic :: Scientific/Engineering",
+    "License :: OSI Approved",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+# ── Kern-Abhängigkeiten (immer benötigt) ────────────────────────────────
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "reedsolo>=1.7",
+    "sounddevice>=0.4",
+    "aiohttp>=3.9",
+]
+
+# ── Optionale Abhängigkeiten ────────────────────────────────────────────
+[project.optional-dependencies]
+# Raspberry Pi: GPIO-PTT, I²C-Sensoren (BME280 etc.)
+# Hinweis: RPi.GPIO ist nicht auf x86 installierbar — nur auf RPi-Hardware.
+rpi = [
+    "RPi.GPIO>=0.7",
+    "smbus2>=0.4",
+]
+
+# MQTT-Bridge (Phase 6 — Home Assistant Integration)
+mqtt = [
+    "paho-mqtt>=1.6",
+]
+
+# Meshtastic-Integration (LoRa-Bridge)
+meshtastic = [
+    "meshtastic>=2.2",
+]
+
+# Entwicklung und Tests
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.1",
+]
+
+# ── Projekt-URLs ────────────────────────────────────────────────────────
+[project.urls]
+Homepage      = "https://github.com/OE3GAS/gust"
+Repository    = "https://github.com/OE3GAS/gust"
+Issues        = "https://github.com/OE3GAS/gust/issues"
+Documentation = "https://github.com/OE3GAS/gust#readme"
+
+# ── Einstiegspunkte (Skripte) ───────────────────────────────────────────
+[project.scripts]
+gust = "gust:main"
+
+# ════════════════════════════════════════════════════════════════════════
+# hatchling Build-Konfiguration
+# ────────────────────────────────────────────────────────────────────────
+# GUST verwendet ein flaches Layout (keine src/-Struktur, keine Pakete) —
+# alle Module liegen als gust*.py im Projektwurzelverzeichnis. Hatchling
+# muss explizit angewiesen werden, diese Dateien als Top-Level-Module
+# einzubinden.
+# ════════════════════════════════════════════════════════════════════════
+
+[tool.hatch.build.targets.wheel]
+include = [
+    "gust.py",
+    "gust_audio.py",
+    "gust_decode.py",
+    "gust_eventbus.py",
+    "gust_frame.py",
+    "gust_hackrf.py",
+    "gust_hackrf_diag.py",
+    "gust_modulator.py",
+    "gust_msg_simulator.py",
+    "gust_rx.py",
+    "gust_tx_test.py",
+    "gust_web.py",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "gust*.py",
+    "gateway.json.example",
+    "gateway.json.schema.json",
+    "README.md",
+    "CLAUDE.md",
+    "claude.md",
+    "How_to_install_on_Linux.md",
+    "GETTING_STARTED.md",
+    "howto_tx_only.md",
+    "gust_spec.md",
+    "gust_knowledge.md",
+    "gust_backlog.md",
+    "gust_testplan.md",
+    "systemd/gust.service",
+    "udev/99-gust-sdr.rules",
+    "Makefile",
+    "install.sh",
+    "requirements.txt",
+]
+
+# ════════════════════════════════════════════════════════════════════════
+# Ruff — Linter und Formatter (optional, nur wenn installiert)
+# ════════════════════════════════════════════════════════════════════════
+[tool.ruff]
+line-length    = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",  # Zeilenlänge (in Kommentarblöcken oft länger)
+    "E741",  # mehrdeutige Variablennamen (l, I, O)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ════════════════════════════════════════════════════════════════════════
+# pytest — Test-Konfiguration
+# ════════════════════════════════════════════════════════════════════════
+[tool.pytest.ini_options]
+minversion      = "7.0"
+testpaths       = ["tests"]
+python_files    = ["test_*.py", "*_test.py"]
+asyncio_mode    = "auto"
+filterwarnings  = [
+    "ignore::DeprecationWarning:asyncio",
+]

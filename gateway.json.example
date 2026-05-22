@@ -1,0 +1,44 @@
+{
+    "callsign": "OE3GAS",
+    "audio": {
+        "device": 0,
+        "ptt_backend": "hamlib",
+        "level": 10,
+        "hamlib_host": "localhost",
+        "hamlib_port": 4532
+    },
+    "rx": {
+        "enabled": true,
+        "device": null,
+        "scan_interval_s": 2.0,
+        "window_s": 9.0,
+        "dedup_ttl_s": 30
+    },
+    "gateway": {
+        "interval_s": 300,
+        "min_tx_gap_s": 10
+    },
+    "source": {
+        "adapter": "sim",
+        "sim": {
+            "frames": ["weather", "position", "text"],
+            "weather_interval_s": 300,
+            "position_interval_s": 300,
+            "text_interval_s": 120,
+            "emergency_enabled": false,
+            "lat": 48.2082,
+            "lon": 16.3738,
+            "alt_m": 180,
+            "drift": false
+        }
+    },
+    "web": {
+        "host": "0.0.0.0",
+        "port": 8080,
+        "api_key": ""
+    },
+    "log": {
+        "level": "INFO",
+        "file": null
+    }
+}

@@ -1,0 +1,167 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://github.com/OE3GAS/gust/blob/main/gateway.json.schema.json",
+    "title": "GUST Gateway-Konfiguration",
+    "description": "Schema für gateway.json — GUST-Stationskonfiguration (OE3GAS).",
+    "type": "object",
+    "required": ["callsign"],
+    "additionalProperties": false,
+    "properties": {
+        "callsign": {
+            "type": "string",
+            "pattern": "^[A-Z0-9]{3,6}$",
+            "description": "Amateurfunk-Rufzeichen (3-6 Zeichen, Großbuchstaben/Ziffern, ohne Suffix)."
+        },
+        "audio": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "device": {
+                    "type": ["integer", "string", "null"],
+                    "description": "Audiogerät-ID (Integer empfohlen) oder Name. Auf Windows zwingend Integer."
+                },
+                "ptt_backend": {
+                    "type": "string",
+                    "enum": ["null", "hamlib", "vox", "gpio"],
+                    "description": "PTT-Steuerung: null (Test), hamlib (rigctld), vox (automatisch), gpio (nur RPi)."
+                },
+                "level": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "TX-Audio-Pegel. Werte >1 werden als Prozent interpretiert (10 = 10%)."
+                },
+                "hamlib_host": {
+                    "type": "string",
+                    "description": "Hostname/IP für rigctld."
+                },
+                "hamlib_port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "Port für rigctld (Standard 4532)."
+                },
+                "gpio_pin": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 40,
+                    "description": "BCM-Pin für GPIO-PTT (nur RPi). Empfehlung: 17."
+                }
+            }
+        },
+        "rx": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "RX-Loop aktivieren. false = nur TX, kein Empfang."
+                },
+                "device": {
+                    "type": ["integer", "string", "null"],
+                    "description": "Audiogerät für RX. null = gleiches Gerät wie TX (oder System-Standard)."
+                },
+                "scan_interval_s": {
+                    "type": "number",
+                    "minimum": 0.5,
+                    "maximum": 10,
+                    "description": "Sekunden zwischen Scan-Versuchen (Fixed-Cadence)."
+                },
+                "window_s": {
+                    "type": "number",
+                    "minimum": 5,
+                    "maximum": 30,
+                    "description": "Audiohistorie pro Scan in Sekunden. Invariante: window_s >= MAX_FRAME_S + scan_interval_s."
+                },
+                "dedup_ttl_s": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Sekunden bis ein bereits dekodierter Frame erneut akzeptiert wird."
+                }
+            }
+        },
+        "gateway": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "interval_s": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "description": "Standard-TX-Intervall in Sekunden."
+                },
+                "min_tx_gap_s": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Minimaler Abstand zwischen zwei Aussendungen."
+                }
+            }
+        },
+        "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "adapter": {
+                    "type": "string",
+                    "enum": ["sim", "meshtastic", "mqtt"],
+                    "description": "Datenquelle: sim (Simulator), meshtastic (LoRa-Bridge), mqtt (MQTT-Broker)."
+                },
+                "sim": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "frames": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": ["weather", "position", "text", "emergency"]
+                            }
+                        },
+                        "weather_interval_s":  { "type": "integer", "minimum": 60 },
+                        "position_interval_s": { "type": "integer", "minimum": 60 },
+                        "text_interval_s":     { "type": "integer", "minimum": 60 },
+                        "emergency_enabled":   { "type": "boolean" },
+                        "lat":   { "type": "number", "minimum": -90,  "maximum": 90  },
+                        "lon":   { "type": "number", "minimum": -180, "maximum": 180 },
+                        "alt_m": { "type": "number" },
+                        "drift": { "type": "boolean" }
+                    }
+                }
+            }
+        },
+        "web": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "host": {
+                    "type": "string",
+                    "description": "Bind-Adresse. 0.0.0.0 = alle Interfaces, 127.0.0.1 = nur lokal."
+                },
+                "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "Web-UI-Port (Standard 8080)."
+                },
+                "api_key": {
+                    "type": "string",
+                    "description": "API-Key für Web-Authentifizierung. Leer = kein Auth."
+                }
+            }
+        },
+        "log": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "level": {
+                    "type": "string",
+                    "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+                    "description": "Log-Level für Python-Logger."
+                },
+                "file": {
+                    "type": ["string", "null"],
+                    "description": "Pfad zur Log-Datei oder null (nur stdout/journal)."
+                }
+            }
+        }
+    }
+}

@@ -1,6 +1,42 @@
+# ── Python ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.ruff_cache/
 
+# ── Virtuelle Umgebungen ───────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── GUST Laufzeit ──────────────────────────────────────────────────────
+*.log
+*.wav
+*.cf32
+rx_log.jsonl
+
+# ── Konfiguration mit Secrets ──────────────────────────────────────────
+# Die echte Datei NICHT committen (Rufzeichen, API-Key).
+# Die Vorlage (gateway.json.example) UND das Schema werden versioniert.
+gateway.json
+
+# ── Bereits vorhandene Ausschlüsse ─────────────────────────────────────
 SNR Test Files/
 archiv/
 files.zip
 oe3mode_projektspezifikation.md
 *.csv
+
+# ── IDE ────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Betriebssystem ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
