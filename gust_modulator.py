@@ -36,6 +36,7 @@ from scipy.io import wavfile
 from scipy.signal import butter, sosfilt
 import struct as _struct
 import os
+import sys
 
 from gust_frame import (
     channel_frequency, assign_channel,
@@ -1064,5 +1065,60 @@ def _run_tests():
     return len(errors) == 0
 
 
+def _intro_and_prompt() -> bool:
+    """
+    Erklärende Begrüßung anzeigen und interaktiv fragen, ob der
+    Selbsttest gestartet werden soll. Rückgabe: True = Selbsttest, False = Abbruch.
+    """
+    print("""
+═══════════════════════════════════════════════════════════════════════
+  GUST MFSK-8 Modulator / Demodulator
+═══════════════════════════════════════════════════════════════════════
+
+  Was ist dieses Modul?
+  ─────────────────────
+  Der GUST-Modulator setzt Frame-Bytes in NF-Audio um und wieder zurück.
+  Er ist das Herzstück der GUST-Übertragung — alles oberhalb (Frames,
+  CRC, RS-FEC) und alles unterhalb (Audio-Geräte, HackRF, SDR) baut auf
+  diesem Modul auf.
+
+  Was tut der Modulator konkret?
+  ──────────────────────────────
+  • MFSK-8 Modulation: 8 Töne im Abstand 31,25 Hz, 32 ms je Symbol,
+    phasenkontinuierlich mit optionalem Raised-Cosine-Fenster
+  • Kanalbewusst: ordnet die 8 Töne in einen der 10 NF-Kanäle ein
+    (Bandbreite 250 Hz je Kanal, Span 400–2900 Hz im SSB-Passband)
+  • SYNC-Detektion: erkennt die 8-Symbol-Präambel im Breitband-Scan,
+    schärft Frequenz und Timing nach (sub-Hz, sample-genau)
+  • FFT-Demodulator (zero-padded 4096) → Symbole → Bytes → Frame
+
+  Was tut der Selbsttest?
+  ───────────────────────
+  Vollständiger Loopback: erzeugt Test-Frames, moduliert sie zu Audio,
+  schreibt eine WAV-Datei + CF32-IQ (für inspectrum), demoduliert das
+  Audio zurück und vergleicht das Ergebnis Symbol für Symbol.
+
+  Dauer: einige Sekunden. Schreibt WAV/CF32-Dateien ins aktuelle
+  Verzeichnis. Keine Hardware nötig.
+═══════════════════════════════════════════════════════════════════════
+""")
+    try:
+        antwort = input("Selbsttest jetzt durchführen? [J/n] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    # Default "ja": leere Eingabe, "j", "ja", "y", "yes"
+    return antwort in ("", "j", "ja", "y", "yes")
+
+
 if __name__ == "__main__":
-    _run_tests()
+    # Ohne Parameter: erklärende Begrüßung + explizite Nachfrage.
+    # Mit Parametern (z.B. aus Skripten/Make): direkt durchstarten.
+    if len(sys.argv) == 1:
+        if _intro_and_prompt():
+            _run_tests()
+        else:
+            print("Abgebrochen. Der Selbsttest wurde nicht ausgeführt.")
+            sys.exit(0)
+    else:
+        _run_tests()
