@@ -251,16 +251,20 @@ class HamlibPTT(PTTBackend):
             )
 
     def _cmd(self, command: str) -> str:
-        """Sendet einen rigctld-Befehl und liest die Antwort."""
+        """Sendet einen rigctld-Befehl mit frischer Verbindung pro Kommando.
+
+        rigctld auf Windows schliesst die TCP-Verbindung nach jedem Kommando
+        (Request/Response-Verhalten). Eine persistente Verbindung funktioniert
+        daher nicht zuverlaessig. Loesung: jedes Kommando erhaelt eine neue
+        Verbindung — guenstig, da GUST nur wenige PTT-Kommandos pro Frame sendet.
+        """
         try:
-            self._sock.sendall((command + "\n").encode())
-            resp = self._sock.recv(256).decode().strip()
-            return resp
-        except OSError:
-            # Verbindung unterbrochen → neu verbinden
-            self._connect()
-            self._sock.sendall((command + "\n").encode())
-            return self._sock.recv(256).decode().strip()
+            self._sock.close()
+        except Exception:
+            pass
+        self._connect()
+        self._sock.sendall((command + "\n").encode())
+        return self._sock.recv(256).decode().strip()
 
     def activate(self):
         """PTT einschalten via rigctld 'T 1'."""
@@ -269,12 +273,21 @@ class HamlibPTT(PTTBackend):
         print(f"[PTT HamlibPTT] T 1 → '{resp}' → TX EIN")
 
     def release(self):
-        """PTT ausschalten via rigctld 'T 0'."""
+        """PTT ausschalten via rigctld 'T 0'.
+
+        OSError wird abgefangen und geloggt statt weiterzuwerfen:
+        Das Audio ist zu diesem Zeitpunkt bereits vollstaendig gesendet.
+        Der TRX beendet TX automatisch wenn kein NF-Signal mehr anliegt.
+        """
         if not self._active:
             return   # bereits released — kein Doppel-Kommando an den TRX
         self._active = False
-        resp = self._cmd("T 0")
-        print(f"[PTT HamlibPTT] T 0 → '{resp}' → TX AUS")
+        try:
+            resp = self._cmd("T 0")
+            print(f"[PTT HamlibPTT] T 0 → '{resp}' → TX AUS")
+        except OSError as e:
+            print(f"[PTT HamlibPTT] T 0 fehlgeschlagen ({e}) — "
+                  f"TRX setzt PTT automatisch zurueck")
 
     def get_frequency(self) -> float:
         """Aktuelle VFO-Frequenz abfragen (Hz)."""
