@@ -362,8 +362,12 @@ class AudioTransmitter:
         """
         Gibt Audio über Soundkarte aus mit PTT-Steuerung.
 
+        Erkennt automatisch ob das Gerät Mono oder Stereo erwartet.
+        Geräte ohne Mono-Support (viele Windows USB-Audiokarten) bekommen
+        ein dupliziertes Stereo-Signal — sonst PaErrorCode -9998.
+
         Args:
-            audio:       Float32-Audiosignal (normalisiert)
+            audio:       Float32-Audiosignal, Mono (1D-Array, normalisiert)
             sample_rate: Abtastrate (Standard: 8000 Hz)
         """
         # Normalisieren auf gewünschten Ausgangspegel
@@ -371,10 +375,20 @@ class AudioTransmitter:
         if peak > 0:
             audio = (audio / peak * self.level).astype(np.float32)
 
+        # Auto-Mono/Stereo: Gerät abfragen, Signal ggf. duplizieren
+        try:
+            dev_info   = sd.query_devices(self.device, kind='output')
+            max_out_ch = int(dev_info.get('max_output_channels', 1))
+        except Exception:
+            max_out_ch = 1
+        out_channels = max(1, min(max_out_ch, 2))
+        if out_channels == 2 and audio.ndim == 1:
+            audio = np.column_stack([audio, audio])
+
         duration = len(audio) / sample_rate
         dev_name = self.device if self.device is not None else "Standard"
         print(f"[TX] Gerät: '{dev_name}'  |  Dauer: {duration:.2f}s  |  "
-              f"Pegel: {self.level*100:.0f}%")
+              f"Pegel: {self.level*100:.0f}%  |  Kanäle: {out_channels}")
 
         try:
             self.ptt.activate()
