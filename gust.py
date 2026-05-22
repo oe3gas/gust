@@ -683,6 +683,15 @@ Beispiele:
     sub = parser.add_subparsers(dest="cmd", metavar="SUBCOMMAND")
     sub.required = True
 
+    # Hilfs-Funktion: --device/--level zu einem Subparser hinzufügen
+    def _add_audio_args(p):
+        p.add_argument("--device", metavar="ID",
+                       help="Audio-Gerät: Nummer (z.B. 9) oder Name "
+                            "(überschreibt gateway.json — siehe py gust.py devices)")
+        p.add_argument("--level", type=float, default=None, metavar="%",
+                       help="Audio-Ausgangspegel 1–100%% "
+                            "(überschreibt gateway.json)")
+
     # ── daemon ────────────────────────────────────────────────────────
     p_daemon = sub.add_parser("daemon",
         help="Vollbetrieb: TX + RX + Web-Server")
@@ -695,10 +704,12 @@ Beispiele:
         help="Simulator-Frame-Typen")
     p_daemon.add_argument("--interval", type=int,
         help="Simulator-Intervall in Sekunden")
+    _add_audio_args(p_daemon)
 
     # ── rx ────────────────────────────────────────────────────────────
-    sub.add_parser("rx",
+    p_rx = sub.add_parser("rx",
         help="Monitor-Modus (nur Empfang + Web-Server)")
+    _add_audio_args(p_rx)
 
     # ── tx ────────────────────────────────────────────────────────────
     p_tx = sub.add_parser("tx",
@@ -750,10 +761,7 @@ Beispiele:
                       help="Frame anzeigen ohne zu senden")
     p_tx.add_argument("--callsign", "-c", metavar="RUFZEICHEN",
                       help="Rufzeichen (überschreibt gateway.json)")
-    p_tx.add_argument("--device", metavar="ID",
-                      help="Audio-Gerät: Nummer (z.B. 9) oder Name (py gust.py devices)")
-    p_tx.add_argument("--level", type=float, default=None, metavar="%",
-                      help="Audio-Ausgangspegel 1–100%% (Standard: 80%%, bei ALC-Problemen reduzieren)")
+    _add_audio_args(p_tx)
 
     # ── info ──────────────────────────────────────────────────────────
     p_info = sub.add_parser("info",
@@ -807,6 +815,9 @@ def main() -> None:
     if args.cmd == "daemon" and hasattr(args, "port") and args.port:
         cfg["web"]["port"] = args.port
 
+    # Audio-Overrides für alle Subcommands die --device/--level kennen
+    _apply_audio_overrides(args, cfg)
+
     # ── Windows asyncio Policy ────────────────────────────────────────
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -838,18 +849,7 @@ def main() -> None:
         if callsign:
             cfg["callsign"] = callsign.upper()
 
-        # --device: Nummer (int) oder Name (str) überschreibt gateway.json
-        device_arg = getattr(args, "device", None)
-        if device_arg is not None:
-            try:
-                cfg["audio"]["device"] = int(device_arg)
-            except ValueError:
-                cfg["audio"]["device"] = device_arg
-
-        # --level: Ausgangspegel 1–100% überschreibt Standardwert
-        level_arg = getattr(args, "level", None)
-        if level_arg is not None:
-            cfg["audio"]["level"] = max(0.01, min(1.0, level_arg / 100.0))
+        # --device / --level: bereits via _apply_audio_overrides() angewendet
 
         if args.tx_type == "emergency":
             if not dry_run and not args.confirm:
@@ -882,6 +882,25 @@ def main() -> None:
             "emg_text":     args.emg_text,
         }
         asyncio.run(cmd_tx(cfg, args.tx_type, dry_run, tx_args))
+
+
+def _apply_audio_overrides(args, cfg: dict) -> None:
+    """CLI-Overrides für audio.device / audio.level anwenden (alle Subcommands).
+
+    --device akzeptiert Ganzzahl (ID) oder Name (String) — Integer wird bevorzugt
+    geparst, da Windows MME mehrere Geräte mit gleichem Namen meldet.
+    --level wird von Prozent (1–100) in float (0.01–1.0) umgerechnet.
+    """
+    device_arg = getattr(args, "device", None)
+    if device_arg is not None:
+        try:
+            cfg["audio"]["device"] = int(device_arg)
+        except ValueError:
+            cfg["audio"]["device"] = device_arg
+
+    level_arg = getattr(args, "level", None)
+    if level_arg is not None:
+        cfg["audio"]["level"] = max(0.01, min(1.0, level_arg / 100.0))
 
 
 def _run_async(coro) -> None:
