@@ -180,11 +180,29 @@ def stream_iq_diagnostic(freq_hz, gain_db, iq, label, warmup_s=0.0):
 
 
 def main():
-    p = argparse.ArgumentParser(description="HackRF Dual-Kanal Diagnose")
-    p.add_argument("--freq", type=float, default=14_110_000.0)
-    p.add_argument("--gain", type=int, default=30)
+    p = argparse.ArgumentParser(
+        prog="gust_hackrf_diag.py",
+        description=(
+            "GUST HackRF Diagnose — Dual-Kanal TX-Verifikation\n"
+            "\n"
+            "Testet den HackRF One TX-Pfad: sendet Einzel- und Dual-Kanal-Frames und\n"
+            "prüft auf TX-Underrun, Firmware-Hänger und IQ-Fehler.\n"
+            "Erfordert HackRF + Python 3.9 + PothosSDR (PYTHONPATH setzen)."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument("--freq", type=float, default=14_110_000.0, metavar="HZ",
+                   help="TX-Trägerfrequenz in Hz (Standard: 14 110 000 = 14.110 MHz)")
+    p.add_argument("--gain", type=int, default=30, metavar="DB",
+                   help="HackRF VGA-Gain in dB, 0–47 (Standard: 30)")
     p.add_argument("--skip-single", action="store_true",
-                   help="Einzel-Ton-Test überspringen")
+                   help="Einzel-Kanal-Test überspringen, nur Dual-Kanal testen")
+
+    # No-Args-Hint — vor parse_args()
+    if len(sys.argv) == 1:
+        print("Verwendung: python gust_hackrf_diag.py -h  oder  --help  für Parameterübersicht")
+        sys.exit(0)
+
     args = p.parse_args()
 
     print(f"\n{ts()}  HackRF Diagnose startet")

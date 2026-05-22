@@ -677,28 +677,45 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="gust_audio.py",
-        description="GUST Phase 3 — Audio TX/RX + PTT-Steuerung",
+        description=(
+            "GUST Audio — Gerätelist und TX-Loopback-Test\n"
+            "\n"
+            "Ohne Parameter: Hinweis auf --help.\n"
+            "Mit --list: Alle verfügbaren Audio-Geräte mit IDs ausgeben.\n"
+            "Mit --demo: Demo-Übertragung mit NullPTT (kein Funkgerät nötig).\n"
+            "Mit --ptt-test: PTT-Funktion via rigctld prüfen.\n"
+            "\n"
+            "Hauptverwendung: Modul-Import durch gust.py. Direktaufruf zur\n"
+            "Diagnose von Audio-Gerät und PTT-Backend."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--list", action="store_true",
-        help="Audiogeräte auflisten"
+        "--list", "--list-devices", dest="list", action="store_true",
+        help="Verfügbare Audio-Geräte mit IDs auflisten "
+             "(Integer-ID für gateway.json)"
     )
     parser.add_argument(
         "--demo", action="store_true",
-        help="Demo-Übertragung (NullPTT, kein Funkgerät)"
+        help="Demo-Übertragung mit NullPTT (kein Funkgerät, kein hamlib nötig)"
     )
     parser.add_argument(
         "--ptt-test", action="store_true",
-        help="PTT-Test via hamlib rigctld (localhost:4532)"
+        help="PTT-Funktion über rigctld testen (Toggle key down/up)"
     )
     parser.add_argument(
-        "--hamlib-host", default=RIGCTLD_HOST_DEFAULT,
-        help=f"rigctld Hostname (Standard: {RIGCTLD_HOST_DEFAULT})"
+        "--hamlib-host", default=RIGCTLD_HOST_DEFAULT, metavar="HOST",
+        help=f"rigctld Hostname/IP (Standard: {RIGCTLD_HOST_DEFAULT})"
     )
     parser.add_argument(
-        "--hamlib-port", type=int, default=RIGCTLD_PORT_DEFAULT,
-        help=f"rigctld Port (Standard: {RIGCTLD_PORT_DEFAULT})"
+        "--hamlib-port", type=int, default=RIGCTLD_PORT_DEFAULT, metavar="PORT",
+        help=f"rigctld TCP-Port (Standard: {RIGCTLD_PORT_DEFAULT})"
     )
+
+    # No-Args-Hint — vor parse_args()
+    if len(sys.argv) == 1:
+        print("Verwendung: python gust_audio.py -h  oder  --help  für Parameterübersicht")
+        sys.exit(0)
 
     args = parser.parse_args()
 

@@ -307,6 +307,11 @@ Kanalplan (10 Kanäle × 250 Hz = 2,5 kHz):
         help="Automatische Frequenzsuche ±250 Hz (findet Offset automatisch)",
     )
 
+    # No-Args-Hint — vor parse_args()
+    if len(sys.argv) == 1:
+        print("Verwendung: python gust_decode.py -h  oder  --help  für Parameterübersicht")
+        sys.exit(0)
+
     args = parser.parse_args()
 
     # ── Geräteliste ───────────────────────────────────────────────

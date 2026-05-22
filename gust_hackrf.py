@@ -482,19 +482,28 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="gust_hackrf.py",
-        description="GUST Phase 3 — HackRF/SoapySDR TX-Pfad Labortest",
+        description=(
+            "GUST HackRF — Direkter TX-Schnelltest\n"
+            "\n"
+            "Sendet einen einzelnen GUST-Testframe via HackRF One.\n"
+            "Hauptverwendung: Modul-Import durch gust_tx_test.py und gust_hackrf_diag.py.\n"
+            "Direktaufruf für schnelle Hardware-Verifikation.\n"
+            "Erfordert Python 3.9 + PothosSDR (PYTHONPATH setzen)."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--freq", type=float, default=LAB_TX_FREQ_HZ,
-        help=f"TX-Frequenz in Hz (Standard: {LAB_TX_FREQ_HZ:.0f} = 14.110 MHz)"
+        "--freq", type=float, default=LAB_TX_FREQ_HZ, metavar="HZ",
+        help=f"TX-Trägerfrequenz in Hz "
+             f"(Standard: {LAB_TX_FREQ_HZ:.0f} = 14.110 MHz)"
     )
     parser.add_argument(
-        "--callsign", default="OE3GAS",
-        help="Rufzeichen (Standard: OE3GAS)"
+        "--callsign", default="OE3GAS", metavar="RUFZEICHEN",
+        help="Eigenes Rufzeichen für den Testframe (Standard: OE3GAS)"
     )
     parser.add_argument(
-        "--channel", type=int, default=None,
-        help="NF-Kanal 0–9 (Standard: auto aus Rufzeichen-Hash)"
+        "--channel", type=int, default=None, metavar="0-9",
+        help="NF-Kanal 0–9 (Standard: automatisch aus SHA-256-Hash des Rufzeichens)"
     )
     parser.add_argument(
         "--no-hackrf", action="store_true",
@@ -502,8 +511,13 @@ def main():
     )
     parser.add_argument(
         "--probe", action="store_true",
-        help="SoapySDR Geräte auflisten (SoapySDRUtil --probe)"
+        help="SoapySDR Geräte auflisten (entspricht SoapySDRUtil --probe)"
     )
+
+    # No-Args-Hint — vor parse_args()
+    if len(sys.argv) == 1:
+        print("Verwendung: python gust_hackrf.py -h  oder  --help  für Parameterübersicht")
+        sys.exit(0)
 
     args = parser.parse_args()
 

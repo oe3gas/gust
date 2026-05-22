@@ -47,8 +47,8 @@ import numpy as np
 # STANDARD-PARAMETER
 # ═══════════════════════════════════════════════════════════════════════
 
-TX_FREQ_HZ   = 14_110_000.0
-MIN_GAIN_DB  = 22
+TX_FREQ_HZ   = 144_850_000.0
+MIN_GAIN_DB  = 10
 MAX_GAIN_DB  = 32
 PAUSE_S      = 8.0
 LOG_FILE     = "tx_test_log.csv"
@@ -405,36 +405,70 @@ def run(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="tx_test.py",
-        description="GUST Phase 7 — TX-Test mit Einzel- und Dual-Kanal-Frames",
+        prog="gust_tx_test.py",
+        description=(
+            "GUST TX-Test v1.2 — HackRF TX-Test und Beacon-Modus\n"
+            "\n"
+            "Zwei Betriebsmodi:\n"
+            "\n"
+            "  Standard-Modus  Sendet zufällige Frames via HackRF One (SNR-Messungen,\n"
+            "                  Einzel- und Dual-Kanal). Erfordert HackRF + Python 3.9 +\n"
+            "                  PothosSDR (PYTHONPATH setzen).\n"
+            "\n"
+            "  Beacon-Modus    Interaktive Bake via Audio-PTT und hamlib.\n"
+            "  (--beacon)      Kein HackRF nötig — für alle TRX mit USB-Audio geeignet.\n"
+            "                  Fragt Rufzeichen, Frame-Typen, Gerät und PTT interaktiv ab.\n"
+            "                  Sendet alle 30 Sekunden einen zufälligen Frame."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--freq",      type=float, default=TX_FREQ_HZ,
-                        help=f"TX-Frequenz Hz (Standard: {TX_FREQ_HZ:.0f})")
-    parser.add_argument("--count",     type=int,   default=0,
-                        help="Anzahl Sendungen (0=endlos)")
-    parser.add_argument("--min-gain",  type=int,   default=MIN_GAIN_DB,
-                        help=f"Min VGA Gain dB (Standard: {MIN_GAIN_DB})")
-    parser.add_argument("--max-gain",  type=int,   default=MAX_GAIN_DB,
-                        help=f"Max VGA Gain dB (Standard: {MAX_GAIN_DB})")
-    parser.add_argument("--pause",     type=float, default=PAUSE_S,
-                        help=f"Maximale Pause zwischen Sendungen in s — tatsächliche Pause zufällig 1..max (Standard: {PAUSE_S})")
-    parser.add_argument("--log",       default=LOG_FILE,
-                        help=f"CSV-Logfile (Standard: {LOG_FILE})")
+    parser.add_argument("--beacon", action="store_true",
+                        help="Beacon-Modus starten (interaktiv, kein HackRF)")
+    parser.add_argument("--freq", type=float, default=TX_FREQ_HZ, metavar="HZ",
+                        help=f"TX-Trägerfrequenz in Hz "
+                             f"(Standard: {TX_FREQ_HZ:.0f} = "
+                             f"{TX_FREQ_HZ/1e6:.3f} MHz)")
+    parser.add_argument("--count", type=int, default=0, metavar="N",
+                        help="Anzahl Sendungen, 0 = endlos (Standard: 0)")
+    parser.add_argument("--min-gain", type=int, default=MIN_GAIN_DB, metavar="DB",
+                        help=f"Min HackRF VGA-Gain in dB für Zufallsbereich "
+                             f"(Standard: {MIN_GAIN_DB})")
+    parser.add_argument("--max-gain", type=int, default=MAX_GAIN_DB, metavar="DB",
+                        help=f"Max HackRF VGA-Gain in dB für Zufallsbereich "
+                             f"(Standard: {MAX_GAIN_DB})")
+    parser.add_argument("--pause", type=float, default=PAUSE_S, metavar="SEK",
+                        help=f"Maximale Pause zwischen Sendungen in s — tatsächliche "
+                             f"Pause zufällig 1..max (Standard: {PAUSE_S})")
+    parser.add_argument("--log", default=LOG_FILE, metavar="DATEI",
+                        help=f"CSV-Logfile für TX-Statistik (Standard: {LOG_FILE})")
     parser.add_argument("--dual-only", action="store_true",
                         help="Nur Dual-Kanal-Emergency-Frames senden")
-    parser.add_argument("--no-dual",   action="store_true",
-                        help="Keine Dual-Kanal-Frames")
-    parser.add_argument("--channels",  default=None,
-                        help="Feste Kanäle statt zufällig, z.B. '0,7' (Dual) "
-                             "oder '3' (Einzel). Gilt für alle Sendungen.")
-    parser.add_argument("--gain-sequence", default=None,
-                        help="Exakte Gain-Folge statt zufällig, z.B. "
-                             "'28,26,24,22,20'. Setzt --count automatisch.")
-    parser.add_argument("--no-test",   action="store_true",
-                        help="TEST-Flag NICHT setzen (Standard: alle Frames aus gust_tx_test.py sind Testframes)")
-    parser.add_argument("--dry-run",   action="store_true",
-                        help="Kein HackRF TX — nur Frame-Erzeugung testen")
+    parser.add_argument("--no-dual", action="store_true",
+                        help="Keine Dual-Kanal-Frames (nur Einzel-Kanal)")
+    parser.add_argument("--channels", default=None, metavar="KAN",
+                        help="Feste Kanäle statt zufällig: '3' (Einzel) oder '2,7' "
+                             "(Dual). Gilt für alle Sendungen.")
+    parser.add_argument("--gain-sequence", default=None, metavar="LISTE",
+                        help="Exakte Gain-Folge für SNR-Messungen, z.B. "
+                             "'28,24,20,16,12,8,4,1'. Setzt --count automatisch.")
+    parser.add_argument("--no-test", action="store_true",
+                        help="TEST-Flag NICHT setzen (Standard: alle Frames aus "
+                             "gust_tx_test.py sind Testframes)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Kein TX — Frame-Erzeugung und Timing ohne Hardware testen")
+
+    # No-Args-Hint — vor parse_args()
+    if len(sys.argv) == 1:
+        print("Verwendung: python gust_tx_test.py -h  oder  --help  für Parameterübersicht")
+        sys.exit(0)
+
     args = parser.parse_args()
+
+    # Beacon-Modus: noch nicht implementiert — sauberer Hinweis statt Fehler
+    if args.beacon:
+        print("Beacon-Modus ist noch nicht implementiert (geplant für Phase 8).")
+        print("Bis dahin: `gust tx weather --device <ID>` für einmalige Frames.")
+        sys.exit(0)
 
     # --channels parsen: feste Kanäle
     args.fixed_channels = None

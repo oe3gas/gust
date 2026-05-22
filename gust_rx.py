@@ -602,15 +602,31 @@ async def _demo():
 
     p = argparse.ArgumentParser(
         prog="gust_rx.py",
-        description="GUST RX-Loop — Standalone-Monitor",
+        description=(
+            "GUST RX — Kontinuierlicher Empfangs-Scan-Loop\n\n"
+            "Hört dauerhaft auf allen 10 GUST-Kanälen (NF 400–2900 Hz) zu und\n"
+            "dekodiert eingehende Frames. Gibt dekodierte Frames auf der Konsole aus.\n\n"
+            "Zum Einsatz mit IC-7610, SDRplay oder beliebiger Soundkarte als Audio-Eingang."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("--device",   type=int, default=None,
-                   help="Audiogeräte-ID (Standard: Systemstandard)")
-    p.add_argument("--interval", type=float, default=SCAN_INTERVAL_S,
-                   help=f"Scan-Intervall in s (Standard: {SCAN_INTERVAL_S})")
-    p.add_argument("--window",   type=float, default=WINDOW_S,
-                   help=f"Fenstergröße in s (Standard: {WINDOW_S})")
-    p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("--device", type=int, default=None, metavar="ID",
+                   help="Audio-Eingabegerät (Integer-ID, siehe `python gust.py devices`). "
+                        "Standard: Systemstandard")
+    p.add_argument("--interval", type=float, default=SCAN_INTERVAL_S, metavar="SEK",
+                   help=f"Scan-Intervall in Sekunden — wie oft der Ringpuffer "
+                        f"ausgewertet wird (Standard: {SCAN_INTERVAL_S} s)")
+    p.add_argument("--window", type=float, default=WINDOW_S, metavar="SEK",
+                   help=f"Länge des Analyse-Fensters in Sekunden — muss >= "
+                        f"MAX_FRAME_S + SCAN_INTERVAL_S sein (Standard: {WINDOW_S} s)")
+    p.add_argument("-v", "--verbose", action="store_true",
+                   help="Ausführliche Ausgabe inkl. Debug-Infos (SNR, Offset, Score)")
+
+    # No-Args-Hint — vor parse_args()
+    if len(sys.argv) == 1:
+        print("Verwendung: python gust_rx.py -h  oder  --help  für Parameterübersicht")
+        sys.exit(0)
+
     args = p.parse_args()
 
     logging.basicConfig(

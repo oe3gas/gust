@@ -279,7 +279,7 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
                 event = make_rx_frame_event(frame)
                 await bus.publish(event)
                 log.info("SIM-TX: [P%d] %s von %s",
-                         frame["priority"], frame["type_name"], frame["from"])
+                         frame.get("priority", 0), frame.get("type_name", "?"), frame.get("from", "?"))
 
             # Periodischer Status-Event (alle 60 s)
             now = time.time()
@@ -775,6 +775,12 @@ Beispiele:
 
 def main() -> None:
     parser = build_parser()
+
+    # No-Args-Hint — vor parse_args(), damit Sub-Required nicht zuerst greift
+    if len(sys.argv) == 1:
+        print("Verwendung: python gust.py -h  oder  --help  für Parameterübersicht")
+        sys.exit(0)
+
     args   = parser.parse_args()
 
     # Logging früh initialisieren (ohne Bus, wird bei daemon/rx neu gesetzt)
