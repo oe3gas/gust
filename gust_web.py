@@ -344,6 +344,31 @@ h2:first-child { margin-top: 0; }
 .split-divider   { width: 1px; background: var(--border); flex-shrink: 0; align-self: stretch; }
 .split-sub       { font-size: 10px; color: var(--text2); margin-top: 2px; font-weight: normal; }
 
+/* ── AUDIO-EINSTELLUNGEN ─────────────────────────────────────────── */
+.audio-cfg-card { background: var(--bg2); border: 1px solid var(--border);
+                  border-radius: 6px; padding: 14px 16px; max-width: 640px; }
+.audio-cfg-card h3 { font-size: 12px; color: var(--text2);
+                     text-transform: uppercase; letter-spacing: 1px;
+                     margin-bottom: 10px; }
+.audio-cfg-row { display: flex; gap: 10px; margin-bottom: 10px;
+                 align-items: center; flex-wrap: wrap; }
+.audio-cfg-row label { width: 130px; font-size: 12px; color: var(--text2);
+                       flex-shrink: 0; }
+.audio-cfg-row select { flex: 1; min-width: 240px; background: var(--bg3);
+                        border: 1px solid var(--border); color: var(--text);
+                        padding: 6px 10px; border-radius: 4px;
+                        font-family: inherit; font-size: 12px; }
+.audio-cfg-row select:focus { outline: none; border-color: var(--accent); }
+.audio-cfg-note { font-size: 11px; color: var(--text2); margin: 6px 0 12px;
+                  padding: 8px 10px; background: var(--bg3);
+                  border-left: 2px solid var(--accent); border-radius: 3px; }
+.audio-cfg-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+#audio-cfg-result { margin-top: 10px; font-size: 12px; padding: 8px 10px;
+                    border-radius: 4px; display: none; }
+#audio-cfg-result.ok  { background: rgba(63,185,80,.12);  color: var(--green); }
+#audio-cfg-result.err { background: rgba(248,81,73,.12);  color: var(--red); }
+#audio-cfg-result.warn{ background: rgba(255,166,87,.12); color: var(--orange); }
+
 /* ── MOBILE / RESPONSIVE ─────────────────────────────────────────── */
 @media (max-width: 640px) {
   header { padding: 8px 10px; gap: 8px; flex-wrap: wrap; }
@@ -376,6 +401,7 @@ h2:first-child { margin-top: 0; }
 <nav>
   <button class="active" onclick="switchTab('monitor',this)">📡 Monitor</button>
   <button onclick="switchTab('tx',this)">📤 Senden</button>
+  <button onclick="switchTab('audio',this)">🎛 Audio</button>
   <button onclick="switchTab('status',this)">📊 Status</button>
   <button onclick="switchTab('log',this)">🗒 Log</button>
 </nav>
@@ -555,6 +581,38 @@ h2:first-child { margin-top: 0; }
   <div id="tx-result"></div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════ TAB: AUDIO -->
+<div id="tab-audio" class="tab-panel">
+  <h2>Audio-Geräte</h2>
+  <div class="audio-cfg-card">
+    <h3>Auswahl Eingang (RX) und Ausgang (TX)</h3>
+
+    <div class="audio-cfg-row">
+      <label>RX-Eingang</label>
+      <select id="ac-rx-device"><option value="">– Standard / wie TX –</option></select>
+    </div>
+
+    <div class="audio-cfg-row">
+      <label>TX-Ausgang</label>
+      <select id="ac-tx-device"><option value="">– Standard –</option></select>
+    </div>
+
+    <div class="audio-cfg-note">
+      Änderungen werden in <code>gateway.json</code> gespeichert.
+      <b>TX-Wechsel</b> wirkt sofort beim nächsten Sendevorgang.
+      <b>RX-Wechsel</b> erfordert einen Neustart des Daemons —
+      der RX-Loop hält das Gerät beim Start fest.
+    </div>
+
+    <div class="audio-cfg-actions">
+      <button class="btn" onclick="saveAudioConfig()">💾 Speichern</button>
+      <button class="btn secondary" onclick="loadAudioConfig()">↻ Neu laden</button>
+    </div>
+
+    <div id="audio-cfg-result"></div>
+  </div>
+</div>
+
 <!-- ══════════════════════════════════════════════════════ TAB: STATUS -->
 <div id="tab-status" class="tab-panel">
   <h2>System-Status</h2>
@@ -658,6 +716,7 @@ function switchTab(name, btn) {
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
   if (name === 'status') loadStatus();
+  if (name === 'audio')  loadAudioConfig();
 }
 
 // ═══════════════════════════ TX FORMS ═════════════════════════
@@ -744,6 +803,83 @@ async function loadStatus() {
     document.getElementById('s-rx-count').textContent = state.rxCount;
     applyStatusPush(s);   // Interval + Offset für Countdown übernehmen
   } catch(e) { /* ignore */ }
+}
+
+// ═══════════════════════════ AUDIO CONFIG ═════════════════════
+// Lädt verfügbare Audio-Geräte + aktuelle Auswahl in die Dropdowns.
+// "Standard" = leerer Wert = sounddevice-Default.
+// RX = leerer Wert bedeutet "wie TX" (gust_rx.py fällt automatisch zurück).
+async function loadAudioConfig() {
+  const result = document.getElementById('audio-cfg-result');
+  result.style.display = 'none';
+  try {
+    const [devs, cur] = await Promise.all([
+      apiFetch('/api/audio/devices'),
+      apiFetch('/api/audio/config'),
+    ]);
+
+    function _fill(selectId, items, currentId, placeholder) {
+      const sel = document.getElementById(selectId);
+      sel.innerHTML = `<option value="">${placeholder}</option>`;
+      for (const d of items) {
+        const opt = document.createElement('option');
+        opt.value = String(d.id);
+        const def = d.is_default ? ' ★' : '';
+        opt.textContent = `[${d.id}] ${d.name} (${d.channels}ch)${def}`;
+        // Markiere aktuell konfiguriertes Gerät
+        if (currentId !== null && currentId !== undefined &&
+            String(currentId) === String(d.id)) {
+          opt.selected = true;
+        }
+        sel.appendChild(opt);
+      }
+    }
+
+    _fill('ac-rx-device', devs.input,  cur.rx_device, '– Standard / wie TX –');
+    _fill('ac-tx-device', devs.output, cur.tx_device, '– Standard –');
+
+    if (!cur.writable) {
+      result.className = 'warn';
+      result.style.display = 'block';
+      result.textContent = '⚠ Schreiben deaktiviert — kein config_path bekannt. ' +
+                           'Auswahl kann nicht gespeichert werden.';
+    }
+  } catch (e) {
+    result.className = 'err';
+    result.style.display = 'block';
+    result.textContent = '✗ Geräte konnten nicht geladen werden: ' + e.message;
+  }
+}
+
+async function saveAudioConfig() {
+  const rxSel = document.getElementById('ac-rx-device').value;
+  const txSel = document.getElementById('ac-tx-device').value;
+  // Leer = null (= Standard / wie TX bei RX)
+  const body = {
+    tx_device: txSel === '' ? null : parseInt(txSel, 10),
+    rx_device: rxSel === '' ? null : parseInt(rxSel, 10),
+  };
+
+  const result = document.getElementById('audio-cfg-result');
+  result.style.display = 'none';
+  try {
+    const r = await apiFetch('/api/audio/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    result.className = r.rx_restart_required ? 'warn' : 'ok';
+    result.style.display = 'block';
+    let txt = '✓ ' + (r.message || 'Gespeichert');
+    if (r.rx_restart_required) {
+      txt += '  —  ⚠ RX-Wechsel: bitte GUST-Daemon neu starten.';
+    }
+    result.textContent = txt;
+  } catch (e) {
+    result.className = 'err';
+    result.style.display = 'block';
+    result.textContent = '✗ Fehler: ' + e.message;
+  }
 }
 
 // ═══════════════════════════ CHANNEL GRID ═════════════════════
@@ -1274,13 +1410,20 @@ class WebServer:
 
     def __init__(self, config: dict,
                  event_bus=None,
-                 gateway=None):
+                 gateway=None,
+                 config_path: Optional[str] = None):
         web_cfg = config.get("web", {})
         self._host     = web_cfg.get("host", "0.0.0.0")
         self._port     = int(web_cfg.get("port", 8080))
         self._api_key  = web_cfg.get("api_key", "")
         self._callsign = config.get("callsign", "OE3GAS")
         self._config   = config
+
+        # Pfad zur Konfigurationsdatei — None = Schreiben deaktiviert
+        # (z.B. Standalone-Test). Bei daemon/rx wird er aus gust.py übergeben.
+        self._config_path = config_path
+        # Serialisiert konkurrierende Schreibvorgänge auf gateway.json
+        self._config_write_lock = asyncio.Lock()
 
         self._event_bus = event_bus
         self._gateway   = gateway
@@ -1355,6 +1498,9 @@ class WebServer:
         app.router.add_post("/api/tx/position",  self._handle_tx_position)
         app.router.add_post("/api/tx/text",      self._handle_tx_text)
         app.router.add_post("/api/tx/emergency", self._handle_tx_emergency)
+        app.router.add_get ("/api/audio/devices", self._handle_audio_devices)
+        app.router.add_get ("/api/audio/config",  self._handle_audio_config_get)
+        app.router.add_post("/api/audio/config",  self._handle_audio_config_post)
         app.router.add_get("/ws/rx",  self._handle_ws_rx)
         app.router.add_get("/ws/log", self._handle_ws_log)
         return app
@@ -1467,6 +1613,187 @@ class WebServer:
             "ok": True,
             "message": f"{frame_type.capitalize()}-Frame eingereiht (Prio {priority})"
         })
+
+    # ── AUDIO-KONFIGURATION ───────────────────────────────────────────
+
+    async def _handle_audio_devices(self, _request: web.Request) -> web.Response:
+        """Liste der verfügbaren Audiogeräte (Input + Output) via sounddevice."""
+        try:
+            import sounddevice as sd
+            devs = sd.query_devices()
+            default_in, default_out = sd.default.device
+        except Exception as e:
+            return web.json_response(
+                {"error": f"sounddevice nicht verfügbar: {e}"},
+                status=500,
+            )
+
+        inputs, outputs = [], []
+        for i, d in enumerate(devs):
+            entry = {
+                "id":   i,
+                "name": d.get("name", "?"),
+                "host_api": int(d.get("hostapi", -1)),
+                "default_samplerate": float(d.get("default_samplerate", 0.0)),
+            }
+            if d.get("max_input_channels", 0) > 0:
+                inputs.append({**entry,
+                               "channels": int(d["max_input_channels"]),
+                               "is_default": (i == default_in)})
+            if d.get("max_output_channels", 0) > 0:
+                outputs.append({**entry,
+                                "channels": int(d["max_output_channels"]),
+                                "is_default": (i == default_out)})
+
+        return web.json_response({
+            "input":          inputs,
+            "output":         outputs,
+            "default_input":  default_in,
+            "default_output": default_out,
+        })
+
+    async def _handle_audio_config_get(self, _request: web.Request) -> web.Response:
+        """Aktuell konfigurierte Audiogeräte zurückgeben."""
+        audio = self._config.get("audio", {}) or {}
+        rx    = self._config.get("rx",    {}) or {}
+        return web.json_response({
+            "tx_device":   audio.get("device"),      # int / str / None
+            "rx_device":   rx.get("device"),         # None = "wie TX"
+            "ptt_backend": audio.get("ptt_backend", "null"),
+            "level":       audio.get("level"),
+            "config_path": self._config_path,
+            "writable":    self._config_path is not None,
+        })
+
+    async def _handle_audio_config_post(self, request: web.Request) -> web.Response:
+        """
+        Neue Audio-Auswahl persistieren in gateway.json (atomar).
+
+        Body: {"tx_device": <int|str|null>, "rx_device": <int|str|null>}
+
+        Nur die im Body gesetzten Felder werden überschrieben. Nicht gesetzte
+        Felder bleiben unverändert. rx_device=null bedeutet "wie TX".
+
+        Wirkung:
+          • TX: ab dem nächsten transmit_frame() wirksam (cfg["audio"]["device"]
+            wird live gelesen).
+          • RX: erfordert Neustart des Daemons — der RX-Loop hält das Gerät
+            beim Start fest. Response enthält rx_restart_required: true wenn
+            sich rx_device geändert hat.
+        """
+        if self._config_path is None:
+            raise web.HTTPBadRequest(
+                text='{"error":"Schreiben nicht aktiviert (kein config_path)."}',
+                content_type="application/json",
+            )
+
+        try:
+            body = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text='{"error":"Ungültiger JSON-Body"}',
+                content_type="application/json",
+            )
+
+        # Integer-ID bevorzugt, sonst String (Gerätename), leer/None = Standard
+        def _coerce(val):
+            if val is None or val == "":
+                return None
+            try:
+                return int(val)
+            except (TypeError, ValueError):
+                return str(val)
+
+        # Nicht im Body genannte Felder bleiben unverändert
+        tx_set = "tx_device" in body
+        rx_set = "rx_device" in body
+        new_tx = _coerce(body["tx_device"]) if tx_set else None
+        new_rx = _coerce(body["rx_device"]) if rx_set else None
+
+        async with self._config_write_lock:
+            # Aktuellen Zustand merken (für Diff in Response)
+            old_audio = dict(self._config.get("audio", {}))
+            old_rx    = dict(self._config.get("rx",    {}))
+
+            if tx_set:
+                self._config.setdefault("audio", {})["device"] = new_tx
+            if rx_set:
+                self._config.setdefault("rx", {})["device"] = new_rx
+
+            # In Datei schreiben (atomar)
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None, self._save_config_atomic
+                )
+            except Exception as e:
+                # Rollback im Speicher
+                self._config["audio"] = old_audio
+                self._config["rx"]    = old_rx
+                log.error("gateway.json schreiben fehlgeschlagen: %s", e)
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"Schreiben fehlgeschlagen: {e}"}}',
+                    content_type="application/json",
+                )
+
+        rx_changed = rx_set and (old_rx.get("device") != new_rx)
+        tx_changed = tx_set and (old_audio.get("device") != new_tx)
+
+        msg_parts = []
+        if tx_changed:
+            msg_parts.append(f"TX → {new_tx if new_tx is not None else 'Standard'}")
+        if rx_changed:
+            msg_parts.append(f"RX → {new_rx if new_rx is not None else 'wie TX'}")
+        msg = "Audio-Konfiguration gespeichert" + (
+            ": " + ", ".join(msg_parts) if msg_parts else " (keine Änderung)"
+        )
+
+        log.info("Audio-Config geschrieben: tx=%r rx=%r (Datei: %s)",
+                 new_tx if tx_set else "(unverändert)",
+                 new_rx if rx_set else "(unverändert)",
+                 self._config_path)
+        self._publish_log("INFO", msg)
+
+        return web.json_response({
+            "ok": True,
+            "message": msg,
+            "tx_device": self._config["audio"].get("device"),
+            "rx_device": self._config.get("rx", {}).get("device"),
+            "tx_restart_required": False,    # TX liest cfg live
+            "rx_restart_required": rx_changed,
+        })
+
+    def _save_config_atomic(self) -> None:
+        """
+        gateway.json atomar speichern: tempfile → os.replace.
+
+        Verhindert dass ein abgebrochener Schreibvorgang die Datei
+        leer/halbfertig hinterlässt. Interne Felder mit Prefix '_'
+        (z.B. _verbose) werden nicht persistiert.
+        """
+        import os, tempfile
+        from pathlib import Path
+
+        path = Path(self._config_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Nur persistierbare Felder filtern (keine "_internen")
+        persisted = {k: v for k, v in self._config.items()
+                     if not k.startswith("_")}
+
+        # Temp-Datei im selben Verzeichnis (atomarer Rename)
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=".gateway.", suffix=".json.tmp",
+            dir=str(path.parent),
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(persisted, f, indent=2, ensure_ascii=False)
+                f.write("\n")
+            os.replace(tmp_path, str(path))
+        except Exception:
+            try: os.unlink(tmp_path)
+            except Exception: pass
+            raise
 
     # ── WEBSOCKET HANDLER ─────────────────────────────────────────────
 

@@ -248,7 +248,7 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
         log.info("DRY-RUN aktiv — kein TX, kein Audio.")
 
     # ── WebServer ─────────────────────────────────────────────────────
-    server = WebServer(cfg, event_bus=bus)
+    server = WebServer(cfg, event_bus=bus, config_path=cfg.get("_config_path"))
     await server.start()
     await asyncio.sleep(0.1)   # EventBus-Reader Zeit zum Subscriben geben
 
@@ -325,7 +325,7 @@ async def cmd_rx(cfg: dict) -> None:
     bus = EventBus()
     setup_logging(cfg.get("_verbose", False), bus)
 
-    server = WebServer(cfg, event_bus=bus)
+    server = WebServer(cfg, event_bus=bus, config_path=cfg.get("_config_path"))
     await server.start()
     await asyncio.sleep(0.1)
 
@@ -809,7 +809,8 @@ def main() -> None:
 
     # ── Konfiguration laden ───────────────────────────────────────────
     cfg = load_config(args.config, args.callsign)
-    cfg["_verbose"] = args.verbose
+    cfg["_verbose"]     = args.verbose
+    cfg["_config_path"] = args.config   # für WebServer (Audio-Settings speichern)
 
     # Port-Override für daemon
     if args.cmd == "daemon" and hasattr(args, "port") and args.port:
