@@ -58,22 +58,47 @@ cp gateway.json.example gateway.json
 
 ```bash
 # System dependencies (PortAudio for audio I/O)
-sudo apt update && sudo apt install -y portaudio19-dev python3-pip git
+sudo apt update && sudo apt install -y portaudio19-dev python3-pip python3-venv git
 
 # HackRF support (optional)
 sudo apt install -y soapysdr-tools soapysdr-module-hackrf
 
-# Clone and install
+# Clone
 git clone https://github.com/oe3gas/gust.git
 cd gust
-pip install -r requirements.txt --break-system-packages
+```
 
+**Raspberry Pi OS Bookworm (2023+) requires a virtual environment** — direct
+`pip install` into the system Python is blocked. Create a venv once:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate        # activate (repeat after every new shell)
+pip install -r requirements.txt
+```
+
+The prompt changes to `(.venv)` when the environment is active.
+Always run `source .venv/bin/activate` before using GUST in a new terminal.
+
+> **Tip:** Add the following line to `~/.bashrc` to activate automatically
+> whenever you enter the gust directory:
+> ```bash
+> cd ~/gust && source .venv/bin/activate
+> ```
+
+```bash
 cp gateway.json.example gateway.json
 ```
 
 For Raspberry Pi GPIO PTT (optional):
 ```bash
-pip install RPi.GPIO --break-system-packages
+pip install RPi.GPIO          # inside the venv, no --break-system-packages needed
+```
+
+On **older RPi OS (Bullseye and earlier)** a venv is optional but still recommended.
+Without it, append `--break-system-packages` to the pip command:
+```bash
+pip install -r requirements.txt --break-system-packages
 ```
 
 ### macOS
