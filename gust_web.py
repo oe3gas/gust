@@ -821,17 +821,30 @@ async function loadAudioConfig() {
     function _fill(selectId, items, currentId, placeholder) {
       const sel = document.getElementById(selectId);
       sel.innerHTML = `<option value="">${placeholder}</option>`;
+      // Nach Host-API gruppieren (MME, WASAPI, … bzw. ALSA, JACK unter Linux),
+      // Reihenfolge des ersten Auftretens beibehalten.
+      const groups = new Map();
       for (const d of items) {
-        const opt = document.createElement('option');
-        opt.value = String(d.id);
-        const def = d.is_default ? ' ★' : '';
-        opt.textContent = `[${d.id}] ${d.name} (${d.channels}ch)${def}`;
-        // Markiere aktuell konfiguriertes Gerät
-        if (currentId !== null && currentId !== undefined &&
-            String(currentId) === String(d.id)) {
-          opt.selected = true;
+        const api = d.host_api_name || `API ${d.host_api}`;
+        if (!groups.has(api)) groups.set(api, []);
+        groups.get(api).push(d);
+      }
+      for (const [api, devs] of groups) {
+        const og = document.createElement('optgroup');
+        og.label = api;
+        for (const d of devs) {
+          const opt = document.createElement('option');
+          opt.value = String(d.id);
+          const def = d.is_default ? ' ★' : '';
+          opt.textContent = `[${d.id}] ${d.name} (${d.channels}ch)${def}`;
+          // Markiere aktuell konfiguriertes Gerät
+          if (currentId !== null && currentId !== undefined &&
+              String(currentId) === String(d.id)) {
+            opt.selected = true;
+          }
+          og.appendChild(opt);
         }
-        sel.appendChild(opt);
+        sel.appendChild(og);
       }
     }
 
@@ -1617,10 +1630,17 @@ class WebServer:
     # ── AUDIO-KONFIGURATION ───────────────────────────────────────────
 
     async def _handle_audio_devices(self, _request: web.Request) -> web.Response:
-        """Liste der verfügbaren Audiogeräte (Input + Output) via sounddevice."""
+        """Liste der verfügbaren Audiogeräte (Input + Output) via sounddevice.
+
+        Jedes Gerät erscheint mehrfach — einmal pro Host-API. Unter Windows sind
+        das MME, DirectSound, WASAPI, WDM-KS; unter Linux i.d.R. ALSA und (falls
+        jackd läuft) JACK. Wir liefern den Host-API-Namen pro Gerät mit, damit das
+        Web-UI die Dropdowns nach Host-API gruppieren kann (<optgroup>).
+        """
         try:
             import sounddevice as sd
             devs = sd.query_devices()
+            hostapis = sd.query_hostapis()
             default_in, default_out = sd.default.device
         except Exception as e:
             return web.json_response(
@@ -1628,12 +1648,19 @@ class WebServer:
                 status=500,
             )
 
+        def _hostapi_name(idx: int) -> str:
+            if 0 <= idx < len(hostapis):
+                return str(hostapis[idx].get("name", f"API {idx}"))
+            return f"API {idx}"
+
         inputs, outputs = [], []
         for i, d in enumerate(devs):
+            api = int(d.get("hostapi", -1))
             entry = {
                 "id":   i,
-                "name": d.get("name", "?"),
-                "host_api": int(d.get("hostapi", -1)),
+                "name": str(d.get("name", "?")).strip(),
+                "host_api": api,
+                "host_api_name": _hostapi_name(api),
                 "default_samplerate": float(d.get("default_samplerate", 0.0)),
             }
             if d.get("max_input_channels", 0) > 0:
