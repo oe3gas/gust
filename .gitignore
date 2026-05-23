@@ -19,6 +19,9 @@ env/
 *.cf32
 rx_log.jsonl
 
+# Generierter Komplett-Export (export_gust_sources.ps1) für Claude-Projektwissen
+gust_sources.txt
+
 # ── Konfiguration mit Secrets ──────────────────────────────────────────
 # Die echte Datei NICHT committen (Rufzeichen, API-Key).
 # Die Vorlage (gateway.json.example) UND das Schema werden versioniert.
