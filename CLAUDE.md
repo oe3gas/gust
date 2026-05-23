@@ -92,7 +92,7 @@ PC Windows 11, Python 3.14
   └── SDRplay RSPdx2        →  RX-Referenz On-Air (48 kHz WAV)
 
 IC-7610:
-  ├── USB-CAT  → rigctld -m 3085 → hamlib PTT
+  ├── USB-CAT  → rigctld -m 3078 → hamlib PTT
   ├── ACC/USB Input Level: 40%
   └── HF-Antenne (Dipol 14 MHz), 14.110,000 MHz USB
 ```
@@ -176,7 +176,7 @@ Diese Invariante beim Loop-Start prüfen und ausgeben!
 | `gust_eventbus.py` | asyncio Fan-out Event-Bus, TTL-Filter | — |
 | `gust_web.py` | aiohttp Web-Server, REST API, WebSocket | — |
 | `gust.py` | CLI-Einstiegspunkt (daemon/rx/tx/info/devices) | 0.1.1 |
-| `gust_tx_test.py` | TX-Mess-Skript (--channels, --gain-sequence) | 1.1.0 |
+| `gust_tx_test.py` | TX-Mess-Skript (--tx hackrf/audio, --channels Zufalls-Pool, --gain-sequence, -v, TEST-Flag) | 1.3.0 |
 | `gateway.json` | Stationskonfiguration | — |
 | `requirements.txt` | Python-Abhängigkeiten | — |
 
@@ -205,7 +205,7 @@ Diese Invariante beim Loop-Start prüfen und ausgeben!
 - IC-7610 USB Audio CODEC = ID 9 (MME) in dieser Testumgebung
 
 ### PTT-Backends
-- `hamlib`: rigctld muss laufen (`rigctld -m 3085 -r COM3`)
+- `hamlib`: rigctld muss laufen (`rigctld -m 3078 -r COM3`)
 - `null`: kein Hardware, für Tests
 - `vox`: automatisch, kein CAT
 - `release()` ist idempotent (mehrfacher Aufruf sicher — PTT-Triple-Release-Fix)
@@ -305,15 +305,41 @@ py gust_modulator.py
 # PYTHONPATH setzen (PothosSDR)
 set PYTHONPATH=C:\Program Files\PothosSDR\lib\python3.9
 
-# Gain-Sweep Dual-Kanal
-py gust_tx_test.py --channels 2 7 --gain-sequence 28 26 24 22 20 18 16 14 12 10 8 6 4 2 1
+# Gain-Sweep via HackRF (--tx hackrf nötig!), Kanäle zufällig aus Pool {2,7}
+py gust_tx_test.py --tx hackrf --channels 2,7 --gain-sequence 28,26,24,22,20,18,16,14,12,10,8,6,4,2,1
 ```
+
+**TX über TRX (Audio = Standard, läuft unter Python 3.14):**
+```bash
+# Test-Frames über IC-7610 senden, Gerät/PTT/Pegel aus gateway.json:
+py gust_tx_test.py --channels 0,2,3,5,6,7,8
+
+# Mit expliziter Auswahl (CLI überschreibt gateway.json):
+py gust_tx_test.py --device 9 --ptt hamlib --level 30 --channels 2,7
+```
+
+**gust_tx_test.py v1.3 — Verhalten (wichtig):**
+- **TX-Pfad wählbar via `--tx`:** `audio` (**Standard**, NF über Soundkarte/TRX,
+  z.B. IC-7610 + hamlib-PTT, läuft unter Python 3.14) oder `hackrf` (IQ über
+  HackRF One, erfordert Python 3.9 + PothosSDR).
+- **Audio-Modus-Defaults aus gateway.json** (`audio.device/ptt_backend/level`),
+  überschreibbar mit `--device`/`--ptt`/`--level`. Gain-Parameter sind dort
+  bedeutungslos; Banner/Log zeigen den Pegel statt Gain. Dual-Kanal wird im
+  Audio-Modus als gemischtes NF-Signal gesendet (nicht als HackRF-IQ).
+- **Kanäle sind immer zufällig.** Ohne `--channels` aus allen Kanälen 0–9, mit
+  `--channels 2,3,7` aus dem angegebenen Pool. Dual zieht zwei verschiedene
+  Kanäle, bevorzugt ≥ 3 Kanäle Abstand. (Früher waren `--channels` *feste* Kanäle.)
+- **Listen sind komma-getrennt** (`2,7` und `28,24,20`), nicht leerzeichengetrennt.
+- **Alle gesendeten Frames tragen das TEST-Flag** (Bit 7 im CHANNEL-Byte) — auch
+  im `--beacon`-Modus —, damit Empfänger sie als Testverkehr erkennen.
+- **`py gust_tx_test.py -v`** zeigt nur die aktive Konfiguration aus `gateway.json`
+  und beendet sich (kein TX).
 
 ### Laborkonfiguration
 - **IC-7610 ACC/USB Input Level:** 40%
 - **Software Level (gateway.json):** `"level": 10` (= 10%)
 - **Raised Cosine Windowing:** immer aktiv (`window=True`)
-- **PTT:** `hamlib`, rigctld Modell 3085
+- **PTT:** `hamlib`, rigctld Modell 3078
 - **HF-Frequenz:** 14.110,000 MHz USB
 
 ---

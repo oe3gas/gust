@@ -3,7 +3,7 @@
 GUST — TX-Test + Beacon-Modus                              Phase 7
 ═══════════════════════════════════════════════════════════════════════
 Autor   : OE3GAS
-Version : 1.2.0
+Version : 1.3.0
 Datum   : Mai 2026
 
 Zwei Betriebsmodi:
@@ -28,12 +28,25 @@ CSV-Logs:
   tx_test_log.csv  — HackRF-Test
   beacon_log.csv   — Beacon-Modus
 
+Alle vom Test gesendeten Frames tragen das TEST-Flag (Bit 7 im CHANNEL-Byte),
+damit Empfänger sie als Testverkehr erkennen. Die Kanäle werden grundsätzlich
+zufällig gewählt — standardmäßig aus allen Kanälen 0–9, optional aus einem per
+--channels eingeschränkten Pool.
+
+Der TX-Pfad ist wählbar: --tx audio (Standard, NF über Soundkarte/TRX, z.B.
+IC-7610 + hamlib-PTT, läuft unter Python 3.14) oder --tx hackrf (IQ über HackRF
+One, erfordert Python 3.9 + PothosSDR). Im Audio-Modus stammen Gerät/PTT/Pegel
+aus gateway.json, überschreibbar via --device/--ptt/--level.
+
 Verwendung
 ──────────
-  python gust_tx_test.py                          HackRF-Test (zufällig)
-  python gust_tx_test.py --count 15 --min-gain 24 --max-gain 32
+  python gust_tx_test.py -v                       Nur Konfiguration zeigen + Ende
+  python gust_tx_test.py                          TRX-Test (Audio, Kanäle zufällig)
+  python gust_tx_test.py --channels 2,3,7         Zufällig nur aus 2/3/7
+  python gust_tx_test.py --device 9 --ptt hamlib --channels 2,7
+  python gust_tx_test.py --tx hackrf --gain-sequence 28,24,20,16,12,8,4,1
+  python gust_tx_test.py --tx hackrf --count 15 --min-gain 24 --max-gain 32
   python gust_tx_test.py --dual-only              nur Dual-Kanal
-  python gust_tx_test.py --gain-sequence 28,24,20,16,12,8,4,1
   python gust_tx_test.py --dry-run                kein TX, nur Test
   python gust_tx_test.py --beacon                 Beacon-Modus (interaktiv)
   python gust_tx_test.py --beacon --dry-run       Beacon ohne Hardware
@@ -41,11 +54,13 @@ Verwendung
 
 import argparse
 import csv
+import json
 import os
 import random
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 
@@ -59,6 +74,8 @@ MAX_GAIN_DB  = 32
 PAUSE_S      = 8.0
 LOG_FILE     = "tx_test_log.csv"
 DUAL_PROB    = 0.3   # 30% der Frames als Dual-Kanal
+GATEWAY_FILE = "gateway.json"
+ALL_CHANNELS = list(range(10))   # Kanäle 0–9 — Standard-Pool für Zufallsauswahl
 
 OE_PREFIXES  = ["OE1", "OE2", "OE3", "OE4", "OE5", "OE6", "OE7", "OE8", "OE9"]
 LETTERS      = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -74,6 +91,114 @@ def ts() -> str:
 
 def random_callsign() -> str:
     return random.choice(OE_PREFIXES) + "".join(random.choices(LETTERS, k=3))
+
+
+def load_gateway_config(path: str) -> dict:
+    """gateway.json lesen; fehlt sie, leeres Dict zurück."""
+    p = Path(path)
+    if not p.is_file():
+        return {}
+    try:
+        with p.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"{ts()}  WARNUNG: {path} konnte nicht gelesen werden: {e}", flush=True)
+        return {}
+
+
+def show_config(path: str) -> None:
+    """--verbose: zeigt die aktuelle Konfiguration aus gateway.json und stoppt."""
+    cfg     = load_gateway_config(path)
+    exists  = Path(path).is_file()
+    audio   = cfg.get("audio", {})    or {}
+    rx      = cfg.get("rx", {})       or {}
+    web     = cfg.get("web", {})      or {}
+    rig     = cfg.get("rigctld", {})  or {}
+
+    def row(label, value):
+        print(f"  {label:<18}: {value}", flush=True)
+
+    print(flush=True)
+    print("── GUST TX-Test — Konfiguration (gateway.json) ──────────────", flush=True)
+    if not exists:
+        print(f"  ⚠ {path} nicht gefunden — zeige Standardwerte/leere Felder.", flush=True)
+    else:
+        print(f"  Datei             : {os.path.abspath(path)}", flush=True)
+    print(flush=True)
+
+    row("Rufzeichen", cfg.get("callsign", "—"))
+    print(flush=True)
+    row("Audio-Gerät (TX)", audio.get("device", "— (Standard)"))
+    row("Audio-Level", audio.get("level", "— (1.0)"))
+    row("PTT-Backend", audio.get("ptt_backend", "—"))
+    row("hamlib", f"{audio.get('hamlib_host', 'localhost')}:"
+                  f"{audio.get('hamlib_port', 4532)}")
+    print(flush=True)
+    row("RX aktiviert", rx.get("enabled", "—"))
+    row("RX-Gerät", rx.get("device", "— (wie TX)"))
+    row("RX-Scan-Intervall", f"{rx.get('scan_interval_s', '—')} s")
+    row("RX-Fenster", f"{rx.get('window_s', '—')} s")
+    print(flush=True)
+    row("Web", f"{web.get('host', '—')}:{web.get('port', '—')}")
+    print(flush=True)
+    row("rigctld Auto-Start", rig.get("auto_start", "—"))
+    row("rigctld Modell", rig.get("rig_model", "—"))
+    row("rigctld Gerät", f"{rig.get('device', '—')} @ {rig.get('baud', '—')} Bd")
+    row("rigctld Pfad", rig.get("path", "—"))
+    print(flush=True)
+    row("TX-Frequenz", f"{TX_FREQ_HZ/1e6:.3f} MHz (Skript-Default)")
+    print("─────────────────────────────────────────────────────────────", flush=True)
+    print(flush=True)
+
+
+def pick_dual_channels(pool: list) -> tuple:
+    """Zwei verschiedene Kanäle aus dem Pool wählen, bevorzugt ≥ 3 Kanäle Abstand."""
+    ch_a = random.choice(pool)
+    far  = [c for c in pool if abs(c - ch_a) >= 3]
+    if far:
+        return ch_a, random.choice(far)
+    others = [c for c in pool if c != ch_a]
+    return ch_a, (random.choice(others) if others else ch_a)
+
+
+def resolve_audio_settings(args) -> dict:
+    """
+    Audio-Gerät, PTT-Backend und Pegel für --tx audio auflösen.
+    Priorität: CLI-Flag (--device/--ptt/--level) vor gateway.json.
+    """
+    cfg   = load_gateway_config(args.config)
+    audio = cfg.get("audio", {}) or {}
+
+    device   = args.device if args.device is not None else audio.get("device")
+    ptt_name = args.ptt    if args.ptt    is not None else audio.get("ptt_backend", "null")
+
+    raw_level = args.level if args.level is not None else audio.get("level", 80)
+    try:
+        raw_level = float(raw_level)
+    except (TypeError, ValueError):
+        raw_level = 80.0
+    # gateway.json-Konvention: Wert > 1 = Prozent (30 → 0.30)
+    level = max(0.01, min(1.0, raw_level / 100.0)) if raw_level > 1.0 else float(raw_level)
+
+    return {
+        "device":      device,
+        "ptt_name":    ptt_name,
+        "level":       level,
+        "hamlib_host": audio.get("hamlib_host", "localhost"),
+        "hamlib_port": int(audio.get("hamlib_port", 4532)),
+    }
+
+
+def build_ptt(ptt_name: str, hamlib_host: str, hamlib_port: int):
+    """PTT-Backend-Objekt erzeugen. 'vox'/'null' → kein CAT-Keying (NullPTT)."""
+    if ptt_name == "hamlib":
+        from gust_audio import HamlibPTT
+        return HamlibPTT(host=hamlib_host, port=hamlib_port)
+    if ptt_name == "gpio":
+        from gust_audio import GPIOPTT
+        return GPIOPTT()
+    from gust_audio import NullPTT
+    return NullPTT()
 
 
 def _weather_payload():
@@ -139,7 +264,7 @@ def random_frame():
         return callsign, FrameType.TEXT,         "TEXT",      _text_payload()
 
 
-def make_dual_iq(callsign, frame_type, payload, ch_a, ch_b, use_fec=True):
+def make_dual_iq(callsign, frame_type, payload, ch_a, ch_b, use_fec=True, test=True):
     """
     Erzeugt ein gemischtes IQ-Signal für zwei Kanäle gleichzeitig.
 
@@ -162,12 +287,12 @@ def make_dual_iq(callsign, frame_type, payload, ch_a, ch_b, use_fec=True):
     print(f"  [DUAL] NF Kanal {ch_a} ...", flush=True)
     audio_a, used_a, _ = transmit(
         frame_type, callsign, payload,
-        channel=ch_a, use_fec=use_fec, window=True, add_silence_ms=100,
+        channel=ch_a, use_fec=use_fec, window=True, add_silence_ms=100, test=test,
     )
     print(f"  [DUAL] NF Kanal {ch_b} ...", flush=True)
     audio_b, used_b, _ = transmit(
         frame_type, callsign, payload,
-        channel=ch_b, use_fec=use_fec, window=True, add_silence_ms=100,
+        channel=ch_b, use_fec=use_fec, window=True, add_silence_ms=100, test=test,
     )
 
     print(f"  [DUAL] IQ-Konvertierung Kanal {used_a} ...", flush=True)
@@ -187,6 +312,38 @@ def make_dual_iq(callsign, frame_type, payload, ch_a, ch_b, use_fec=True):
         mixed = (mixed / peak * 0.7).astype(np.complex64)
 
     duration = max_len / HACKRF_SAMPLE_RATE
+    return mixed, used_a, used_b, duration
+
+
+def make_dual_audio(callsign, frame_type, payload, ch_a, ch_b, use_fec=True, test=True):
+    """
+    Dual-Kanal für den Audio-TX-Pfad (IC-7610 o.ä.): erzeugt EIN gemischtes
+    NF-Signal, das beide Kanäle gleichzeitig im SSB-Passband trägt.
+
+    Im Gegensatz zu make_dual_iq() (HackRF-IQ) bleibt hier alles im NF-Band —
+    der TRX moduliert das gemischte Audio regulär in SSB.
+
+    Returns:
+        (audio_mixed: np.float32, used_a: int, used_b: int, duration_s: float)
+    """
+    from gust_modulator import transmit, SAMPLE_RATE
+
+    audio_a, used_a, _ = transmit(
+        frame_type, callsign, payload,
+        channel=ch_a, use_fec=use_fec, window=True, add_silence_ms=100, test=test,
+    )
+    audio_b, used_b, _ = transmit(
+        frame_type, callsign, payload,
+        channel=ch_b, use_fec=use_fec, window=True, add_silence_ms=100, test=test,
+    )
+
+    max_len = max(len(audio_a), len(audio_b))
+    mixed = np.zeros(max_len, dtype=np.float32)
+    mixed[:len(audio_a)] += audio_a
+    mixed[:len(audio_b)] += audio_b
+    # Endgültige Pegelnormierung übernimmt AudioTransmitter.transmit_audio().
+
+    duration = max_len / SAMPLE_RATE
     return mixed, used_a, used_b, duration
 
 
@@ -228,35 +385,65 @@ def run(args):
         encode_emergency_beacon, PRIO_URGENT, INJURY_UNKNOWN,
     )
 
+    # Audio-TX-Einstellungen vorab auflösen, damit das Banner sie auch im
+    # Dry-Run anzeigen kann (Gerät/PTT/Pegel aus CLI bzw. gateway.json).
+    audio_set = resolve_audio_settings(args) if args.tx == "audio" else None
+
+    HackRFTransmitter = None
+    audio_tx = None
+    ptt      = None
     if not args.dry_run:
-        try:
-            from gust_hackrf import HackRFTransmitter
-        except Exception as e:
-            print(f"{ts()}  FEHLER: HackRF nicht verfügbar: {e}", flush=True)
-            print(f"{ts()}  Tipp: --dry-run für Test ohne Hardware", flush=True)
-            sys.exit(1)
+        if args.tx == "hackrf":
+            try:
+                from gust_hackrf import HackRFTransmitter
+            except Exception as e:
+                print(f"{ts()}  FEHLER: HackRF nicht verfügbar: {e}", flush=True)
+                print(f"{ts()}  Tipp: --dry-run für Test ohne Hardware, "
+                      f"oder --tx audio für Soundkarte/TRX", flush=True)
+                sys.exit(1)
+        else:  # audio
+            try:
+                ptt = build_ptt(audio_set["ptt_name"],
+                                audio_set["hamlib_host"], audio_set["hamlib_port"])
+                from gust_audio import AudioTransmitter
+                audio_tx = AudioTransmitter(ptt=ptt, device=audio_set["device"],
+                                            level=audio_set["level"])
+            except Exception as e:
+                print(f"{ts()}  FEHLER: Audio/PTT nicht verfügbar: {e}", flush=True)
+                print(f"{ts()}  Tipp: --dry-run für Test ohne Hardware", flush=True)
+                sys.exit(1)
 
     logger   = TxLogger(args.log)
     tx_count = 0
 
     print(flush=True)
     print("╔══════════════════════════════════════════════════════════╗", flush=True)
-    print("║  GUST TX-Test  v1.1                                  ║", flush=True)
+    print("║  GUST TX-Test  v1.3                                  ║", flush=True)
     print("╠══════════════════════════════════════════════════════════╣", flush=True)
     print(f"║  Frequenz  : {args.freq/1e6:.3f} MHz{'':>37}║", flush=True)
-    if args.gains is not None:
-        gain_str = "→".join(str(g) for g in args.gains) + " dB"
-        print(f"║  Gain-Folge: {gain_str:<44}║", flush=True)
+    if args.tx == "hackrf":
+        print(f"║  TX-Pfad   : {'HackRF One (IQ)':<44}║", flush=True)
+        if args.gains is not None:
+            gain_str = "→".join(str(g) for g in args.gains) + " dB"
+            print(f"║  Gain-Folge: {gain_str:<44}║", flush=True)
+        else:
+            print(f"║  Gain      : {args.min_gain}–{args.max_gain} dB{'':>40}║", flush=True)
     else:
-        print(f"║  Gain      : {args.min_gain}–{args.max_gain} dB{'':>40}║", flush=True)
-    if args.fixed_channels:
-        ch_str = "+".join(str(c) for c in args.fixed_channels)
-        print(f"║  Kanäle    : fest {ch_str:<40}║", flush=True)
+        dev_str = str(audio_set["device"]) if audio_set["device"] is not None else "Standard"
+        info = f"Audio  Gerät {dev_str}, PTT {audio_set['ptt_name']}, {int(audio_set['level']*100)}%"
+        print(f"║  TX-Pfad   : {info:<44}║", flush=True)
+    if args.channel_pool == ALL_CHANNELS:
+        ch_str = "zufällig (alle 0–9)"
+    else:
+        ch_str = "zufällig aus " + ",".join(str(c) for c in args.channel_pool)
+    print(f"║  Kanäle    : {ch_str:<44}║", flush=True)
     print(f"║  Sendungen : {'endlos' if args.count==0 else args.count}{'':>46}║", flush=True)
     dual_mode = "JA (~30% der Frames)" if not args.no_dual else "NEIN"
     if args.dual_only: dual_mode = "NUR Dual-Kanal"
     print(f"║  Dual-Chan : {dual_mode:<44}║", flush=True)
-    print(f"║  Modus     : {'DRY-RUN' if args.dry_run else 'LIVE — HackRF TX aktiv':<44}║", flush=True)
+    live_label = ("LIVE — HackRF TX aktiv" if args.tx == "hackrf"
+                  else "LIVE — Audio TX aktiv")
+    print(f"║  Modus     : {'DRY-RUN' if args.dry_run else live_label:<44}║", flush=True)
     print("╠══════════════════════════════════════════════════════════╣", flush=True)
     print("║  Stoppen   : Strg+C                                     ║", flush=True)
     print("╚══════════════════════════════════════════════════════════╝", flush=True)
@@ -265,12 +452,18 @@ def run(args):
     try:
         while args.count == 0 or tx_count < args.count:
 
-            # Gain: aus fester Folge oder zufällig
+            # Gain: aus fester Folge oder zufällig (nur HackRF-Pfad)
             if args.gains is not None:
                 gain_db = args.gains[tx_count]
             else:
                 gain_db = random.randint(args.min_gain, args.max_gain)
             tx_count += 1
+
+            # Statuslabel: HackRF → Gain, Audio → Pegel
+            if args.tx == "hackrf":
+                tx_label = f"Gain {gain_db:2d} dB"
+            else:
+                tx_label = f"Lvl {int(audio_set['level']*100):3d}%"
 
             # ── Frame-Typ wählen ──────────────────────────────────────
             use_dual = (
@@ -285,22 +478,22 @@ def run(args):
                 ft       = FrameType.EMERG_BEACON
                 ft_name  = "EMERGENCY"
 
-                # Kanäle: fest vorgegeben oder zufällig (mind. 3 Kanäle Abstand)
-                if args.fixed_channels and len(args.fixed_channels) == 2:
-                    ch_a, ch_b = args.fixed_channels
-                else:
-                    ch_a = random.randint(0, 9)
-                    ch_b = (ch_a + random.randint(3, 7)) % 10
+                # Kanäle: zufällig aus dem Pool (bevorzugt ≥ 3 Kanäle Abstand)
+                ch_a, ch_b = pick_dual_channels(args.channel_pool)
 
-                # IQ ZUERST berechnen (HackRF noch NICHT geöffnet):
-                # → Device wird erst kurz vor dem Streamen geöffnet
-                # → keine CPU-Last (FFT/Hilbert) während Device offen ist
+                # Signal ZUERST berechnen (Device noch NICHT geöffnet):
+                # HackRF → gemischtes IQ, Audio → gemischtes NF.
                 try:
-                    iq_dual, used_a, used_b, duration = make_dual_iq(
-                        callsign, ft, payload, ch_a, ch_b,
-                    )
+                    if args.tx == "audio":
+                        audio, used_a, used_b, duration = make_dual_audio(
+                            callsign, ft, payload, ch_a, ch_b, test=True,
+                        )
+                    else:
+                        iq_dual, used_a, used_b, duration = make_dual_iq(
+                            callsign, ft, payload, ch_a, ch_b, test=True,
+                        )
                 except Exception as e:
-                    print(f"{ts()}  FEHLER Dual-IQ: {e}", flush=True)
+                    print(f"{ts()}  FEHLER Dual: {e}", flush=True)
                     tx_count -= 1
                     continue
 
@@ -312,7 +505,7 @@ def run(args):
                     f"{ts()}  TX #{tx_count:3d}  {callsign:<8}  "
                     f"[{ft_name:<10}]  "
                     f"Kanal {used_a}+{used_b}  "
-                    f"Gain {gain_db:2d} dB  "
+                    f"{tx_label}  "
                     f"NF {nf_a:.0f}+{nf_b:.0f} Hz  "
                     f"RF {rf_mhz:.6f} MHz  "
                     f"DUAL ★"
@@ -321,13 +514,12 @@ def run(args):
             else:
                 # ── Einzel-Kanal ──────────────────────────────────────
                 callsign, ft, ft_name, payload = random_frame()
-                fixed_ch = (args.fixed_channels[0]
-                            if args.fixed_channels else None)
+                rnd_ch = random.choice(args.channel_pool)
 
                 try:
                     audio, channel, _ = transmit(
-                        ft, callsign, payload, channel=fixed_ch,
-                        use_fec=True, window=True, add_silence_ms=100,
+                        ft, callsign, payload, channel=rnd_ch,
+                        use_fec=True, window=True, add_silence_ms=100, test=True,
                     )
                 except Exception as e:
                     print(f"{ts()}  FEHLER Frame: {e}", flush=True)
@@ -345,7 +537,7 @@ def run(args):
                     f"{ts()}  TX #{tx_count:3d}  {callsign:<8}  "
                     f"[{ft_name:<10}]  "
                     f"Kanal {used_a}{'':>3}  "
-                    f"Gain {gain_db:2d} dB  "
+                    f"{tx_label}  "
                     f"NF {nf_a:.0f} Hz{'':>8}  "
                     f"RF {rf_mhz:.6f} MHz"
                 )
@@ -359,6 +551,29 @@ def run(args):
                     nf_hz=nf_a, nf_hz_b=nf_b, rf_mhz=round(rf_mhz, 6),
                     duration_ms=round(duration * 1000), status="DRY-RUN",
                 )
+            elif args.tx == "audio":
+                # ── Audio-TX (Soundkarte/TRX via PTT) ─────────────────
+                t0 = time.monotonic()
+                try:
+                    audio_tx.transmit_audio(audio, sample_rate=SAMPLE_RATE)
+                    elapsed = (time.monotonic() - t0) * 1000
+                    print(f"{hdr}  {elapsed:.0f} ms  ✓", flush=True)
+                    logger.write(
+                        nr=tx_count, callsign=callsign, frame_type=ft_name,
+                        channel=used_a, channel_b=used_b, gain_db=0,
+                        nf_hz=nf_a, nf_hz_b=nf_b, rf_mhz=round(rf_mhz, 6),
+                        duration_ms=round(elapsed), status="OK",
+                        notes=f"audio dev={audio_set['device']} ptt={audio_set['ptt_name']}",
+                    )
+                except Exception as e:
+                    elapsed = (time.monotonic() - t0) * 1000
+                    print(f"{hdr}  FEHLER: {e}", flush=True)
+                    logger.write(
+                        nr=tx_count, callsign=callsign, frame_type=ft_name,
+                        channel=used_a, channel_b=used_b, gain_db=0,
+                        nf_hz=nf_a, nf_hz_b=nf_b, rf_mhz=round(rf_mhz, 6),
+                        status="ERROR", notes=str(e),
+                    )
             else:
                 t0 = time.monotonic()
                 try:
@@ -399,6 +614,11 @@ def run(args):
     except KeyboardInterrupt:
         print(f"\n{ts()}  Strg+C — beende ...", flush=True)
     finally:
+        if ptt:
+            try:
+                ptt.release()
+            except Exception:
+                pass
         logger.close()
         print(f"\n{ts()}  Abgeschlossen: {tx_count} Sendungen  "
               f"CSV: {os.path.abspath(args.log)}", flush=True)
@@ -608,7 +828,7 @@ def run_beacon(dry_run: bool = False):
                 audio, channel, _ = transmit(
                     ft, callsign, payload,
                     channel=None,        # deterministisch via SHA-256
-                    use_fec=True, window=True, add_silence_ms=150,
+                    use_fec=True, window=True, add_silence_ms=150, test=True,
                 )
             except Exception as e:
                 print(f"{ts()}  FEHLER Frame-Erzeugung: {e}", flush=True)
@@ -691,9 +911,11 @@ def main():
             "\n"
             "Zwei Betriebsmodi:\n"
             "\n"
-            "  Standard-Modus  Sendet zufällige Frames via HackRF One (SNR-Messungen,\n"
-            "                  Einzel- und Dual-Kanal). Erfordert HackRF + Python 3.9 +\n"
-            "                  PothosSDR (PYTHONPATH setzen).\n"
+            "  Standard-Modus  Sendet zufällige Frames (SNR-Messungen, Einzel- und\n"
+            "                  Dual-Kanal). TX-Pfad via --tx: 'audio' (Standard, TRX\n"
+            "                  über Soundkarte + PTT, Gerät/PTT aus gateway.json,\n"
+            "                  Python 3.14) oder 'hackrf' (HackRF One, Python 3.9 +\n"
+            "                  PothosSDR).\n"
             "\n"
             "  Beacon-Modus    Interaktive Bake via Audio-PTT und hamlib.\n"
             "  (--beacon)      Kein HackRF nötig — für alle TRX mit USB-Audio geeignet.\n"
@@ -702,19 +924,39 @@ def main():
         ),
         epilog=(
             "Beispiele:\n"
+            "  python gust_tx_test.py -v                       Konfiguration aus gateway.json zeigen\n"
             "  python gust_tx_test.py --beacon                 Interaktive Bake (Audio-PTT)\n"
             "  python gust_tx_test.py --beacon --dry-run       Bake ohne Hardware (Trockentest)\n"
-            "  python gust_tx_test.py                          HackRF-Test, zufälliger Gain\n"
-            "  python gust_tx_test.py --count 15 --min-gain 24 --max-gain 32\n"
+            "  python gust_tx_test.py                          TRX-Test (Audio), Kanäle zufällig 0–9\n"
+            "  python gust_tx_test.py --channels 2,3,7         Zufällig nur aus Kanälen 2/3/7\n"
+            "  python gust_tx_test.py --device 9 --ptt hamlib  Gerät/PTT explizit überschreiben\n"
             "  python gust_tx_test.py --dual-only              Nur Dual-Kanal-Emergency\n"
-            "  python gust_tx_test.py --gain-sequence 28,24,20,16,12,8,4,1\n"
-            "  python gust_tx_test.py --dry-run                HackRF-Test ohne TX\n"
+            "  python gust_tx_test.py --dry-run                Kein TX, nur Frame/Timing-Test\n"
+            "  python gust_tx_test.py --tx hackrf --gain-sequence 28,24,20,16,12,8,4,1\n"
+            "  python gust_tx_test.py --tx hackrf --count 15 --min-gain 24 --max-gain 32\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--beacon", action="store_true",
                         help="Beacon-Modus: interaktive Bake via Audio + hamlib PTT. "
                              "Kein HackRF nötig — für alle TRX mit Audio-PTT geeignet.")
+    parser.add_argument("--tx", choices=["hackrf", "audio"], default="audio",
+                        help="TX-Pfad: 'audio' (Standard, NF über Soundkarte/TRX, "
+                             "z.B. IC-7610 + hamlib, läuft unter Python 3.14) oder "
+                             "'hackrf' (IQ via HackRF One, erfordert Python 3.9 + "
+                             "PothosSDR). Im Audio-Modus stammen Gerät/PTT/Pegel aus "
+                             "gateway.json, überschreibbar mit --device/--ptt/--level.")
+    parser.add_argument("--device", type=int, default=None, metavar="ID",
+                        help="Audio-Ausgabegerät (Integer-ID) für --tx audio. "
+                             "Standard: audio.device aus gateway.json. "
+                             "IDs siehe: py gust.py devices")
+    parser.add_argument("--ptt", choices=["hamlib", "vox", "null", "gpio"], default=None,
+                        help="PTT-Backend für --tx audio. "
+                             "Standard: audio.ptt_backend aus gateway.json. "
+                             "'vox'/'null' = kein CAT-Keying.")
+    parser.add_argument("--level", type=float, default=None, metavar="PROZENT",
+                        help="Audio-Ausgangspegel in %% (1–100) für --tx audio. "
+                             "Standard: audio.level aus gateway.json.")
     parser.add_argument("--freq", type=float, default=TX_FREQ_HZ, metavar="HZ",
                         help=f"TX-Trägerfrequenz in Hz "
                              f"(Standard: {TX_FREQ_HZ:.0f} = "
@@ -735,9 +977,16 @@ def main():
                         help="Nur Dual-Kanal-Emergency-Frames senden")
     parser.add_argument("--no-dual", action="store_true",
                         help="Keine Dual-Kanal-Frames (nur Einzel-Kanal)")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="Nur die aktuelle Konfiguration aus gateway.json "
+                             "anzeigen und beenden (kein TX).")
+    parser.add_argument("--config", default=GATEWAY_FILE, metavar="DATEI",
+                        help=f"Konfigurationsdatei für --verbose "
+                             f"(Standard: {GATEWAY_FILE})")
     parser.add_argument("--channels", default=None, metavar="KAN",
-                        help="Feste Kanäle statt zufällig: '3' (Einzel) oder '2,7' "
-                             "(Dual). Gilt für alle Sendungen.")
+                        help="Erlaubte Kanäle für die Zufallsauswahl, z.B. '2,3,7'. "
+                             "Standard: alle Kanäle 0–9 zufällig. Gilt für Einzel- "
+                             "und Dual-Kanal-Frames.")
     parser.add_argument("--gain-sequence", default=None, metavar="LISTE",
                         help="Exakte Gain-Folge für SNR-Messungen, z.B. "
                              "'28,24,20,16,12,8,4,1'. Setzt --count automatisch.")
@@ -746,30 +995,39 @@ def main():
 
     # No-Args-Hint — vor parse_args()
     if len(sys.argv) == 1:
-        print("GUST TX-Test — HackRF TX-Test und interaktive Bake.")
+        print("GUST TX-Test — Test-Sender und interaktive Bake.")
         print()
-        print("Standard-Modus  : HackRF One mit Gain-Sweep / Dual-Kanal-Frames")
+        print("Standard-Modus  : zufällige Test-Frames; TX-Pfad --tx audio (Default,")
+        print("                  TRX via Soundkarte+PTT) oder --tx hackrf (HackRF One)")
         print("Beacon-Modus    : interaktive Bake via Audio-PTT (--beacon)")
+        print()
+        print("Hinweis: ein bloßes 'gust_tx_test.py' sendet nicht — gib mindestens einen")
+        print("         Parameter an (z.B. --channels 2,7 oder --dry-run).")
         print()
         print("Verwendung: python gust_tx_test.py -h  oder  --help  für Parameterübersicht")
         sys.exit(0)
 
     args = parser.parse_args()
 
+    # --verbose: nur Konfiguration anzeigen und beenden
+    if args.verbose:
+        show_config(args.config)
+        return
+
     # Beacon-Modus: eigener Pfad, kein HackRF erforderlich
     if args.beacon:
         run_beacon(dry_run=args.dry_run)
         return
 
-    # --channels parsen: feste Kanäle
-    args.fixed_channels = None
+    # --channels parsen: Pool erlaubter Kanäle für die Zufallsauswahl
+    args.channel_pool = list(ALL_CHANNELS)
     if args.channels:
         try:
-            args.fixed_channels = [int(x) for x in args.channels.split(",")]
-            assert all(0 <= c <= 9 for c in args.fixed_channels)
-            assert 1 <= len(args.fixed_channels) <= 2
+            pool = sorted({int(x) for x in args.channels.split(",")})
+            assert pool and all(0 <= c <= 9 for c in pool)
         except Exception:
-            parser.error("--channels muss '0,7' (Dual) oder '3' (Einzel) sein, Kanäle 0–9")
+            parser.error("--channels muss eine Liste aus Kanälen 0–9 sein, z.B. '2,3,7'")
+        args.channel_pool = pool
 
     # --gain-sequence parsen: exakte Gain-Folge
     args.gains = None
