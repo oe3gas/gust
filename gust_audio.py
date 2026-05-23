@@ -49,8 +49,10 @@ Gateway-Betrieb auf dem Raspberry Pi und am IC-7610.
     rigctl -m 2 T 0    # PTT aus
 """
 
+import os
 import time
 import socket
+import subprocess
 import threading
 import sys
 
@@ -308,6 +310,159 @@ class HamlibPTT(PTTBackend):
         except Exception:
             pass
         print("[PTT HamlibPTT] Verbindung geschlossen")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# rigctld Auto-Start  —  Hintergrundprozess gemaess gateway.json
+# ──────────────────────────────────────────────────────────────────────
+
+def _is_rigctld_alive(host: str, port: int, timeout: float = 0.5) -> bool:
+    """TCP-Connect + kurzes 'f'-Kommando als Lebenszeichen."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as s:
+            s.sendall(b"f\n")
+            return len(s.recv(64)) > 0
+    except (OSError, socket.timeout):
+        return False
+
+
+def ensure_rigctld_running(cfg: dict,
+                           host: Optional[str] = None,
+                           port: Optional[int] = None,
+                           verbose: bool = True) -> Optional[subprocess.Popen]:
+    """
+    Stellt sicher, dass rigctld erreichbar ist.
+
+    Ablauf:
+      1) TCP-Connect zu host:port — laeuft rigctld bereits, return None.
+      2) Nicht erreichbar und cfg['rigctld'] fehlt → RuntimeError mit
+         Anleitung, welcher Block in gateway.json ergaenzt werden muss.
+      3) cfg['rigctld'].auto_start == false → RuntimeError mit dem
+         Befehl, den der User manuell ausfuehren soll.
+      4) auto_start == true → rigctld als Hintergrundprozess starten
+         (Windows: DETACHED_PROCESS, Linux: start_new_session) und bis
+         zu 5 s auf das Hochfahren warten.
+
+    Args:
+        cfg:     vollstaendiges gateway.json-Dict (Section 'rigctld' wird genutzt)
+        host:    Override fuer Host. Default: cfg['rigctld'].host
+                 oder cfg['audio'].hamlib_host oder 'localhost'
+        port:    Override fuer Port. Default analog (4532).
+        verbose: Statusmeldungen auf stdout.
+
+    Returns:
+        None              — rigctld lief bereits
+        subprocess.Popen  — rigctld wurde gestartet (Handle, falls Aufrufer
+                            ihn beenden moechte; meist einfach laufen lassen)
+    """
+    rig_cfg   = cfg.get("rigctld") if isinstance(cfg, dict) else None
+    audio_cfg = cfg.get("audio", {}) if isinstance(cfg, dict) else {}
+
+    if host is None:
+        host = (rig_cfg or {}).get("host", audio_cfg.get("hamlib_host", "localhost"))
+    if port is None:
+        port = int((rig_cfg or {}).get("port", audio_cfg.get("hamlib_port", 4532)))
+
+    # 1) Schon erreichbar?
+    if _is_rigctld_alive(host, port):
+        if verbose:
+            print(f"[rigctld] schon erreichbar @ {host}:{port}")
+        return None
+
+    # 2) Eintrag fehlt komplett
+    if not rig_cfg:
+        raise RuntimeError(
+            f"rigctld nicht erreichbar auf {host}:{port} und kein "
+            f"'rigctld'-Block in gateway.json.\n"
+            f"Bitte Eintrag ergaenzen (Beispiel fuer IC-7610 / COM11):\n"
+            f'  "rigctld": {{\n'
+            f'    "auto_start": true,\n'
+            f'    "path": "rigctld",   // oder absoluter Pfad zur EXE\n'
+            f'    "rig_model": 3078,    // 3078 = IC-7610\n'
+            f'    "device": "COM11",    // serieller Port\n'
+            f'    "baud": 19200,\n'
+            f'    "host": "localhost",\n'
+            f'    "port": 4532\n'
+            f'  }}\n'
+            f"Alternativ rigctld manuell starten: "
+            f"rigctld -m 3078 -r COM11 -s 19200"
+        )
+
+    rig_model = rig_cfg.get("rig_model")
+    device    = rig_cfg.get("device")
+    baud      = rig_cfg.get("baud", 19200)
+    exe       = rig_cfg.get("path") or "rigctld"
+
+    # 3) Auto-Start deaktiviert
+    if not rig_cfg.get("auto_start", False):
+        raise RuntimeError(
+            f"rigctld nicht erreichbar auf {host}:{port} und 'auto_start' "
+            f"ist deaktiviert.\n"
+            f"Manuell starten mit:\n"
+            f"  {exe} -m {rig_model} -r {device} -s {baud} -T {host} -t {port}"
+        )
+
+    # 4) Auto-Start
+    cmd = [
+        exe,
+        "-m", str(rig_model),
+        "-r", str(device),
+        "-s", str(baud),
+        "-T", str(host),
+        "-t", str(port),
+    ]
+    extra = rig_cfg.get("extra_args") or []
+    cmd.extend(str(a) for a in extra)
+
+    if verbose:
+        print(f"[rigctld] Auto-Start als Hintergrundprozess: {' '.join(cmd)}")
+
+    popen_kwargs = {
+        "stdin":  subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if os.name == "nt":
+        # Windows: kein eigenes Fenster, ueberlebt Parent-Prozess
+        popen_kwargs["creationflags"] = (
+            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        )
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    try:
+        proc = subprocess.Popen(cmd, **popen_kwargs)
+    except FileNotFoundError:
+        raise RuntimeError(
+            f"rigctld-Programm nicht gefunden: '{exe}'\n"
+            f"Bitte 'rigctld.path' in gateway.json setzen (absoluter Pfad) "
+            f"oder rigctld in PATH legen."
+        )
+
+    # Auf Boot warten (max. 5 s)
+    for _ in range(50):
+        time.sleep(0.1)
+        if _is_rigctld_alive(host, port):
+            if verbose:
+                print(f"[rigctld] gestartet (PID {proc.pid}), "
+                      f"erreichbar @ {host}:{port}")
+            return proc
+        rc = proc.poll()
+        if rc is not None:
+            raise RuntimeError(
+                f"rigctld beendete sofort (Exit-Code {rc}).\n"
+                f"Pruefen: COM-Port {device} frei? Baud {baud} korrekt? "
+                f"rig_model {rig_model} richtig? rigctld-Pfad '{exe}' korrekt?"
+            )
+
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+    raise RuntimeError(
+        f"rigctld gestartet, aber Port {port} nicht erreichbar nach 5 s. "
+        f"Konfiguration in gateway.json pruefen."
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════

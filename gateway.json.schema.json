@@ -49,6 +49,51 @@
                 }
             }
         },
+        "rigctld": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Konfiguration für rigctld (hamlib). Wird genutzt, wenn audio.ptt_backend = 'hamlib'. Bei auto_start = true startet GUST rigctld als Hintergrundprozess, falls Port nicht erreichbar.",
+            "properties": {
+                "auto_start": {
+                    "type": "boolean",
+                    "description": "Wenn true und rigctld auf host:port nicht erreichbar, wird er beim ersten PTT-Bedarf als Hintergrundprozess gestartet."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Pfad zur rigctld-Executable. Leer/fehlend = 'rigctld' aus PATH."
+                },
+                "rig_model": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Hamlib-Modellnummer (z.B. 3078 = IC-7610, 3085 = IC-7300, 1 = Dummy)."
+                },
+                "device": {
+                    "type": "string",
+                    "description": "Serieller Port (z.B. 'COM11' auf Windows, '/dev/ttyUSB0' auf Linux)."
+                },
+                "baud": {
+                    "type": "integer",
+                    "minimum": 1200,
+                    "maximum": 921600,
+                    "description": "CAT-Baudrate (IC-7610: 19200)."
+                },
+                "host": {
+                    "type": "string",
+                    "description": "Hostname/IP, auf der rigctld lauscht (Standard 'localhost')."
+                },
+                "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "TCP-Port von rigctld (Standard 4532)."
+                },
+                "extra_args": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Zusätzliche Kommandozeilenargumente an rigctld."
+                }
+            }
+        },
         "rx": {
             "type": "object",
             "additionalProperties": false,

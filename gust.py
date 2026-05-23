@@ -364,7 +364,7 @@ async def cmd_rx(cfg: dict) -> None:
 # TX-HILFSFUNKTIONEN  (Phase 7)
 # ═══════════════════════════════════════════════════════════════════════
 
-def _build_ptt(audio_cfg: dict):
+def _build_ptt(audio_cfg: dict, full_cfg: dict | None = None):
     """
     PTT-Backend aus Konfiguration erzeugen.
 
@@ -377,13 +377,24 @@ def _build_ptt(audio_cfg: dict):
       hamlib_host  (Standard: "localhost")
       hamlib_port  (Standard: 4532)
       gpio_pin     (Standard: 17)
+
+    Bei backend == "hamlib" wird vor dem Verbindungsaufbau geprüft, ob
+    rigctld läuft. Falls nicht und cfg['rigctld'].auto_start == true,
+    wird rigctld als Hintergrundprozess gestartet (siehe
+    gust_audio.ensure_rigctld_running).
     """
-    from gust_audio import NullPTT, HamlibPTT, GPIUPTT
+    from gust_audio import NullPTT, HamlibPTT, GPIUPTT, ensure_rigctld_running
     backend = audio_cfg.get("ptt_backend", "null").lower()
 
     if backend == "hamlib":
         host = audio_cfg.get("hamlib_host", "localhost")
         port = int(audio_cfg.get("hamlib_port", 4532))
+        # rigctld ggf. starten (oder klare Fehlermeldung)
+        try:
+            ensure_rigctld_running(full_cfg or {}, host=host, port=port)
+        except RuntimeError as e:
+            log.error("rigctld-Vorbereitung fehlgeschlagen:\n%s", e)
+            raise
         log.info("PTT-Backend: HamlibPTT @ %s:%d", host, port)
         return HamlibPTT(host=host, port=port)
 
@@ -545,7 +556,7 @@ async def cmd_tx(cfg: dict, frame_type: str,
         from gust_audio import AudioTransmitter, AUDIO_LEVEL
         from gust_frame  import channel_frequency, CHANNEL_BW_HZ
 
-        ptt = _build_ptt(cfg["audio"])
+        ptt = _build_ptt(cfg["audio"], cfg)
 
         # Level aus Config: Wert > 1 wird als Prozent interpretiert (50 → 0.5)
         raw_level = cfg["audio"].get("level", AUDIO_LEVEL * 100)
