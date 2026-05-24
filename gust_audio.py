@@ -55,6 +55,7 @@ import socket
 import subprocess
 import threading
 import sys
+import logging
 
 import numpy as np
 from typing import Union, Optional
@@ -75,6 +76,8 @@ except ImportError:
 
 from gust_modulator import SAMPLE_RATE, transmit, receive, load_wav
 from gust_frame import FrameType, encode_weather, build_frame, N_CHANNELS
+
+log = logging.getLogger("gust.audio")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -465,6 +468,58 @@ def ensure_rigctld_running(cfg: dict,
     )
 
 
+# ──────────────────────────────────────────────────────────────────────
+# PTT-Backend aus Konfiguration erzeugen  (gemeinsam genutzt)
+# ──────────────────────────────────────────────────────────────────────
+
+def build_ptt(audio_cfg: dict, full_cfg: Optional[dict] = None) -> PTTBackend:
+    """
+    PTT-Backend aus der Konfiguration instanziieren.
+
+    Gemeinsam genutzt von der CLI (gust.py, One-Shot-TX) und vom
+    Web-TX-Gateway (gust_gateway.py), damit beide Pfade dieselbe
+    PTT-Logik verwenden.
+
+    audio_cfg['ptt_backend']:
+      "null"   → NullPTT   (Simulation, kein Hardware — Standard)
+      "hamlib" → HamlibPTT (rigctld; wird bei Bedarf via gateway.json
+                            ['rigctld'].auto_start automatisch gestartet)
+      "gpio"   → GPIUPTT   (Raspberry Pi GPIO)
+
+    Zusätzliche Felder in audio_cfg:
+      hamlib_host  (Standard: "localhost")
+      hamlib_port  (Standard: 4532)
+      gpio_pin     (Standard: 17)
+
+    Args:
+        audio_cfg: Der "audio"-Abschnitt aus gateway.json.
+        full_cfg:  Vollständige Konfiguration — für ensure_rigctld_running()
+                   (wertet den Abschnitt 'rigctld' aus).
+
+    Raises:
+        RuntimeError: rigctld nicht erreichbar / nicht startbar,
+                      RPi.GPIO nicht verfügbar etc.
+    """
+    backend = (audio_cfg.get("ptt_backend", "null") or "null").lower()
+
+    if backend == "hamlib":
+        host = audio_cfg.get("hamlib_host", "localhost")
+        port = int(audio_cfg.get("hamlib_port", 4532))
+        # rigctld ggf. starten (oder klare Fehlermeldung werfen)
+        ensure_rigctld_running(full_cfg or {}, host=host, port=port)
+        log.info("PTT-Backend: HamlibPTT @ %s:%d", host, port)
+        return HamlibPTT(host=host, port=port)
+
+    elif backend == "gpio":
+        pin = int(audio_cfg.get("gpio_pin", 17))
+        log.info("PTT-Backend: GPIUPTT Pin %d", pin)
+        return GPIUPTT(pin=pin)
+
+    else:
+        log.info("PTT-Backend: NullPTT (Simulation)")
+        return NullPTT()
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # AUDIO-TRANSMITTER
 # ═══════════════════════════════════════════════════════════════════════
@@ -603,6 +658,57 @@ class AudioTransmitter:
               f"Window: {'RC' if window else 'Rect'}")
         self.transmit_audio(audio)
         return used_channel
+
+    def transmit_frame_dual(
+        self,
+        frame_type:  int,
+        callsign:    str,
+        payload:     bytes,
+        channel_a:   int,
+        channel_b:   int,
+        use_fec:     bool = True,
+        window:      bool = True,
+    ) -> tuple:
+        """
+        Parallelkanal-Diversity (ADR-12): denselben Frame gleichzeitig auf
+        ZWEI NF-Kanälen senden.
+
+        Beide Kanal-Signale werden zu EINEM NF-Signal gemischt (addiert) und
+        in einem einzigen PTT-Zyklus ausgegeben — gleiche Sendedauer wie ein
+        Einzel-Frame, die Sendeleistung teilt sich auf beide Kanäle (~6 dB je
+        Kanal). Jede Kopie trägt ihr eigenes CHANNEL-Byte (channel_a bzw.
+        channel_b); der Breitband-RX erkennt beide und dedupliziert.
+
+        Eingesetzt für Notfall-Frames: zwei Kopien auf gespreizten Kanälen
+        erhöhen Dekodierwahrscheinlichkeit und QRM-Schutz deutlich
+        (Simplex ~90% → Dual 100%, T-10.2).
+
+        Args:
+            channel_a, channel_b: die beiden Zielkanäle (0–9, verschieden).
+
+        Returns:
+            (channel_a, channel_b) — die tatsächlich verwendeten Kanäle.
+        """
+        audio_a, used_a, _ = transmit(
+            frame_type, callsign, payload,
+            channel=channel_a, use_fec=use_fec, window=window, add_silence_ms=0,
+        )
+        audio_b, used_b, _ = transmit(
+            frame_type, callsign, payload,
+            channel=channel_b, use_fec=use_fec, window=window, add_silence_ms=0,
+        )
+
+        # Beide Signale auf gleiche Länge bringen und addieren.
+        max_len = max(len(audio_a), len(audio_b))
+        mixed = np.zeros(max_len, dtype=np.float32)
+        mixed[:len(audio_a)] += audio_a
+        mixed[:len(audio_b)] += audio_b
+        # Endgültige Pegelnormierung (Peak → self.level) macht transmit_audio().
+
+        print(f"[TX] Dual-Kanal {used_a}+{used_b}  |  Frames gemischt  |  "
+              f"Window: {'RC' if window else 'Rect'}")
+        self.transmit_audio(mixed)
+        return used_a, used_b
 
     def close(self):
         """PTT lösen und Ressourcen freigeben."""

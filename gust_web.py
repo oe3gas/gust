@@ -316,6 +316,26 @@ h2:first-child { margin-top: 0; }
 .p2-col { color: var(--orange); }  .p2-dot { background: var(--orange); }
 .p1-col { color: var(--red); }     .p1-dot { background: var(--red); }
 
+/* ── TX-WARTESCHLANGE ── */
+#tx-queue { background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 8px; max-width: 640px; }
+.txq-empty { color: var(--text2); font-size: 12px; padding: 6px 4px; }
+.txq-row { display: flex; align-items: center; gap: 10px; padding: 7px 6px;
+  border-bottom: 1px solid var(--border); font-size: 12px; }
+.txq-row:last-child { border-bottom: none; }
+.txq-row.next { background: rgba(230,168,23,.08); border-radius: 4px; }
+.txq-row .tx-prio-dot { width: 8px; height: 8px; }
+.txq-type { flex: 1; color: var(--text); font-weight: bold; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.txq-prio { font-size: 10px; font-weight: bold; letter-spacing: .5px;
+  width: 22px; text-align: center; flex-shrink: 0; }
+.txq-cd { color: var(--accent); font-weight: bold; width: 92px;
+  text-align: right; flex-shrink: 0; white-space: nowrap; }
+.txq-cd.now { color: var(--green); }
+.txq-at { color: var(--text2); font-size: 11px; width: 78px;
+  text-align: right; flex-shrink: 0; white-space: nowrap; }
+@media (max-width: 640px) { .txq-at { display: none; } }
+
 /* ── STATUS CARDS ── */
 #status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; }
@@ -579,6 +599,11 @@ h2:first-child { margin-top: 0; }
   </div>
 
   <div id="tx-result"></div>
+
+  <h2 style="margin-top:20px;">TX-Warteschlange</h2>
+  <div id="tx-queue">
+    <div class="txq-empty">Warteschlange leer — keine ausstehenden Frames</div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════ TAB: AUDIO -->
@@ -675,6 +700,7 @@ const state = {
   wsRetryTimer: null,
   txInterval: 300,    // Sendezyklus in Sekunden (aus /api/status)
   txOffset:   0,      // Zeitversatz dieses Rufzeichens innerhalb des Zyklus
+  txQueue:    [],     // ausstehende TX-Frames (aus /api/tx/queue)
 };
 
 // ═══════════════════════════ THEME ════════════════════════════
@@ -717,6 +743,7 @@ function switchTab(name, btn) {
   btn.classList.add('active');
   if (name === 'status') loadStatus();
   if (name === 'audio')  loadAudioConfig();
+  if (name === 'tx')     fetchTxQueue();
 }
 
 // ═══════════════════════════ TX FORMS ═════════════════════════
@@ -771,6 +798,7 @@ async function sendTx(type) {
       headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
     el.className = 'ok'; el.style.display = 'block';
     el.textContent = '✓ ' + (r.message || 'Frame eingereiht');
+    fetchTxQueue();   // Warteschlange sofort aktualisieren
   } catch(e) {
     el.className = 'err'; el.style.display = 'block';
     el.textContent = '✗ Fehler: ' + e.message;
@@ -1240,7 +1268,7 @@ function connectWsRx() {
       if (msg.type === 'rx_frame')       appendRxFrame(msg.data);
       if (msg.type === 'status')         applyStatusPush(msg.data);
       if (msg.type === 'rx_audio_level') updateAudioMeter(msg.data);
-      if (msg.type === 'tx_done')        log2ui('INFO', 'TX abgeschlossen: ' + (msg.data?.type_name||'?'));
+      if (msg.type === 'tx_done')      { log2ui('INFO', 'TX abgeschlossen: ' + (msg.data?.type_name||'?')); fetchTxQueue(); }
       if (msg.type === 'ping')           state.wsRx.send(JSON.stringify({type:'pong'}));
     } catch(e) { /* ignore malformed */ }
   };
@@ -1340,6 +1368,64 @@ function _tickTxCountdown() {
 
 setInterval(_tickTxCountdown, 1000);
 
+// ═══════════════════════════ TX-WARTESCHLANGE ═════════════════
+// Holt die ausstehenden Frames samt geschätztem Sendezeitpunkt (eta_ts) vom
+// Gateway und zeigt je Frame einen lokal tickenden Countdown. Die Liste wird
+// periodisch und bei Ereignissen (Senden, TX fertig) neu geladen; der
+// Countdown läuft dazwischen rein im Browser aus eta_ts weiter.
+const TXQ_META = {
+  weather:   {icon:'🌤', label:'Wetter',   prio:4},
+  position:  {icon:'📍', label:'Position',  prio:3},
+  text:      {icon:'💬', label:'Freitext',  prio:2},
+  emergency: {icon:'🆘', label:'Notfall',   prio:1},
+};
+
+async function fetchTxQueue() {
+  try {
+    const r = await apiFetch('/api/tx/queue');
+    state.txQueue = Array.isArray(r.queue) ? r.queue : [];
+  } catch(e) { state.txQueue = []; }
+  renderTxQueue();
+}
+
+function renderTxQueue() {
+  const box = document.getElementById('tx-queue');
+  if (!box) return;
+  const q = state.txQueue || [];
+  if (!q.length) {
+    box.innerHTML = '<div class="txq-empty">Warteschlange leer — keine ausstehenden Frames</div>';
+    return;
+  }
+  box.innerHTML = q.map((it, i) => {
+    const m = TXQ_META[it.frame_type] || {icon:'📦', label:it.frame_type, prio:it.priority};
+    const p = it.priority || m.prio;
+    const at = it.eta_ts ? new Date(it.eta_ts*1000).toLocaleTimeString('de-AT') : '–';
+    return `<div class="txq-row${i===0?' next':''}" data-eta="${it.eta_ts||0}">
+      <span class="tx-prio-dot p${p}-dot"></span>
+      <span class="txq-type">${m.icon} ${m.label}</span>
+      <span class="txq-prio p${p}-col">P${p}</span>
+      <span class="txq-cd" id="txq-cd-${i}">–</span>
+      <span class="txq-at">≈ ${at}</span>
+    </div>`;
+  }).join('');
+  _tickTxQueue();
+}
+
+function _tickTxQueue() {
+  const now = Date.now() / 1000;
+  document.querySelectorAll('#tx-queue .txq-row').forEach(row => {
+    const eta = parseFloat(row.dataset.eta) || 0;
+    const rem = Math.max(0, Math.round(eta - now));
+    const cd  = row.querySelector('.txq-cd');
+    if (!cd) return;
+    if (rem <= 0) { cd.textContent = 'sendet …'; cd.classList.add('now'); }
+    else          { cd.textContent = 'in ' + _fmtCountdown(rem); cd.classList.remove('now'); }
+  });
+}
+
+setInterval(_tickTxQueue, 1000);     // lokaler Countdown-Tick
+setInterval(fetchTxQueue, 5000);     // periodischer Abgleich mit dem Gateway
+
 async function apiFetch(path, opts = {}) {
   const headers = opts.headers || {};
   // API-Key aus meta-Tag falls vorhanden (für auth-geschützte Instanzen)
@@ -1381,6 +1467,7 @@ function fmtTs(ts) {
   }
   connectWsRx();
   connectWsLog();
+  fetchTxQueue();
   setInterval(loadStatus, 30000);
 })();
 </script>
@@ -1511,6 +1598,7 @@ class WebServer:
         app.router.add_post("/api/tx/position",  self._handle_tx_position)
         app.router.add_post("/api/tx/text",      self._handle_tx_text)
         app.router.add_post("/api/tx/emergency", self._handle_tx_emergency)
+        app.router.add_get ("/api/tx/queue",     self._handle_tx_queue)
         app.router.add_get ("/api/audio/devices", self._handle_audio_devices)
         app.router.add_get ("/api/audio/config",  self._handle_audio_config_get)
         app.router.add_post("/api/audio/config",  self._handle_audio_config_post)
@@ -1557,7 +1645,7 @@ class WebServer:
             "last_tx":           None,
             "last_rx":           None,
             "audio_device":      self._config.get("audio", {}).get("device", "–"),
-            "ptt_backend":       self._config.get("ptt", {}).get("backend", "null"),
+            "ptt_backend":       self._config.get("audio", {}).get("ptt_backend", "null"),
             "tx_interval_s":     tx_interval,
             "tx_time_offset_s":  tx_offset,
             "version":           "0.1.0",
@@ -1597,6 +1685,16 @@ class WebServer:
     async def _handle_tx_emergency(self, request: web.Request) -> web.Response:
         return await self._enqueue_tx(request, "emergency", priority=1)
 
+    async def _handle_tx_queue(self, _request: web.Request) -> web.Response:
+        """Ausstehende TX-Frames mit geschätztem Sendezeitpunkt (für die GUI)."""
+        queue = []
+        if self._gateway is not None and hasattr(self._gateway, "get_queue"):
+            try:
+                queue = self._gateway.get_queue()
+            except Exception as exc:
+                log.debug("Gateway.get_queue() Fehler: %s", exc)
+        return web.json_response({"queue": queue, "now": time.time()})
+
     async def _enqueue_tx(self, request: web.Request,
                           frame_type: str, priority: int) -> web.Response:
         """Gemeinsame Logik: JSON-Body parsen → Gateway übergeben."""
@@ -1612,13 +1710,23 @@ class WebServer:
         log.info("TX-Anfrage via Web: type=%s priority=%d data=%s",
                  frame_type, priority, data)
 
-        if self._gateway is not None:
-            try:
-                self._gateway.enqueue(frame_dict, priority=priority)
-            except Exception as exc:
-                log.error("Gateway.enqueue() Fehler: %s", exc)
-                raise web.HTTPInternalServerError(
-                    text=f'{{"error":"{exc}"}}', content_type="application/json")
+        # Kein TX-Gateway → Station ist im Empfangs-/Monitor-Modus.
+        # Ehrliche Fehlermeldung statt vorgetäuschtem Erfolg (das Web-UI
+        # zeigt den Fehler an, weil apiFetch bei !ok eine Exception wirft).
+        if self._gateway is None:
+            log.warning("TX-Anfrage ignoriert — kein TX-Gateway aktiv "
+                        "(Empfangs-/Monitor-Modus?).")
+            raise web.HTTPServiceUnavailable(
+                text='{"error":"Kein TX-Gateway aktiv — diese Station ist '
+                     'im Empfangs-/Monitor-Modus."}',
+                content_type="application/json")
+
+        try:
+            self._gateway.enqueue(frame_dict, priority=priority)
+        except Exception as exc:
+            log.error("Gateway.enqueue() Fehler: %s", exc)
+            raise web.HTTPInternalServerError(
+                text=f'{{"error":"{exc}"}}', content_type="application/json")
 
         self._publish_log("INFO",
             f"TX eingereiht: {frame_type} (Prio {priority}) von {self._callsign}")

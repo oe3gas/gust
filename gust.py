@@ -220,8 +220,10 @@ def _print_banner(cfg: dict, mode: str) -> None:
 
 async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
     """
-    Vollbetrieb: SimAdapter → EventBus → WebServer.
-    TX-Hardware-Integration: Phase 7 (Stub vorhanden, noch nicht aktiv).
+    Vollbetrieb: SimAdapter → EventBus → WebServer + TX-Gateway.
+    TX-Gateway (gust_gateway.TxGateway) verbindet die Web-/REST-„Senden"-
+    Buttons mit der Audio-TX-Pipeline. Im DRY-RUN nimmt es Frames an,
+    sendet aber nicht.
     """
     bus = EventBus()
     setup_logging(cfg.get("_verbose", False), bus)
@@ -247,9 +249,17 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
     if dry_run:
         log.info("DRY-RUN aktiv — kein TX, kein Audio.")
 
+    # ── TX-Gateway ────────────────────────────────────────────────────
+    # Verbindet die Web-/REST-„Senden"-Buttons mit der Audio-TX-Pipeline.
+    # Im DRY-RUN werden Frames angenommen und geloggt, aber nicht gesendet.
+    from gust_gateway import TxGateway
+    gateway = TxGateway(cfg, event_bus=bus, dry_run=dry_run)
+
     # ── WebServer ─────────────────────────────────────────────────────
-    server = WebServer(cfg, event_bus=bus, config_path=cfg.get("_config_path"))
+    server = WebServer(cfg, event_bus=bus, gateway=gateway,
+                       config_path=cfg.get("_config_path"))
     await server.start()
+    await gateway.start()
     await asyncio.sleep(0.1)   # EventBus-Reader Zeit zum Subscriben geben
 
     _print_banner(cfg, f"DAEMON {'DRY-RUN' if dry_run else source_label}")
@@ -308,6 +318,7 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
                 await rx_task
             except asyncio.CancelledError:
                 pass
+        await gateway.stop()
         await server.stop()
 
 

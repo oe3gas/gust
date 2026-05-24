@@ -50,6 +50,10 @@ Kernänderungen gegenüber v0.2:
 | TX-Pipeline IC-7610 via USB-Audio + hamlib PTT | ✅ |
 | SNR-Schätzer adaptiv (BUG-06 gefixt, alle Kanäle konsistent) | ✅ |
 | Web-UI (aiohttp, REST + WebSocket, 4 Tabs, Dark/Light Theme) | ✅ |
+| Web-/REST-TX (TxGateway: Slot-Scheduling, Cooldown, Notfall-Vordrang) | ✅ |
+| TX-Slot-Disziplin: P4/P3 → Stations-Slot, P2 → ≤30 s, P1 → sofort | ✅ |
+| Notfall-Frames via Web-TX als Dual-Kanal (Heimatkanal + home+5, ADR-12) | ✅ |
+| Web-UI TX-Warteschlange mit Per-Frame-Countdown (/api/tx/queue) | ✅ |
 | Event-Bus (asyncio Fan-out, TTL-Filter) | ✅ |
 | CLI (daemon/rx/tx/info/devices) | ✅ |
 | Erster On-Air-Test 14.110 MHz (18. Mai 2026) | ✅ |
@@ -175,6 +179,7 @@ Diese Invariante beim Loop-Start prüfen und ausgeben!
 | `gust_decode.py` | Standalone Decoder, Breitband-Scan CLI | 0.2.0 |
 | `gust_eventbus.py` | asyncio Fan-out Event-Bus, TTL-Filter | — |
 | `gust_web.py` | aiohttp Web-Server, REST API, WebSocket | — |
+| `gust_gateway.py` | TX-Gateway: Prioritäts-Queue + Worker für Web-/REST-Sendungen | 1.0.0 |
 | `gust.py` | CLI-Einstiegspunkt (daemon/rx/tx/info/devices) | 0.1.1 |
 | `gust_tx_test.py` | TX-Mess-Skript (--tx hackrf/audio, --channels Zufalls-Pool, --gain-sequence, -v, TEST-Flag) | 1.3.0 |
 | `gateway.json` | Stationskonfiguration | — |
