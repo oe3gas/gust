@@ -34,7 +34,7 @@ assert crc16(b"123456789") == 0x29B1   # IEEE-Referenzwert ✅
 |---|---|---|
 | 0x01 Wetter | 14 Byte | ✅ |
 | 0x02 Position | 18 Byte | ✅ |
-| 0x20 Notfall | 16 Byte | ✅ |
+| 0x20 Notfall | 20 Byte | ✅ |
 | 0x40 Freitext | ≤ 20 Byte | ✅ |
 
 ### T-1.4 Frame-Build / Frame-Parse Roundtrip v0.3 (UT) ✅

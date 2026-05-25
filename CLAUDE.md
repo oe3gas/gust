@@ -243,6 +243,7 @@ Diese Invariante beim Loop-Start prüfen und ausgeben!
 | BUG-04 | RS(255,223) immer 32 Byte Overhead — ineffizient für kurze Frames | 🔲 Phase 8 |
 | BUG-05 | `asyncio.get_event_loop()` deprecated (Python 3.10+, Meshtastic) | 🔲 |
 | BUG-08 | Frame-Contention: zwei Frames in einem 8s-Fenster → zweiter kann verloren gehen | 🔲 |
+| BUG-09 | Freitext-56-Byte-/4-Frame-Limit nur clientseitig (Web-UI); `fragment_text()` ohne Server-Hard-Limit, Wire-Format bis 16 Fragmente — API/CLI umgehen die Grenze (bewusst offen) | 🔲 |
 
 ---
 

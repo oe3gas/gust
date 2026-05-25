@@ -279,6 +279,7 @@ class AudioRXLoop:
         self._scan_count = 0         # Gesamtzahl Scan-Versuche
         self._rx_count   = 0         # Erfolgreich dekodierte Frames
         self._dup_count  = 0         # Unterdrückte Duplikate
+        self._no_sync_count = 0    # Scans ohne SYNC seit letztem Frame
 
         # Letztes Decode-Ergebnis für Diagnose
         self._last_result: Optional[dict] = None
@@ -490,7 +491,8 @@ class AudioRXLoop:
                 if not result.get("crc_ok"):
                     sync_found = result.get("sync_found", False)
                     if sync_found:
-                        # SYNC gefunden aber CRC fehlgeschlagen → Signal zu schwach
+                        # Frame-Struktur erkannt, aber CRC fehlgeschlagen
+                        self._no_sync_count = 0   # SYNC-Sequenz gefunden → Zähler reset
                         try:
                             from gust_frame import channel_frequency as _cf
                             _ch  = result.get("detected_channel") or 2
@@ -499,20 +501,28 @@ class AudioRXLoop:
                             _f0 = 900.0 + result.get("freq_offset_hz", 0)
                         snr = _measure_audio_snr(audio, _f0)
                         msg = (
-                            f"{_ts()}  [RX] ⚠  Scan #{self._scan_count}  SYNC ✓  CRC ✗  "
+                            f"{_ts()}  [RX] ⚠ Frame identifiziert — CRC-Fehler  "
+                            f"(nicht dekodierbar)  "
                             f"Kanal {result.get('detected_channel','?')}  "
                             f"off={result.get('freq_offset_hz',0):+.1f}Hz  "
                             f"Score={result.get('_sync_score',0):.3f}  "
-                            f"SNR≈{snr:+.1f}dB  {self._last_scan_ms:.0f}ms  "
-                            f"— Signal zu schwach für CRC"
+                            f"SNR≈{snr:+.1f}dB  {self._last_scan_ms:.0f}ms"
                         )
                         print(msg, flush=True)
                         log.warning(msg)
                     else:
+                        # Kein SYNC erkannt — Rauschen oder kein GUST-Signal
+                        self._no_sync_count += 1
                         log.debug(
-                            "[RX] Scan #%d  %.0f ms  kein SYNC",
+                            "[RX] Scan #%d  %.0f ms  kein Frame erkannt",
                             self._scan_count, self._last_scan_ms,
                         )
+                        # Periodischer Heartbeat alle 30 Scans (~60s bei 2s-Intervall)
+                        if self._no_sync_count % 30 == 0:
+                            log.info(
+                                "[RX] %d Scans ohne Frame — kein GUST-Signal erkannt",
+                                self._no_sync_count,
+                            )
                     continue
 
                 # Frame dekodiert — SNR messen
@@ -544,6 +554,7 @@ class AudioRXLoop:
 
                 # Neuer Frame → ausgeben + EventBus
                 self._rx_count += 1
+                self._no_sync_count = 0   # Erfolgreich dekodiert → Zähler reset
                 msg = (
                     f"{_ts()}  [RX] ✓ Frame #{self._rx_count}  "
                     f"von {callsign:<8}  [{result.get('type_name','?'):<10}]  "

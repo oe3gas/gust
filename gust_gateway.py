@@ -126,7 +126,7 @@ def _encode_payload(frame_type_str: str, data: dict) -> tuple:
         return FrameType.POSITION, [payload]
 
     if t == "emergency":
-        snippet = str(data.get("text_snippet", "HELP"))[:4].upper()
+        snippet = str(data.get("text_snippet", "HELP"))[:8].upper()
         payload = encode_emergency_beacon(
             lat_deg        = float(data.get("lat",      48.2082)),
             lon_deg        = float(data.get("lon",      16.3738)),
@@ -144,6 +144,19 @@ def _encode_payload(frame_type_str: str, data: dict) -> tuple:
         # Langer Text → mehrere 0x40-Fragmente (werden back-to-back gesendet)
         payloads = fragment_text(text, dest_call=dest, seq_nr=0)
         return FrameType.TEXT, payloads
+
+    if t == "text_fragment":
+        # EIN vorberechnetes 0x40-Fragment (Schedule-getaktet vom Web-UI).
+        # Es wird NICHT erneut fragmentiert — Index/Total/Seq kommen vom Client,
+        # sodass der Empfänger die Teile später wieder zusammensetzen kann.
+        from gust_frame import encode_text_fragment
+        chunk = str(data.get("text_chunk", ""))
+        dest  = (str(data.get("to", "")) or "CQCQCQ").upper()
+        seq   = int(data.get("seq_nr",     0)) & 0xFF
+        idx   = int(data.get("frag_index", 0))
+        total = max(1, int(data.get("frag_total", 1)))
+        payload = encode_text_fragment(dest, chunk, seq, idx, total)
+        return FrameType.TEXT, [payload]
 
     raise ValueError(f"Unbekannter Frame-Typ: {frame_type_str!r}")
 

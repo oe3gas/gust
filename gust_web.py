@@ -451,9 +451,16 @@ h2:first-child { margin-top: 0; }
   <h2>Kanalübersicht — 10 Kanäle (400–2900 Hz NF)</h2>
   <div id="channel-grid"></div>
 
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px;">
     <h2 style="margin:0;">Live RX-Feed</h2>
-    <label id="autoscroll-toggle"><input type="checkbox" id="autoscroll" checked> Auto-Scroll</label>
+    <div style="display:flex;gap:14px;align-items:center;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text2);font-size:12px;"
+             title="Verhindert Dekodierung des eigenen Sendesignals (TRX-Monitor-Schutz)">
+        <input type="checkbox" id="ignore-rx-while-tx" style="accent-color:var(--accent);">
+        Ignore Decodes while Sending
+      </label>
+      <label id="autoscroll-toggle"><input type="checkbox" id="autoscroll" checked> Auto-Scroll</label>
+    </div>
   </div>
   <div class="audio-toggles">
     <label class="toggle-sw">
@@ -479,7 +486,7 @@ h2:first-child { margin-top: 0; }
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p4-dot"></span>
       <span class="tx-prio-name p4-col">Telemetrie</span>
-      <span class="tx-prio-info">P4 · zyklisch alle <span id="p4-interval">5 min</span> — nächste Sendung in <span class="cd" id="p4-next">–</span></span>
+      <span class="tx-prio-info">P4 · Schedule: alle <span id="p4-interval">5 min</span> — nächster Schedule in <span class="cd" id="p4-next">–</span></span>
     </div>
     <div class="tx-btn-row">
       <button class="tx-btn active" onclick="selectTxType('weather',this)">🌤 Wetter</button>
@@ -492,7 +499,7 @@ h2:first-child { margin-top: 0; }
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p3-dot"></span>
       <span class="tx-prio-name p3-col">Navigation</span>
-      <span class="tx-prio-info">P3 · nächster Zyklus in <span class="cd" id="p3-next">–</span></span>
+      <span class="tx-prio-info">P3 · nächster Schedule in <span class="cd" id="p3-next">–</span></span>
     </div>
     <div class="tx-btn-row">
       <button class="tx-btn" onclick="selectTxType('position',this)">📍 Position</button>
@@ -542,7 +549,10 @@ h2:first-child { margin-top: 0; }
       <input type="number" id="w-rain" value="0.0" step="0.1"><span class="unit">mm/h</span></div>
     <div class="field-row"><label>UV-Index</label>
       <input type="number" id="w-uv" value="3" min="0" max="15"></div>
-    <button class="btn" onclick="sendTx('weather')">Wetter senden</button>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn" onclick="sendTx('weather')">Wetter senden</button>
+      <button class="btn secondary" type="button" onclick="clearForm('weather')">Löschen</button>
+    </div>
   </div>
 
   <!-- Position-Formular -->
@@ -559,16 +569,30 @@ h2:first-child { margin-top: 0; }
       <input type="number" id="p-hdg" value="0" min="0" max="359"><span class="unit">°</span></div>
     <div class="field-row"><label>Mobil</label>
       <select id="p-mobile"><option value="0">Nein (Bake)</option><option value="1">Ja (mobil)</option></select></div>
-    <button class="btn" onclick="sendTx('position')">Position senden</button>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn" onclick="sendTx('position')">Position senden</button>
+      <button class="btn secondary" type="button" onclick="clearForm('position')">Löschen</button>
+    </div>
   </div>
 
   <!-- Text-Formular -->
   <div id="form-text" class="tx-form hidden">
     <div class="field-row"><label>An (Rufzeichen)</label>
-      <input type="text" id="t-to" value="OE3GAT" maxlength="6" style="text-transform:uppercase"></div>
+      <input type="text" id="t-to" value="" maxlength="6" style="text-transform:uppercase" placeholder="z.B. OE1XTU"></div>
     <div class="field-row"><label>Nachricht</label>
-      <input type="text" id="t-msg" value="OE3GAS de OE3GAS, Test 73" maxlength="80"></div>
-    <button class="btn" onclick="sendTx('text')">Text senden</button>
+      <input type="text" id="t-msg" value="" maxlength="56"
+             placeholder="Nachricht (max. 56 Byte / 4 Frames)"
+             oninput="updateTextCounter()"></div>
+    <div id="text-counter-row" style="font-size:11px;color:var(--text2);margin-bottom:8px;
+         display:flex;gap:16px;align-items:center;">
+      <span id="text-byte-count">0 / 56 Byte</span>
+      <span id="text-frame-count">1 Frame</span>
+      <span id="text-remaining"></span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn" onclick="sendTx('text')">Text senden</button>
+      <button class="btn secondary" type="button" onclick="clearForm('text')">Löschen</button>
+    </div>
   </div>
 
   <!-- Notfall-Formular -->
@@ -593,9 +617,12 @@ h2:first-child { margin-top: 0; }
         <option value="1">Mittel</option><option value="2">Hoch</option>
         <option value="3" selected>Sofort</option>
       </select></div>
-    <div class="field-row"><label>Kurztext (4 Z.)</label>
-      <input type="text" id="e-text" value="HELP" maxlength="4" style="text-transform:uppercase"></div>
-    <button class="btn danger" onclick="sendTx('emergency')">🆘 NOTFALL senden</button>
+    <div class="field-row"><label>Kurztext (8 Z.)</label>
+      <input type="text" id="e-text" value="" maxlength="8" style="text-transform:uppercase" placeholder="z.B. TRAPPED"></div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn danger" onclick="sendTx('emergency')">🆘 NOTFALL senden</button>
+      <button class="btn secondary" type="button" onclick="clearForm('emergency')">Löschen</button>
+    </div>
   </div>
 
   <div id="tx-result"></div>
@@ -663,6 +690,25 @@ h2:first-child { margin-top: 0; }
     <div class="stat-card"><div class="key">PTT-Backend</div><div class="val" id="s-ptt">–</div></div>
     <div class="stat-card"><div class="key">RX-Frames (Session)</div><div class="val green" id="s-rx-count">0</div></div>
   </div>
+  <div style="margin-top:16px;background:var(--bg2);border:1px solid var(--border);
+       border-radius:6px;padding:14px;width:fit-content;max-width:100%;">
+    <h2 style="margin-top:0;margin-bottom:10px;">Konfiguration</h2>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <label style="color:var(--text2);font-size:12px;width:140px;flex-shrink:0;"
+             title="Lead (vor Audio) = Tail (nach Audio) — symmetrisch">
+        PTT Lead/Tail
+      </label>
+      <input type="number" id="cfg-ptt-delay" value="250" min="0" max="2000" step="10"
+             style="background:var(--bg3);border:1px solid var(--border);color:var(--text);
+                    padding:5px 8px;border-radius:4px;font-family:inherit;font-size:12px;
+                    width:80px;flex-shrink:0;"
+             title="PTT Lead- und Tail-Verzögerung in Millisekunden (Lead = vor Audio, Tail = nach Audio)">
+      <span style="color:var(--text2);font-size:11px;white-space:nowrap;flex-shrink:0;">ms</span>
+      <button class="btn secondary" style="margin-top:0;padding:5px 12px;flex-shrink:0;"
+              onclick="savePttDelay()">Speichern</button>
+    </div>
+    <div id="cfg-save-result" style="font-size:11px;margin-top:6px;display:none;"></div>
+  </div>
   <div style="margin-top:16px;">
     <button class="btn secondary" onclick="loadStatus()">↻ Aktualisieren</button>
   </div>
@@ -698,9 +744,14 @@ const state = {
   wsRx:       null,
   wsLog:      null,
   wsRetryTimer: null,
-  txInterval: 300,    // Sendezyklus in Sekunden (aus /api/status)
-  txOffset:   0,      // Zeitversatz dieses Rufzeichens innerhalb des Zyklus
-  txQueue:    [],     // ausstehende TX-Frames (aus /api/tx/queue)
+  txInterval: 300,    // TX-Schedule-Intervall in Sekunden (aus /api/status)
+  txOffset:   0,      // Zeitversatz dieses Rufzeichens innerhalb des TX-Schedules
+  txQueue:    [],     // ausstehende TX-Frames (aus /api/tx/queue) — wird alle 5s überschrieben!
+  isSending:  false,  // true während eines laufenden TX (TRX-Monitor-Schutz)
+  fragCache:  {},     // RX-Reassembly: 'call:seq' → {total, frags, ts, ch, frm, dest, t0}
+  txFragQueue: [],    // TX: wartende Einzelfragmente (eigener Name — NICHT txQueue!)
+  txFragActive: false,// true = Fragment-Sende-Loop läuft gerade
+  _txDoneResolve: null,// Resolver-Callback für _waitForTxDone()
 };
 
 // ═══════════════════════════ THEME ════════════════════════════
@@ -754,6 +805,32 @@ function selectTxType(type, btn) {
   document.getElementById('form-' + type).classList.remove('hidden');
 }
 
+function updateTextCounter() {
+  const msg    = document.getElementById('t-msg')?.value || '';
+  const bytes  = new TextEncoder().encode(msg).length;
+  const frames = Math.max(1, Math.ceil(bytes / 14));
+  const remain = 56 - bytes;
+
+  const bc = document.getElementById('text-byte-count');
+  const fc = document.getElementById('text-frame-count');
+  const rc = document.getElementById('text-remaining');
+  if (!bc) return;
+
+  bc.textContent = bytes + ' / 56 Byte';
+  bc.style.color = bytes > 56 ? 'var(--red)' : bytes > 42 ? 'var(--orange)' : 'var(--text2)';
+
+  fc.textContent = frames + (frames === 1 ? ' Frame' : ' Frames');
+  fc.style.color = frames >= 4 ? 'var(--orange)' : 'var(--green)';
+
+  if (remain >= 0) {
+    rc.textContent = remain + ' Byte frei';
+    rc.style.color = remain < 14 ? 'var(--orange)' : 'var(--text2)';
+  } else {
+    rc.textContent = 'Limit überschritten!';
+    rc.style.color = 'var(--red)';
+  }
+}
+
 async function sendTx(type) {
   let payload = {};
   if (type === 'weather') {
@@ -776,10 +853,63 @@ async function sendTx(type) {
       mobile: parseInt(document.getElementById('p-mobile').value) === 1,
     };
   } else if (type === 'text') {
-    payload = {
-      to:   document.getElementById('t-to').value.toUpperCase(),
-      text: document.getElementById('t-msg').value,
-    };
+    const msgVal   = document.getElementById('t-msg').value;
+    const toCall   = (document.getElementById('t-to').value || '').toUpperCase() || 'CQCQCQ';
+    const encoder  = new TextEncoder();
+    const msgBytes = encoder.encode(msgVal).length;
+    const txEl     = document.getElementById('tx-result');
+
+    if (msgBytes === 0) {
+      txEl.className = 'err'; txEl.style.display = 'block';
+      txEl.textContent = '✗ Nachricht ist leer.';
+      setTimeout(() => txEl.style.display = 'none', 3000);
+      return;
+    }
+    if (msgBytes > 56) {
+      alert('Nachricht zu lang: ' + msgBytes + ' Byte (max. 56 Byte / 4 Frames).');
+      return;
+    }
+
+    // Byte-korrekt in 14-Byte-Chunks aufteilen (UTF-8, nicht zeichenbasiert)
+    const CHUNK = 14;
+    const chunks = [];
+    let remaining = msgVal;
+    while (remaining.length > 0) {
+      let lo = 0, hi = remaining.length;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (encoder.encode(remaining.slice(0, mid)).length <= CHUNK) lo = mid;
+        else hi = mid - 1;
+      }
+      if (lo === 0) lo = 1;   // Schutz gegen Endlosschleife bei Mehrbyte-Zeichen
+      chunks.push(remaining.slice(0, lo));
+      remaining = remaining.slice(lo);
+    }
+    if (chunks.length === 0) chunks.push('');
+
+    const nFrames = chunks.length;
+    const seqNr   = Math.floor(Math.random() * 256);   // gemeinsame Sequenznummer
+
+    if (nFrames > 1) {
+      const ivSec = state.txInterval || 300;
+      const mins  = Math.round((nFrames * ivSec) / 60);
+      const ok = confirm(
+        'Diese Nachricht wird mit ' + nFrames + ' Frames gesendet.\n' +
+        'Nach deinem Schedule dauert das ca. ' + mins + ' Minuten.\n\n' +
+        'Die Frames werden einzeln je Schedule-Slot gesendet.\nTrotzdem senden?'
+      );
+      if (!ok) return;
+    }
+
+    // Fragmente in die (eigene) TX-Fragment-Queue legen und Loop starten
+    for (let i = 0; i < chunks.length; i++) {
+      state.txFragQueue.push({
+        to: toCall, text_chunk: chunks[i], seq_nr: seqNr,
+        frag_index: i, frag_total: chunks.length,
+      });
+    }
+    _startTxQueue();
+    return;   // kein gemeinsamer POST — der Queue-Loop übernimmt das Senden
   } else if (type === 'emergency') {
     payload = {
       lat:       parseFloat(document.getElementById('e-lat').value),
@@ -787,11 +917,12 @@ async function sendTx(type) {
       persons:   parseInt(document.getElementById('e-persons').value),
       injury:    parseInt(document.getElementById('e-injury').value),
       priority:  parseInt(document.getElementById('e-prio').value),
-      text_snippet: document.getElementById('e-text').value.toUpperCase().padEnd(4,' ').slice(0,4),
+      text_snippet: document.getElementById('e-text').value.toUpperCase().padEnd(8,' ').slice(0,8),
     };
   }
 
   const el = document.getElementById('tx-result');
+  state.isSending = true;
   el.style.display = 'none';
   try {
     const r = await apiFetch('/api/tx/' + type, { method: 'POST',
@@ -820,7 +951,7 @@ async function loadStatus() {
       document.getElementById('s-ch-offset').textContent =
         om > 0 ? `+${om}m ${String(os).padStart(2,'0')}s` : `+${os}s`;
       document.getElementById('s-ch-cycle').textContent  =
-        `Zyklus: ${im} min`;
+        `Schedule: ${im} min`;
     }
     document.getElementById('s-uptime').textContent = formatUptime(s.uptime_s);
     document.getElementById('s-queue').textContent  = s.queue_depth ?? '–';
@@ -831,6 +962,107 @@ async function loadStatus() {
     document.getElementById('s-rx-count').textContent = state.rxCount;
     applyStatusPush(s);   // Interval + Offset für Countdown übernehmen
   } catch(e) { /* ignore */ }
+}
+
+async function savePttDelay() {
+  const ms  = parseInt(document.getElementById('cfg-ptt-delay')?.value || '250');
+  const res = document.getElementById('cfg-save-result');
+  try {
+    await apiFetch('/api/config', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({audio: {ptt_delay_ms: ms}}),
+    });
+    res.style.display = 'block';
+    res.style.color   = 'var(--green)';
+    res.textContent   = '✓ Gespeichert (' + ms + ' ms) — wirkt ab nächstem TX';
+  } catch(e) {
+    res.style.display = 'block';
+    res.style.color   = 'var(--red)';
+    res.textContent   = '✗ Fehler: ' + e.message;
+  }
+  setTimeout(() => { if(res) res.style.display='none'; }, 4000);
+}
+
+// ═══════════════════════ TX-FRAGMENT-SCHEDULING ═══════════════
+// Sendet mehrteilige Freitext-Nachrichten Fragment für Fragment,
+// jeweils ein Fragment pro Schedule-Slot (statt alle back-to-back).
+async function _startTxQueue() {
+  if (state.txFragActive || state.txFragQueue.length === 0) return;
+  state.txFragActive = true;
+  const el = document.getElementById('tx-result');
+  try {
+    while (state.txFragQueue.length > 0) {
+      const frag = state.txFragQueue.shift();
+      if (el) {
+        el.className = 'ok'; el.style.display = 'block';
+        el.textContent = `⏳ Sende Fragment ${frag.frag_index + 1}/${frag.frag_total} …`;
+      }
+      state.isSending = true;
+      try {
+        await apiFetch('/api/tx/text_fragment', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(frag),
+        });
+        await _waitForTxDone(30000);   // auf die tatsächliche Übertragung warten
+      } catch(e) {
+        if (el) { el.className = 'err';
+          el.textContent = `✗ Fehler bei Fragment ${frag.frag_index + 1}: ${e.message}`; }
+        state.txFragQueue = [];       // bei Fehler: Rest verwerfen
+        break;
+      } finally {
+        state.isSending = false;
+      }
+
+      if (state.txFragQueue.length > 0) {
+        // Bis zum nächsten Schedule-Slot warten — mit Live-Countdown in der Anzeige
+        const label = `✓ Fragment ${frag.frag_index + 1}/${frag.frag_total} gesendet — nächstes in `;
+        await _countdownWait(Math.max(1, _nextCycleSecs()), (rem) => {
+          if (el) el.textContent = label + _fmtCountdown(rem);
+        });
+      } else if (el) {
+        el.textContent = `✓ Alle ${frag.frag_total} Fragmente gesendet.`;
+        setTimeout(() => { if (el) el.style.display = 'none'; }, 5000);
+      }
+    }
+  } finally {
+    state.txFragActive = false;
+  }
+}
+
+// Wartet auf das nächste 'tx_done'-WebSocket-Event (oder Timeout-Fallback).
+// Der WS-onmessage-Handler ruft state._txDoneResolve() auf, sobald tx_done kommt.
+function _waitForTxDone(timeoutMs) {
+  return new Promise((resolve) => {
+    if (!state.wsRx) { resolve('no-ws'); return; }
+    const timer = setTimeout(() => { state._txDoneResolve = null; resolve('timeout'); }, timeoutMs);
+    state._txDoneResolve = () => { clearTimeout(timer); resolve('done'); };
+  });
+}
+
+// Wartet `secs` Sekunden und ruft onTick(verbleibende Sekunden) einmal pro Sekunde auf.
+function _countdownWait(secs, onTick) {
+  return new Promise((resolve) => {
+    let remaining = Math.ceil(secs);
+    onTick(remaining);
+    const iv = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) { clearInterval(iv); resolve(); }
+      else onTick(remaining);
+    }, 1000);
+  });
+}
+
+// Lösch-Button der Sende-Formulare: alle Eingaben des Formulars zurücksetzen.
+function clearForm(type) {
+  const form = document.getElementById('form-' + type);
+  if (!form) return;
+  form.querySelectorAll('input').forEach(inp => { inp.value = ''; });
+  form.querySelectorAll('select').forEach(sel => { sel.selectedIndex = 0; });
+  if (type === 'text' && typeof updateTextCounter === 'function') updateTextCounter();
+  const tr = document.getElementById('tx-result');
+  if (tr) tr.style.display = 'none';
 }
 
 // ═══════════════════════════ AUDIO CONFIG ═════════════════════
@@ -976,6 +1208,7 @@ function updateChannelCard(ch, from, typeName, tsStr, snr, isEmerg, isTest) {
 
 // ═══════════════════════════ RX FEED ══════════════════════════
 function appendRxFrame(frame) {
+  if (state.isSending && document.getElementById('ignore-rx-while-tx')?.checked) return;
   state.rxCount++;
   document.getElementById('s-rx-count').textContent = state.rxCount;
 
@@ -1011,6 +1244,51 @@ function appendRxFrame(frame) {
     <span class="data">${dat}</span>`;
   row.addEventListener('click', () => openFrameModal(frame));
   feed.appendChild(row);
+
+  // Multi-Fragment-TEXT: Teile sammeln und bei Vollständigkeit als Klartext zeigen
+  if (_ftype === 0x40 || frame.type_name === 'TEXT') {
+    const fd    = frame.payload_decoded || frame.data || {};
+    const total = fd.frag_total ?? 1;
+    if (total > 1) {
+      const idx    = fd.frag_index ?? 0;
+      const seqKey = `${frm}:${fd.seq_nr ?? 0}`;
+      const dest   = fd.dest || fd.to || '?';
+      if (!state.fragCache[seqKey])
+        state.fragCache[seqKey] = { total, frags: {}, ts, ch, frm, dest, t0: Date.now() };
+      state.fragCache[seqKey].frags[idx] = fd.text || '';
+
+      const cached   = state.fragCache[seqKey];
+      const received = Object.keys(cached.frags).length;
+
+      if (received >= total) {
+        // Alle Teile da → reassemblieren, als eine grüne Zeile anhängen
+        const assembled = Object.keys(cached.frags)
+          .sort((a, b) => Number(a) - Number(b))
+          .map(k => cached.frags[k]).join('');
+        delete state.fragCache[seqKey];
+        const arow = document.createElement('div');
+        arow.className = 'frame-row';
+        arow.innerHTML = `<span class="ts">${cached.ts}</span>
+          <span class="ch">${cached.ch}</span>
+          <span class="from">${cached.frm}</span>
+          <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0"><span class="type" style="width:auto;color:var(--green)">TEXT ✓</span></span>
+          <span class="snr">–</span>
+          <span class="off"></span>
+          <span class="data">→ ${cached.dest}  "${assembled}" <span style="color:var(--text2);font-size:10px;">[${total}/${total} Frg. ✓]</span></span>`;
+        feed.appendChild(arow);
+      } else {
+        // Noch unvollständig → Fortschritt an die Fragment-Zeile hängen
+        const miss = total - received;
+        row.querySelector('.data')?.insertAdjacentHTML('beforeend',
+          ` <span style="color:var(--text2);font-size:10px;">… warte auf ${miss} Frg.</span>`);
+      }
+
+      // Verwaiste Cache-Einträge (> 120 s) verwerfen
+      const now = Date.now();
+      for (const k of Object.keys(state.fragCache))
+        if (now - (state.fragCache[k].t0 || now) > 120000) delete state.fragCache[k];
+    }
+  }
 
   // Maximal 100 Zeilen im DOM
   while (feed.children.length > 100) feed.removeChild(feed.firstChild);
@@ -1055,8 +1333,11 @@ function frameDataSummary(f) {
 
   // TEXT / QSO
   if (tn === 'TEXT' || f.frame_type === 0x40) {
-    const dest = d.dest || d.to || '?';
-    return `→ ${dest}  "${d.text}"`;
+    const dest      = d.dest || d.to || '?';
+    const total     = d.frag_total ?? 1;
+    const idx       = d.frag_index ?? 0;
+    const fragBadge = total > 1 ? ` [${idx + 1}/${total}]` : '';
+    return `→ ${dest}${fragBadge}  "${d.text}"`;
   }
 
   // CQ
@@ -1268,7 +1549,7 @@ function connectWsRx() {
       if (msg.type === 'rx_frame')       appendRxFrame(msg.data);
       if (msg.type === 'status')         applyStatusPush(msg.data);
       if (msg.type === 'rx_audio_level') updateAudioMeter(msg.data);
-      if (msg.type === 'tx_done')      { log2ui('INFO', 'TX abgeschlossen: ' + (msg.data?.type_name||'?')); fetchTxQueue(); }
+      if (msg.type === 'tx_done')      { state.isSending = false; if (state._txDoneResolve) { const _r = state._txDoneResolve; state._txDoneResolve = null; _r(); } log2ui('INFO', 'TX abgeschlossen: ' + (msg.data?.type_name||'?')); fetchTxQueue(); }
       if (msg.type === 'ping')           state.wsRx.send(JSON.stringify({type:'pong'}));
     } catch(e) { /* ignore malformed */ }
   };
@@ -1338,12 +1619,16 @@ function applyStatusPush(data) {
     if (el) el.textContent = mins > 1 ? `${mins} min` : `${state.txInterval} s`;
     _tickTxCountdown();
   }
+  if (data.ptt_delay_ms != null) {
+    const el = document.getElementById('cfg-ptt-delay');
+    if (el) el.value = data.ptt_delay_ms;
+  }
 }
 
 // ═══════════════════════════ TX COUNTDOWN ═════════════════════
-// Berechnet Sekunden bis zum nächsten Sendezyklus (P4/P3).
-// Der Zyklus ist deterministisch: offset = SHA256(rufzeichen) % interval.
-// Beide Gruppen P4 und P3 teilen denselben Sendezyklus.
+// Berechnet Sekunden bis zum nächsten TX-Schedule (P4/P3).
+// Der Schedule ist deterministisch: offset = SHA256(rufzeichen) % interval.
+// Beide Gruppen P4 und P3 teilen denselben TX-Schedule.
 function _nextCycleSecs() {
   const iv  = state.txInterval || 300;
   const off = state.txOffset   || 0;
@@ -1491,6 +1776,19 @@ function fmtTs(ts) {
 # WEB-SERVER KLASSE
 # ═══════════════════════════════════════════════════════════════════════
 
+def _fmt_audio_device(cfg: dict) -> str:
+    """Audiogerät als 'ID — Name' formatieren; fällt bei Fehler auf die rohe ID zurück."""
+    dev = cfg.get('audio', {}).get('device', None)
+    if dev is None:
+        return '–'
+    try:
+        import sounddevice as sd
+        info = sd.query_devices(int(dev))
+        return f"{int(dev)} — {info['name']}"
+    except Exception:
+        return str(dev)
+
+
 class WebServer:
     """
     Eingebetteter aiohttp Web-Server für GUST.
@@ -1532,6 +1830,10 @@ class WebServer:
 
         # RX-Frame-History (letzte 50 Frames für /api/log)
         self._rx_history: deque = deque(maxlen=50)
+
+        # Zeitstempel des zuletzt empfangenen Frames (für /api/status → "Letzter RX").
+        # Wird hier getrackt, weil das TX-Gateway keine RX-Frames sieht.
+        self._last_rx_ts: Optional[float] = None
 
         # Aktive WebSocket-Verbindungen
         self._ws_rx_clients: Set[web.WebSocketResponse] = set()
@@ -1593,10 +1895,12 @@ class WebServer:
         app.router.add_get("/",              self._handle_index)
         app.router.add_get("/api/status",    self._handle_status)
         app.router.add_get("/api/config",    self._handle_config)
+        app.router.add_patch("/api/config",  self._handle_config_patch)
         app.router.add_get("/api/log",       self._handle_log)
         app.router.add_post("/api/tx/weather",   self._handle_tx_weather)
         app.router.add_post("/api/tx/position",  self._handle_tx_position)
         app.router.add_post("/api/tx/text",      self._handle_tx_text)
+        app.router.add_post("/api/tx/text_fragment", self._handle_tx_text_fragment)
         app.router.add_post("/api/tx/emergency", self._handle_tx_emergency)
         app.router.add_get ("/api/tx/queue",     self._handle_tx_queue)
         app.router.add_get ("/api/audio/devices", self._handle_audio_devices)
@@ -1644,8 +1948,9 @@ class WebServer:
             "queue_depth":       0,
             "last_tx":           None,
             "last_rx":           None,
-            "audio_device":      self._config.get("audio", {}).get("device", "–"),
+            "audio_device":      _fmt_audio_device(self._config),
             "ptt_backend":       self._config.get("audio", {}).get("ptt_backend", "null"),
+            "ptt_delay_ms":      self._config.get("audio", {}).get("ptt_delay_ms", 250),
             "tx_interval_s":     tx_interval,
             "tx_time_offset_s":  tx_offset,
             "version":           "0.1.0",
@@ -1657,6 +1962,10 @@ class WebServer:
                 status.update(gw_status)
             except Exception as exc:
                 log.debug("Gateway.get_status() Fehler: %s", exc)
+        # RX-Zeitstempel wird im Web-Server getrackt (Gateway ist TX-only) —
+        # nach dem Merge setzen, damit er nicht von None überschrieben wird.
+        if self._last_rx_ts is not None:
+            status["last_rx"] = self._last_rx_ts
         return web.json_response(status)
 
     async def _handle_config(self, _request: web.Request) -> web.Response:
@@ -1668,6 +1977,52 @@ class WebServer:
                     if k != "api_key"}
         safe["web"] = web_safe
         return web.json_response(safe)
+
+    async def _handle_config_patch(self, request: web.Request) -> web.Response:
+        """
+        Partielles Konfig-Update via PATCH /api/config.
+        Akzeptiert: {"audio": {"ptt_delay_ms": 250}}
+        Schreibt geänderte Werte in self._config und in gateway.json (wenn vorhanden).
+        """
+        try:
+            patch = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text='{"error":"Ungültiger JSON-Body"}',
+                content_type="application/json"
+            )
+
+        import pathlib, json as _json
+
+        # In-Memory-Konfig aktualisieren (nur bekannte Schlüssel)
+        for section, values in patch.items():
+            if isinstance(values, dict) and section in self._config:
+                self._config.setdefault(section, {}).update(values)
+            elif section not in ("web",):
+                self._config[section] = values
+
+        # gateway.json schreiben falls sie existiert
+        cfg_path = pathlib.Path("gateway.json")
+        if cfg_path.exists():
+            try:
+                with open(cfg_path, encoding="utf-8") as f:
+                    file_cfg = _json.load(f)
+                for section, values in patch.items():
+                    if isinstance(values, dict):
+                        file_cfg.setdefault(section, {}).update(values)
+                    else:
+                        file_cfg[section] = values
+                with open(cfg_path, "w", encoding="utf-8") as f:
+                    _json.dump(file_cfg, f, indent=4, ensure_ascii=False)
+                log.info("gateway.json aktualisiert: %s", patch)
+            except Exception as exc:
+                log.error("gateway.json Schreib-Fehler: %s", exc)
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"{exc}"}}',
+                    content_type="application/json"
+                )
+
+        return web.json_response({"ok": True, "updated": patch})
 
     async def _handle_log(self, _request: web.Request) -> web.Response:
         """Letzte 50 RX-Frames als JSON-Array."""
@@ -1681,6 +2036,54 @@ class WebServer:
 
     async def _handle_tx_text(self, request: web.Request) -> web.Response:
         return await self._enqueue_tx(request, "text", priority=2)
+
+    async def _handle_tx_text_fragment(self, request: web.Request) -> web.Response:
+        """
+        Nimmt EIN vorberechnetes Text-Fragment entgegen (vom Web-UI Schedule-getaktet).
+        Body: {to, text_chunk, seq_nr, frag_index, frag_total}
+        Wird als einzelnes 0x40-Frame eingereiht (Prio 2) — keine erneute Fragmentierung.
+        """
+        try:
+            data = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(text='{"error":"Ungültiger JSON-Body"}',
+                                     content_type="application/json")
+
+        required = {"to", "text_chunk", "seq_nr", "frag_index", "frag_total"}
+        missing  = required - set(data.keys())
+        if missing:
+            raise web.HTTPBadRequest(
+                text=f'{{"error":"Fehlende Felder: {sorted(missing)}"}}',
+                content_type="application/json")
+
+        if self._gateway is None:
+            raise web.HTTPServiceUnavailable(
+                text='{"error":"Kein TX-Gateway aktiv — diese Station ist '
+                     'im Empfangs-/Monitor-Modus."}',
+                content_type="application/json")
+
+        frame_dict = {"frame_type": "text_fragment", "data": data,
+                      "from": self._callsign, "priority": 2, "ts": time.time()}
+        log.info('TX text_fragment [%s/%s] seq=%s to=%s "%s"',
+                 int(data["frag_index"]) + 1, data["frag_total"],
+                 data["seq_nr"], data["to"], data["text_chunk"])
+
+        try:
+            self._gateway.enqueue(frame_dict, priority=2)
+        except Exception as exc:
+            log.error("Gateway.enqueue() Fehler: %s", exc)
+            raise web.HTTPInternalServerError(
+                text=f'{{"error":"{exc}"}}', content_type="application/json")
+
+        self._publish_log("INFO",
+            f'TX Fragment [{int(data["frag_index"])+1}/{data["frag_total"]}]: '
+            f'→{data["to"]}  "{data["text_chunk"]}"')
+        return web.json_response({
+            "ok": True,
+            "frag_index": data["frag_index"],
+            "frag_total": data["frag_total"],
+            "message": f'Fragment {int(data["frag_index"])+1}/{data["frag_total"]} eingereiht',
+        })
 
     async def _handle_tx_emergency(self, request: web.Request) -> web.Response:
         return await self._enqueue_tx(request, "emergency", priority=1)
@@ -2014,6 +2417,7 @@ class WebServer:
         kann direkt von Integrationscode aufgerufen werden.
         """
         self._rx_history.append(frame)   # History für /api/log
+        self._last_rx_ts = frame.get("ts", time.time())   # "Letzter RX" im Status
         msg = json.dumps({"type": "rx_frame", "data": frame})
         dead = set()
         for ws in list(self._ws_rx_clients):

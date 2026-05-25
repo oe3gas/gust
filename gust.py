@@ -93,8 +93,9 @@ _DEFAULT_CONFIG = {
         },
     },
     "audio": {
-        "device":      None,
-        "ptt_backend": "null",
+        "device":       None,
+        "ptt_backend":  "null",
+        "ptt_delay_ms": 250,
     },
     "rx": {
         "enabled":          True,    # False → RX-Loop nicht starten
@@ -198,7 +199,7 @@ def _print_banner(cfg: dict, mode: str) -> None:
     _mode_pad  = max(0, 32 - len(mode))
     _freq_str  = f"{ci['nf_lo']}\u2013{ci['nf_hi']} Hz NF"
     _freq_pad  = max(0, 20 - len(_freq_str))
-    _off_str   = f"+{om}m {os_:02d}s  (Zyklus: {im} min)"
+    _off_str   = f"+{om}m {os_:02d}s  (Schedule: {im} min)"
     _off_pad   = max(0, 16 - len(_off_str))
     _port_pad  = max(0, 21 - len(str(port)))
     print(f"""
@@ -574,17 +575,21 @@ async def cmd_tx(cfg: dict, frame_type: str,
         level = max(0.01, min(1.0, raw_level / 100.0)) if raw_level > 1.0 else float(raw_level)
 
         print(f"\n  TX startet …")
-        print(f"  PTT:    {ptt.__class__.__name__}")
-        print(f"  Gerät:  {cfg['audio'].get('device') or 'Standard'}")
-        print(f"  Kanal:  wird aus SHA-256({cs}) bestimmt")
-        print(f"  RC-Fenstg: aktiv (window=True)")
+        print(f"  PTT:       {ptt.__class__.__name__}")
+        print(f"  PTT-Delay: {cfg['audio'].get('ptt_delay_ms', 250)} ms (Lead + Tail)")
+        print(f"  Gerät:     {cfg['audio'].get('device') or 'Standard'}")
+        print(f"  Kanal:     wird aus SHA-256({cs}) bestimmt")
+        print(f"  RC-Fenster: aktiv (window=True)")
 
         loop = asyncio.get_event_loop()
 
+        _ptt_delay_s = cfg["audio"].get("ptt_delay_ms", 250) / 1000.0
         with AudioTransmitter(
-            ptt    = ptt,
-            device = cfg["audio"].get("device"),
-            level  = level,
+            ptt        = ptt,
+            device     = cfg["audio"].get("device"),
+            level      = level,
+            ptt_lead_s = _ptt_delay_s,
+            ptt_tail_s = _ptt_delay_s,
         ) as tx:
             # transmit_frame() ist blockierend (sounddevice + time.sleep)
             # → im Thread-Executor ausführen, Event-Loop bleibt reaktiv
@@ -628,8 +633,8 @@ def cmd_info(callsign: str, interval: int = 300) -> None:
   NF-Bereich:   {ci['nf_lo']}–{ci['nf_hi']} Hz
   RF-Offset:    +{nf - 400:.0f} Hz über Dial-Frequenz
 
-  TX-Offset:    +{om}m {os_:02d}s  (= {off} s im {im}-min-Zyklus)
-  Sendezyklus:  alle {im} min
+  TX-Offset:    +{om}m {os_:02d}s  (= {off} s im {im}-min-Schedule)
+  TX-Schedule:  alle {im} min
   ─────────────────────────────────────
   Formel: SHA-256("{ci['callsign']}") % 10  → Kanal {ci['channel']}
 """)

@@ -69,7 +69,7 @@ class FrameType:
     STATION_TLM    = 0x03   # Stations-Telemetrie         (10 Byte)
     ROTOR_STATUS   = 0x10   # Rotor-Ist-Position          ( 7 Byte)
     ROTOR_CMD      = 0x11   # Rotor-Steuerbefehl          ( 5 Byte)
-    EMERG_BEACON   = 0x20   # Notfall-Beacon              (16 Byte)
+    EMERG_BEACON   = 0x20   # Notfall-Beacon              (20 Byte)
     EMERG_RSRC     = 0x21   # Notfall-Ressourcenstatus    ( 8 Byte)
     SENSOR         = 0x30   # Generische Sensor-TLV       (variabel)
     TEXT           = 0x40   # Freitext / QSO-Fragment     (variabel)
@@ -386,7 +386,7 @@ def decode_rotor_cmd(payload: bytes) -> dict:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# 0x20  NOTFALL-BEACON  (16 Byte)
+# 0x20  NOTFALL-BEACON  (20 Byte)
 #
 #   0–3   Latitude         int32  Mikrograd
 #   4–7   Longitude        int32  Mikrograd
@@ -394,9 +394,9 @@ def decode_rotor_cmd(payload: bytes) -> dict:
 #   9     Verletzungscode  uint8  (0=unbekannt,1=leicht,2=schwer,3=kritisch)
 #  10     Ressourcen-Flags uint8  (bit0=Wasser, bit1=Nahrung, bit2=Medizin, bit3=Evakuierung)
 #  11     Priorität        uint8  (0=niedrig, 1=mittel, 2=hoch, 3=sofort)
-#  12–15  Freitext-Snippet 4 Byte ASCII
+#  12–19  Freitext-Snippet 8 Byte ASCII
 # ──────────────────────────────────────────────────────────────────────
-_EMERG_FMT = '>iiBBBB4s'   # 16 Byte
+_EMERG_FMT = '>iiBBBB8s'   # 20 Byte
 
 # Verletzungscodes
 INJURY_UNKNOWN  = 0
@@ -425,8 +425,8 @@ def encode_emergency_beacon(
     priority:       int,
     text_snippet:   str = "",
 ) -> bytes:
-    """Frame 0x20 — Notfall-Beacon (16 Byte)."""
-    snippet = text_snippet.encode('ascii', errors='replace').ljust(4)[:4]
+    """Frame 0x20 — Notfall-Beacon (20 Byte)."""
+    snippet = text_snippet.encode('ascii', errors='replace').ljust(8)[:8]
     return struct.pack(_EMERG_FMT,
         int(round(lat_deg * 1_000_000)),
         int(round(lon_deg * 1_000_000)),
@@ -439,7 +439,7 @@ def encode_emergency_beacon(
 
 def decode_emergency_beacon(payload: bytes) -> dict:
     lat, lon, persons, injury, resources, prio, snippet = \
-        struct.unpack(_EMERG_FMT, payload[:16])
+        struct.unpack(_EMERG_FMT, payload[:20])
     prio_names = {0: "LOW", 1: "MEDIUM", 2: "HIGH", 3: "URGENT"}
     return {
         "lat_deg":        lat / 1_000_000,
@@ -953,7 +953,7 @@ def _run_tests():
         persons=3, injury_code=INJURY_SERIOUS,
         resource_flags=RSRC_WATER | RSRC_MEDICAL,
         priority=PRIO_URGENT,
-        text_snippet="HELP"
+        text_snippet="TRAPPED"
     )
     print(f"  Payload ({len(emerg_payload)} Byte):")
     print(hexdump(emerg_payload))

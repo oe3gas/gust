@@ -176,7 +176,7 @@ Offset  Größe  Inhalt
 struct-Format: '>iihBxHHH'
 ```
 
-#### Frame 0x20 — Notfall-Beacon (16 Byte)
+#### Frame 0x20 — Notfall-Beacon (20 Byte)
 ```
 Offset  Größe  Inhalt
   0       4    Latitude (int32, Mikrograd)
@@ -185,9 +185,9 @@ Offset  Größe  Inhalt
   9       1    Verletzungscode (uint8: 0=unbekannt, 1=leicht, 2=schwer, 3=kritisch)
  10       1    Ressourcenflags (bit0=Wasser, bit1=Nahrung, bit2=Medizin, bit3=Evak.)
  11       1    Prioritätsstufe (uint8: 0=niedrig, 1=mittel, 2=hoch, 3=sofort)
- 12       4    Freitext-Snippet (4 Byte ASCII)
+ 12       8    Freitext-Snippet (8 Byte ASCII)
 
-struct-Format: '>iiBBBB4s'
+struct-Format: '>iiBBBB8s'
 ```
 
 #### Frame 0x40 — Freitext / QSO (variabel, max. 20 Byte)
@@ -198,6 +198,37 @@ Offset  Größe  Inhalt
   5       1    Fragment-Info (Bits 7-4: Fragment-Index, Bits 3-0: Gesamt-1)
   6      ≤14   UTF-8-Text
 ```
+
+**Fragmentation:**
+- Maximale Fragmente pro Nachricht: **4** (Protokoll-Limit)
+- Maximale Textlänge: **56 Byte UTF-8** (= 56 ASCII-Zeichen)
+- Kapazität nach Fragmentanzahl:
+
+| Fragmente | Textlänge | Sendedauer (bei 5-min-Zyklus) |
+|:---------:|:---------:|:-----------------------------:|
+| 1         | 1–14 Byte | ~5 min                        |
+| 2         | 15–28 Byte| ~10 min                       |
+| 3         | 29–42 Byte| ~15 min                       |
+| 4         | 43–56 Byte| ~20 min (Maximum)             |
+
+**Web-UI-Verhalten:**
+- Byte-Counter zeigt laufend: verwendete Bytes / 56, Frame-Anzahl, verbleibende Bytes
+- Bei >1 Frame: Bestätigungsdialog mit Frame-Anzahl und Zeitschätzung (schedule-basiert)
+- **Schedule-getaktetes Senden:** Das Web-UI fragmentiert mehrteilige Texte selbst
+  (byte-korrekt in 14-Byte-Chunks, gemeinsame Sequenznummer) und sendet **ein Fragment
+  pro Schedule-Slot** über `POST /api/tx/text_fragment` — nicht alle back-to-back.
+  Nach jedem `tx_done` wird bis zum nächsten Slot gewartet, dann das nächste Fragment.
+  (Der ältere `POST /api/tx/text` fragmentiert dagegen serverseitig und sendet alle
+  Teile unmittelbar hintereinander.)
+- **RX-Reassembly:** Eingehende Fragmente werden im Browser anhand `Rufzeichen:Seq-Nr`
+  gesammelt und bei Vollständigkeit als zusammengesetzte Klartextzeile angezeigt
+  (mit `[n/n Frg. ✓]`); unvollständige Nachrichten zeigen den ausstehenden Rest.
+- **Kein serverseitiges Hard-Limit (Stand v0.3):** Das 56-Byte-/4-Frame-Limit wird
+  **ausschließlich clientseitig** (Web-UI: `alert()` + Byte-Counter) durchgesetzt.
+  `fragment_text()` fragmentiert serverseitig beliebig langen Text **ohne Obergrenze**.
+  Das Wire-Format erlaubt über das 4-Bit-Gesamtfeld (Fragment-Info Bits 3-0) sogar bis
+  zu **16 Fragmente** (= 224 Byte). Direkte API-/CLI-Aufrufe umgehen die 56-Byte-Grenze
+  daher vollständig. Siehe BUG-09.
 
 ### 3.6 Rufzeichen-Kodierung (Basis-40)
 
@@ -298,10 +329,11 @@ class EventBus:
 | GET | `/` | Web-UI (HTML/JS/CSS, eingebettet) |
 | GET | `/api/status` | Daemon-Status, Queue-Statistik |
 | GET | `/api/config` | Aktuelle Konfiguration (ohne Passwörter) |
-| POST | `/api/config` | Konfiguration aktualisieren |
+| PATCH | `/api/config` | Partielles Konfig-Update (z.B. `audio.ptt_delay_ms`), schreibt `gateway.json` |
 | POST | `/api/tx/weather` | One-Shot Wetter-Frame |
 | POST | `/api/tx/position` | One-Shot Positions-Frame |
-| POST | `/api/tx/text` | One-Shot Text-Frame |
+| POST | `/api/tx/text` | Text-Frame (langer Text → serverseitig fragmentiert, back-to-back) |
+| POST | `/api/tx/text_fragment` | Einzelnes vorberechnetes Text-Fragment (Schedule-getaktet vom Web-UI) |
 | POST | `/api/tx/emergency` | Notfall-Frame (sofort, Prio 1) |
 | GET | `/api/log` | Letzte N Einträge aus dem Logfile |
 
@@ -466,7 +498,7 @@ GUST:     Backbone      (Gateway ↔ Gateway, kontinental, HF)
 Priorität 1 (sofort):       Frame-Typ 0x20/0x21  — Notfall
 Priorität 2 (≤30 s):        Frame-Typ 0x40       — Text / QSO
 Priorität 3 (nächster       Frame-Typ 0x02       — Position
-             Sendezyklus):
+             TX-Schedule):
 Priorität 4 (zyklisch):     Frame-Typ 0x01/0x03  — Telemetrie
 ```
 
@@ -563,7 +595,7 @@ Phase 5 — Web-Interface & Event-Bus  ✅ ABGESCHLOSSEN
   ✅ Web-UI: HTML + Vanilla JS, eingebettet in gust_web.py
       ✅ Monitor-Ansicht: alle 10 Kanäle, Echtzeit-Frames via WebSocket
       ✅ One-Shot TX: Formular für alle Frame-Typen
-      ✅ Status-Dashboard: Queue, Uptime, letzte TX/RX
+      ✅ Status-Dashboard: Queue, Uptime, letzte TX/RX, PTT-Delay (konfigurierbar)
       ✅ Dark / Light Theme
       ✅ API-Key-Authentifizierung (X-API-Key + Bearer)
   ✅ gust.py: CLI-Einstiegspunkt (tx/rx/daemon/info/devices)
@@ -679,5 +711,5 @@ meshtastic       — Phase 4, optional
 
 *Dokument: gust_projektspezifikation.md*
 *Autor: OE3GAS*
-*Stand: 17. Mai 2026 — lebendes Dokument, wird laufend aktualisiert*
+*Stand: 25. Mai 2026 — lebendes Dokument, wird laufend aktualisiert*
 *Lizenz: CC BY-SA 4.0 (geplant für Veröffentlichung)*

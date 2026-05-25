@@ -30,6 +30,7 @@ gateway.json
 # ── Bereits vorhandene Ausschlüsse ─────────────────────────────────────
 SNR Test Files/
 archiv/
+screenshots/
 files.zip
 oe3mode_projektspezifikation.md
 *.csv
