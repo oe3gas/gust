@@ -1,0 +1,12 @@
+# Zeilenenden plattformübergreifend normalisieren:
+# Git speichert Textdateien intern mit LF und checkt sie auch unter Windows
+# mit LF aus — verhindert die "LF will be replaced by CRLF"-Warnungen und
+# Diff-Rauschen durch wechselnde Zeilenenden.
+* text=auto eol=lf
+
+# Binärdateien explizit ausnehmen (kein eol-Handling, kein Diff)
+*.png  binary
+*.jpg  binary
+*.wav  binary
+*.cf32 binary
+*.zip  binary
