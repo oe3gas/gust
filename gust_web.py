@@ -87,6 +87,15 @@ _HTML_UI = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GUST Dashboard</title>
 <style>
+/* ── UI-SCHRIFT & GRÖSSENSTUFEN (per JS überschreibbar) ──── */
+:root {
+  --ui-font:    'Courier New', monospace;
+  --fs-xxs:  10px;
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-base: 13px;
+  --fs-lg:   16px;
+}
 /* ── DARK AMBER (Standard) ───────────────────────────────── */
 :root {
   --bg:      #0d1117;
@@ -133,31 +142,31 @@ _HTML_UI = r"""<!DOCTYPE html>
 [data-theme="light"] .log-line,
 [data-theme="light"] .field-row .unit { font-weight: normal; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace;
-       font-size: 13px; min-height: 100vh;
+body { background: var(--bg); color: var(--text); font-family: var(--ui-font);
+       font-size: var(--fs-base); min-height: 100vh;
        transition: background .2s, color .2s; }
 
 /* ── HEADER ── */
 header { background: var(--bg2); border-bottom: 1px solid var(--border);
          padding: 10px 16px; display: flex; align-items: center; gap: 16px; }
-header h1 { font-size: 16px; color: var(--accent); letter-spacing: 2px; flex: 1; }
-header h1 span { color: var(--text2); font-size: 11px; font-weight: normal;
+header h1 { font-size: var(--fs-lg); color: var(--accent); letter-spacing: 2px; flex: 1; }
+header h1 span { color: var(--text2); font-size: var(--fs-xs); font-weight: normal;
                   margin-left: 8px; letter-spacing: 0; }
 #ws-indicator { width: 10px; height: 10px; border-radius: 50%;
                 background: var(--text2); transition: background .3s; }
 #ws-indicator.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
 #ws-indicator.error     { background: var(--red);   box-shadow: 0 0 6px var(--red); }
 #theme-btn { background: none; border: 1px solid var(--border); color: var(--text2);
-             padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+             padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: var(--fs-sm); }
 #theme-btn:hover { border-color: var(--accent); color: var(--accent); }
 #callsign-badge { background: var(--bg3); border: 1px solid var(--border);
-                  padding: 3px 10px; border-radius: 12px; font-size: 12px;
+                  padding: 3px 10px; border-radius: 12px; font-size: var(--fs-sm);
                   color: var(--accent); font-weight: bold; }
 
 /* ── TABS ── */
 nav { background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; gap: 2px; padding: 0 8px; }
 nav button { background: none; border: none; color: var(--text2); padding: 10px 16px;
-             cursor: pointer; font-family: inherit; font-size: 13px; border-bottom: 2px solid transparent; }
+             cursor: pointer; font-family: inherit; font-size: var(--fs-base); border-bottom: 2px solid transparent; }
 nav button:hover  { color: var(--text); }
 nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
 
@@ -170,7 +179,7 @@ main { padding: 16px; max-width: 1200px; }
 #audio-meter { background: var(--bg2); border: 1px solid var(--border);
                border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
 #audio-meter .am-row { display: flex; align-items: center; gap: 10px;
-                        font-size: 11px; color: var(--text2); margin: 3px 0; }
+                        font-size: var(--fs-xs); color: var(--text2); margin: 3px 0; }
 #audio-meter .am-label { width: 38px; flex-shrink: 0; color: var(--text2); }
 #audio-meter .am-bar   { flex: 1; height: 10px; background: var(--bg3);
                           border: 1px solid var(--border); border-radius: 3px;
@@ -180,10 +189,10 @@ main { padding: 16px; max-width: 1200px; }
 #audio-meter .am-fill.warn { background: var(--orange); }
 #audio-meter .am-fill.clip { background: var(--red); }
 #audio-meter .am-val   { width: 70px; flex-shrink: 0; text-align: right;
-                          font-family: 'Courier New', monospace;
-                          color: var(--text); font-size: 11px; }
+                          font-family: var(--ui-font);
+                          color: var(--text); font-size: var(--fs-xs); }
 #audio-meter .am-hdr   { display: flex; justify-content: space-between;
-                          align-items: center; font-size: 11px;
+                          align-items: center; font-size: var(--fs-xs);
                           color: var(--text2); margin-bottom: 4px; }
 #audio-meter .am-status { color: var(--text); font-weight: bold; }
 #audio-meter.silent  .am-status { color: var(--text2); }
@@ -199,30 +208,30 @@ main { padding: 16px; max-width: 1200px; }
 .ch-card.home    { border-color: var(--accent); }
 .ch-card.emerg-active { border: 2px solid #e24b4a !important; background: rgba(226,75,74,.06); }
 .ch-card.active  { border-color: var(--green); background: rgba(63,185,80,.08); }
-.ch-card .ch-num { font-size: 18px; font-weight: bold; color: var(--accent); }
-.ch-card .ch-freq { font-size: 11px; color: var(--text2); margin-top: 2px; }
-.ch-card .ch-last { font-size: 11px; color: var(--text); margin-top: 6px; min-height: 14px;
+.ch-card .ch-num { font-size: var(--fs-lg); font-weight: bold; color: var(--accent); }
+.ch-card .ch-freq { font-size: var(--fs-xs); color: var(--text2); margin-top: 2px; }
+.ch-card .ch-last { font-size: var(--fs-xs); color: var(--text); margin-top: 6px; min-height: 14px;
                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ch-card .ch-time { font-size: 10px; color: var(--text2); }
+.ch-card .ch-time { font-size: var(--fs-xxs); color: var(--text2); }
 
 /* ── FRAME FEED ── */
 #rx-feed { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
            height: 320px; overflow-y: auto; padding: 8px; }
 .frame-row { padding: 4px 6px; border-bottom: 1px solid var(--border); display: flex;
-             gap: 10px; align-items: baseline; font-size: 12px; }
+             gap: 10px; align-items: baseline; font-size: var(--fs-sm); }
 .frame-row:last-child { border-bottom: none; }
 .frame-row .ts   { color: var(--text2); white-space: nowrap; }
 .frame-row .ch   { color: var(--accent); width: 20px; text-align: center; }
 .frame-row .from { color: var(--blue); font-weight: bold; width: 70px; }
 .frame-row .type { color: var(--green); width: 90px; }
-.frame-row .snr  { width: 58px; text-align: right; font-weight: bold; font-size: 11px; white-space: nowrap; }
-.frame-row .off  { color: var(--text2); width: 52px; text-align: right; font-size: 11px; white-space: nowrap; }
+.frame-row .snr  { width: 58px; text-align: right; font-weight: bold; font-size: var(--fs-xs); white-space: nowrap; }
+.frame-row .off  { color: var(--text2); width: 52px; text-align: right; font-size: var(--fs-xs); white-space: nowrap; }
 .frame-row .data { color: var(--text); flex: 1; }
 .frame-row.emergency .type { color: var(--red); font-weight: bold; }
 .frame-row.emergency      { background: rgba(248,81,73,.08); }
 .frame-row.testframe      { border-left: 3px solid #1f6feb; }
 .test-pill { display:inline-block; background:#1f6feb; color:#fff !important;
-  font-size:9px; font-weight:bold; padding:1px 6px; border-radius:3px;
+  font-size:var(--fs-xxs); font-weight:bold; padding:1px 6px; border-radius:3px;
   letter-spacing:.5px; white-space:nowrap; vertical-align:middle; flex-shrink:0; }
 .frame-row { cursor: pointer; }
 .frame-row:hover { background: rgba(255,255,255,.04); }
@@ -234,20 +243,20 @@ main { padding: 16px; max-width: 1200px; }
 #frame-modal-box { background:var(--bg3); border:2px solid var(--accent);
   border-radius:8px; min-width:360px; max-width:560px;
   width:90vw; max-height:80vh; overflow-y:auto; position:relative; }
-#frame-modal-box h3 { font-size:12px; font-weight:bold; margin:0; padding:10px 40px 10px 16px;
+#frame-modal-box h3 { font-size:var(--fs-sm); font-weight:bold; margin:0; padding:10px 40px 10px 16px;
   color:var(--bg); background:var(--accent); border-radius:5px 5px 0 0;
   letter-spacing:.5px; }
 #frame-modal-body { padding:14px 16px 16px; }
 #frame-modal-close { position:absolute; top:8px; right:12px; background:none;
-  border:none; color:var(--bg); font-size:18px; cursor:pointer; line-height:1;
+  border:none; color:var(--bg); font-size:var(--fs-lg); cursor:pointer; line-height:1;
   opacity:.8; }
 #frame-modal-close:hover { opacity:1; }
 .modal-row { display:flex; gap:8px; padding:4px 0;
-  border-bottom:1px solid var(--border); font-size:12px; }
+  border-bottom:1px solid var(--border); font-size:var(--fs-sm); }
 .modal-row:last-child { border-bottom:none; }
 .modal-key { color:var(--text2); width:140px; flex-shrink:0; }
 .modal-val { color:var(--text); word-break:break-all; font-weight:bold; }
-.modal-map { display:inline-block; margin-top:10px; font-size:11px;
+.modal-map { display:inline-block; margin-top:10px; font-size:var(--fs-xs);
   color:var(--accent); text-decoration:none; }
 .modal-map:hover { text-decoration:underline; }
 [data-theme="light"] #frame-modal-box { background:#f6f8fa; }
@@ -256,19 +265,19 @@ main { padding: 16px; max-width: 1200px; }
 .audio-toggles { display:flex; gap:16px; align-items:center;
   margin-bottom:8px; flex-wrap:wrap; }
 .toggle-sw { display:flex; align-items:center; gap:7px;
-  cursor:pointer; font-size:11px; color:var(--text2); user-select:none; }
+  cursor:pointer; font-size:var(--fs-xs); color:var(--text2); user-select:none; }
 .toggle-sw input[type=checkbox] { accent-color:var(--accent);
   width:14px; height:14px; cursor:pointer; }
 .toggle-sw:hover { color:var(--text); }
 .snr-hi  { color: #3fb950; }   /* > 15 dB  — stark */
-.test-badge { background: #1f6feb; color: #fff; font-size: 9px; font-weight: bold;
+.test-badge { background: #1f6feb; color: #fff; font-size: var(--fs-xxs); font-weight: bold;
   padding: 1px 5px; border-radius: 3px; letter-spacing: .5px; vertical-align: middle;
   margin-left: 4px; }
 .snr-mid { color: #e3b341; }   /* 8–15 dB  — ok    */
 .snr-lo  { color: #f85149; }   /* < 8 dB   — schwach */
 
 /* ── SECTION TITLES ── */
-h2 { font-size: 13px; color: var(--text2); text-transform: uppercase;
+h2 { font-size: var(--fs-base); color: var(--text2); text-transform: uppercase;
      letter-spacing: 1px; margin-bottom: 8px; margin-top: 16px; }
 h2:first-child { margin-top: 0; }
 
@@ -276,41 +285,57 @@ h2:first-child { margin-top: 0; }
 .tx-form { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
            padding: 16px; max-width: 520px; }
 .tx-form.hidden { display: none; }
+.tx-form.form-p4 { border-color: var(--green); }
+.tx-form.form-p3 { border-color: var(--blue);  }
+.tx-form.form-p2 { border-color: var(--orange);}
+.tx-form.form-p1 { border-color: var(--red);   }
+.tx-unavailable { background: rgba(255,166,87,.12); border: 1px solid var(--orange);
+  border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; color: var(--orange);
+  font-size: var(--fs-sm); }
+.tx-unavailable.hidden { display: none; }
+.tx-unavailable code { background: var(--bg3); color: var(--text); padding: 1px 6px;
+  border-radius: 3px; font-family: var(--ui-font); }
+/* Senden-Tab im Monitor-Modus: Bedienelemente sichtbar deaktiviert */
+.tab-panel.tx-disabled .tx-btn,
+.tab-panel.tx-disabled .btn { opacity: .4; pointer-events: none; }
 .field-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
-.field-row label { color: var(--text2); width: 120px; flex-shrink: 0; font-size: 12px; }
+.field-row label { color: var(--text2); width: 120px; flex-shrink: 0; font-size: var(--fs-sm); }
 .field-row input, .field-row select {
   background: var(--bg3); border: 1px solid var(--border); color: var(--text);
-  padding: 5px 8px; border-radius: 4px; font-family: inherit; font-size: 12px;
+  padding: 5px 8px; border-radius: 4px; font-family: inherit; font-size: var(--fs-sm);
   flex: 1; min-width: 0; }
 .field-row input:focus, .field-row select:focus {
   outline: none; border-color: var(--accent); }
-.field-row .unit { color: var(--text2); font-size: 11px; white-space: nowrap; }
+.field-row .unit { color: var(--text2); font-size: var(--fs-xs); white-space: nowrap; }
 .btn { background: var(--accent); color: #000; border: none; padding: 7px 20px;
-       border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 13px;
+       border-radius: 4px; cursor: pointer; font-family: inherit; font-size: var(--fs-base);
        font-weight: bold; margin-top: 8px; }
 .btn:hover { filter: brightness(1.1); }
 .btn.danger { background: var(--red); color: #fff; }
 .btn.secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border); font-weight: normal; }
 .btn.secondary:hover { border-color: var(--accent); }
-#tx-result { margin-top: 8px; font-size: 12px; padding: 6px 10px; border-radius: 4px; display: none; }
+#tx-result { margin-top: 8px; font-size: var(--fs-sm); padding: 6px 10px; border-radius: 4px; display: none; }
 #tx-result.ok  { background: rgba(63,185,80,.15); color: var(--green); }
 #tx-result.err { background: rgba(248,81,73,.15); color: var(--red); }
 /* ── TX GRUPPEN-SELEKTOR ── */
-.tx-groups { margin-bottom: 14px; display: flex; flex-direction: column; gap: 8px; }
+.tx-groups { margin-bottom: 14px; display: flex; flex-direction: column; gap: 16px; }
+.tx-group { background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px 12px; }
+.tx-group.p4-group { border-left: 3px solid var(--green); }
+.tx-group.p3-group { border-left: 3px solid var(--blue); }
+.tx-group.p2-group { border-left: 3px solid var(--orange); }
+.tx-group.p1-group { border-left: 3px solid var(--red); }
 .tx-group-hdr { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
 .tx-prio-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.tx-prio-name { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; font-weight: bold; }
-.tx-prio-info { font-size: 11px; color: var(--text2); }
+.tx-prio-name { font-size: var(--fs-xxs); text-transform: uppercase; letter-spacing: 1.2px; font-weight: bold; }
+.tx-prio-info { font-size: var(--fs-xs); color: var(--text2); }
 .tx-prio-info .cd { color: var(--text); font-weight: bold; }
 .tx-btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .tx-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text2);
-  padding: 5px 12px; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 12px; }
+  padding: 5px 12px; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: var(--fs-sm); }
 .tx-btn:hover:not(:disabled) { color: var(--text); border-color: var(--text2); }
 .tx-btn.active   { border-color: var(--accent); color: var(--accent); }
 .tx-btn.p1-btn.active { border-color: var(--red);    color: var(--red); }
-.tx-btn:disabled { opacity: .35; cursor: default; }
-.tx-btn .coming  { font-size: 9px; color: var(--text2); margin-left: 3px;
-  border: 1px solid var(--border); border-radius: 2px; padding: 0 3px; }
 .p4-col { color: var(--green); }   .p4-dot { background: var(--green); }
 .p3-col { color: var(--blue); }    .p3-dot { background: var(--blue); }
 .p2-col { color: var(--orange); }  .p2-dot { background: var(--orange); }
@@ -319,34 +344,34 @@ h2:first-child { margin-top: 0; }
 /* ── TX-WARTESCHLANGE ── */
 #tx-queue { background: var(--bg2); border: 1px solid var(--border);
   border-radius: 6px; padding: 6px 8px; max-width: 640px; }
-.txq-empty { color: var(--text2); font-size: 12px; padding: 6px 4px; }
+.txq-empty { color: var(--text2); font-size: var(--fs-sm); padding: 6px 4px; }
 .txq-row { display: flex; align-items: center; gap: 10px; padding: 7px 6px;
-  border-bottom: 1px solid var(--border); font-size: 12px; }
+  border-bottom: 1px solid var(--border); font-size: var(--fs-sm); }
 .txq-row:last-child { border-bottom: none; }
 .txq-row.next { background: rgba(230,168,23,.08); border-radius: 4px; }
 .txq-row .tx-prio-dot { width: 8px; height: 8px; }
 .txq-type { flex: 1; color: var(--text); font-weight: bold; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.txq-prio { font-size: 10px; font-weight: bold; letter-spacing: .5px;
+.txq-prio { font-size: var(--fs-xxs); font-weight: bold; letter-spacing: .5px;
   width: 22px; text-align: center; flex-shrink: 0; }
 .txq-cd { color: var(--accent); font-weight: bold; width: 92px;
   text-align: right; flex-shrink: 0; white-space: nowrap; }
 .txq-cd.now { color: var(--green); }
-.txq-at { color: var(--text2); font-size: 11px; width: 78px;
+.txq-at { color: var(--text2); font-size: var(--fs-xs); width: 78px;
   text-align: right; flex-shrink: 0; white-space: nowrap; }
 @media (max-width: 640px) { .txq-at { display: none; } }
 
 /* ── STATUS CARDS ── */
 #status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; }
-.stat-card .key { color: var(--text2); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
-.stat-card .val { color: var(--text); font-size: 16px; font-weight: bold; }
+.stat-card .key { color: var(--text2); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.stat-card .val { color: var(--text); font-size: var(--fs-lg); font-weight: bold; }
 .stat-card .val.accent { color: var(--accent); }
 .stat-card .val.green  { color: var(--green); }
 
 /* ── LOG ── */
 #log-feed { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
-            height: 420px; overflow-y: auto; padding: 8px; font-size: 11px; }
+            height: 420px; overflow-y: auto; padding: 8px; font-size: var(--fs-xs); }
 .log-line { padding: 2px 4px; border-radius: 3px; }
 .log-line.WARNING { color: #e3b341; }
 .log-line.ERROR   { color: var(--red); }
@@ -354,40 +379,99 @@ h2:first-child { margin-top: 0; }
 .log-line.INFO    { color: var(--text); }
 #log-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
 #log-controls select { background: var(--bg3); border: 1px solid var(--border); color: var(--text);
-  padding: 4px 8px; border-radius: 4px; font-family: inherit; font-size: 12px; }
-#autoscroll-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text2); font-size: 12px; }
+  padding: 4px 8px; border-radius: 4px; font-family: inherit; font-size: var(--fs-sm); }
+#autoscroll-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text2); font-size: var(--fs-sm); }
 #autoscroll-toggle input { accent-color: var(--accent); }
 
 /* ── SPLIT CARD (Heimatkanal / TX-Offset) ── */
 .stat-card-split { display: flex; padding: 0; overflow: hidden; }
 .split-half      { flex: 1; padding: 12px 12px; }
 .split-divider   { width: 1px; background: var(--border); flex-shrink: 0; align-self: stretch; }
-.split-sub       { font-size: 10px; color: var(--text2); margin-top: 2px; font-weight: normal; }
+.split-sub       { font-size: var(--fs-xxs); color: var(--text2); margin-top: 2px; font-weight: normal; }
 
 /* ── AUDIO-EINSTELLUNGEN ─────────────────────────────────────────── */
 .audio-cfg-card { background: var(--bg2); border: 1px solid var(--border);
                   border-radius: 6px; padding: 14px 16px; max-width: 640px; }
-.audio-cfg-card h3 { font-size: 12px; color: var(--text2);
+.audio-cfg-card h3 { font-size: var(--fs-sm); color: var(--text2);
                      text-transform: uppercase; letter-spacing: 1px;
                      margin-bottom: 10px; }
 .audio-cfg-row { display: flex; gap: 10px; margin-bottom: 10px;
                  align-items: center; flex-wrap: wrap; }
-.audio-cfg-row label { width: 130px; font-size: 12px; color: var(--text2);
+.audio-cfg-row label { width: 130px; font-size: var(--fs-sm); color: var(--text2);
                        flex-shrink: 0; }
 .audio-cfg-row select { flex: 1; min-width: 240px; background: var(--bg3);
                         border: 1px solid var(--border); color: var(--text);
                         padding: 6px 10px; border-radius: 4px;
-                        font-family: inherit; font-size: 12px; }
+                        font-family: inherit; font-size: var(--fs-sm); }
 .audio-cfg-row select:focus { outline: none; border-color: var(--accent); }
-.audio-cfg-note { font-size: 11px; color: var(--text2); margin: 6px 0 12px;
+.audio-cfg-note { font-size: var(--fs-xs); color: var(--text2); margin: 6px 0 12px;
                   padding: 8px 10px; background: var(--bg3);
                   border-left: 2px solid var(--accent); border-radius: 3px; }
 .audio-cfg-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-#audio-cfg-result { margin-top: 10px; font-size: 12px; padding: 8px 10px;
+#audio-cfg-result { margin-top: 10px; font-size: var(--fs-sm); padding: 8px 10px;
                     border-radius: 4px; display: none; }
 #audio-cfg-result.ok  { background: rgba(63,185,80,.12);  color: var(--green); }
 #audio-cfg-result.err { background: rgba(248,81,73,.12);  color: var(--red); }
 #audio-cfg-result.warn{ background: rgba(255,166,87,.12); color: var(--orange); }
+
+/* ── STATUS & CONFIG — Abschnitts-Überschriften ──────────────────── */
+#tab-status > h3, #tab-inbox > h3 {
+  font-size: var(--fs-base); color: var(--text2); text-transform: uppercase;
+  letter-spacing: 1px; margin: 22px 0 10px; }
+#tab-status > h3:first-child { margin-top: 0; }
+#cfg-audio-status { margin-top: 10px; font-size: var(--fs-sm); min-height: 14px; }
+.status-cfg-row { display: flex; align-items: center; gap: 12px;
+                  margin-bottom: 8px; }
+.cfg-label { color: var(--text2); font-size: var(--fs-sm);
+             width: 110px; flex-shrink: 0; }
+.status-cfg-row select { background: var(--bg3); border: 1px solid var(--border);
+                         color: var(--text); padding: 4px 8px; border-radius: 4px;
+                         font-family: var(--ui-font); font-size: var(--fs-sm);
+                         min-width: 180px; }
+
+/* ── EMPFANGEN (INBOX) ───────────────────────────────────────────── */
+.inbox-badge { display: inline-block; min-width: 16px; height: 16px;
+  padding: 0 4px; border-radius: 8px; background: var(--red); color: #fff;
+  font-size: var(--fs-xxs); font-weight: bold; line-height: 16px; text-align: center;
+  vertical-align: middle; }
+.inbox-badge.hidden { display: none; }
+#inbox-list { display: flex; flex-direction: column; gap: 6px; }
+.inbox-item { background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 10px; cursor: pointer; display: flex;
+  gap: 10px; align-items: baseline; font-size: var(--fs-sm);
+  transition: border-color .2s; }
+.inbox-item:hover { border-color: var(--accent); }
+.inbox-item.inbox-unread { background: var(--bg2);
+  border-left: 3px solid var(--accent); }
+.inbox-item .ib-ts   { color: var(--text2); white-space: nowrap; }
+.inbox-item .ib-from { color: var(--blue); font-weight: bold;
+  white-space: nowrap; }
+.inbox-item .ib-type { font-size: var(--fs-xxs); font-weight: bold; padding: 1px 6px;
+  border-radius: 3px; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); letter-spacing: .5px; white-space: nowrap;
+  flex-shrink: 0; }
+.inbox-item .ib-type.multi { color: var(--accent); border-color: var(--accent); }
+.inbox-item .ib-preview { color: var(--text); flex: 1; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+
+/* ── GENERISCHES MODAL (Inbox-Detail) ────────────────────────────── */
+.modal-overlay { display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,.82); align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal-box { background: var(--bg3); border: 2px solid var(--accent);
+  border-radius: 8px; min-width: 340px; max-width: 620px; width: 90vw;
+  max-height: 80vh; overflow-y: auto; position: relative; padding: 16px 18px; }
+[data-theme="light"] .modal-box { background: #f6f8fa; }
+.modal-box h3 { font-size: var(--fs-base); color: var(--accent); margin-bottom: 4px; }
+.modal-close { position: absolute; top: 8px; right: 12px; background: none;
+  border: none; color: var(--text2); font-size: var(--fs-lg); cursor: pointer;
+  line-height: 1; }
+.modal-close:hover { color: var(--accent); }
+.seq-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm);
+  margin-top: 8px; }
+.seq-table th, .seq-table td { text-align: left; padding: 4px 8px;
+  border-bottom: 1px solid var(--border); }
+.seq-table th { color: var(--text2); font-weight: normal; }
 
 /* ── MOBILE / RESPONSIVE ─────────────────────────────────────────── */
 @media (max-width: 640px) {
@@ -395,12 +479,12 @@ h2:first-child { margin-top: 0; }
   header h1 span { display: none; }                /* Untertitel auf kleinen Screens weglassen */
   main { padding: 10px 8px; }
   nav { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  nav button { padding: 8px 10px; font-size: 11px; white-space: nowrap; }
+  nav button { padding: 8px 10px; font-size: var(--fs-xs); white-space: nowrap; }
   #channel-grid { grid-template-columns: repeat(2, 1fr); }  /* 5→2 Spalten */
   #status-grid  { grid-template-columns: repeat(2, 1fr); }  /* 3→2 Spalten */
   .stat-card-split { flex-direction: column; }               /* Split-Card untereinander */
   .split-divider   { width: auto; height: 1px; }
-  .field-row label { width: 80px; font-size: 11px; }
+  .field-row label { width: 80px; font-size: var(--fs-xs); }
   .tx-form { max-width: 100%; }
   .tx-group-hdr { flex-wrap: wrap; }
   .tx-prio-info { width: 100%; padding-left: 15px; margin-top: 2px; }
@@ -421,8 +505,8 @@ h2:first-child { margin-top: 0; }
 <nav>
   <button class="active" onclick="switchTab('monitor',this)">📡 Monitor</button>
   <button onclick="switchTab('tx',this)">📤 Senden</button>
-  <button onclick="switchTab('audio',this)">🎛 Audio</button>
-  <button onclick="switchTab('status',this)">📊 Status</button>
+  <button onclick="switchTab('inbox',this)">📨 Empfangen <span id="inbox-badge" class="inbox-badge hidden">0</span></button>
+  <button onclick="switchTab('status',this)">⚙ Status &amp; Config</button>
   <button onclick="switchTab('log',this)">🗒 Log</button>
 </nav>
 
@@ -454,7 +538,7 @@ h2:first-child { margin-top: 0; }
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px;">
     <h2 style="margin:0;">Live RX-Feed</h2>
     <div style="display:flex;gap:14px;align-items:center;">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text2);font-size:12px;"
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text2);font-size:var(--fs-sm);"
              title="Verhindert Dekodierung des eigenen Sendesignals (TRX-Monitor-Schutz)">
         <input type="checkbox" id="ignore-rx-while-tx" style="accent-color:var(--accent);">
         Ignore Decodes while Sending
@@ -479,10 +563,15 @@ h2:first-child { margin-top: 0; }
 
 <!-- ══════════════════════════════════════════════════════ TAB: SENDEN -->
 <div id="tab-tx" class="tab-panel">
+  <div id="tx-unavailable" class="tx-unavailable hidden">
+    📡 <b>Monitor-Modus</b> — diese Station kann nicht senden (kein TX-Gateway aktiv).
+    Starte GUST als Daemon, um zu senden:
+    <code>py gust.py daemon</code>
+  </div>
   <h2>One-Shot TX</h2>
 <div class="tx-groups">
 
-  <div class="tx-group">
+  <div class="tx-group p4-group">
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p4-dot"></span>
       <span class="tx-prio-name p4-col">Telemetrie</span>
@@ -490,12 +579,10 @@ h2:first-child { margin-top: 0; }
     </div>
     <div class="tx-btn-row">
       <button class="tx-btn active" onclick="selectTxType('weather',this)">🌤 Wetter</button>
-      <button class="tx-btn" disabled>📟 Station <span class="coming">bald</span></button>
-      <button class="tx-btn" disabled>🌡 Sensor <span class="coming">bald</span></button>
     </div>
   </div>
 
-  <div class="tx-group">
+  <div class="tx-group p3-group">
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p3-dot"></span>
       <span class="tx-prio-name p3-col">Navigation</span>
@@ -503,11 +590,10 @@ h2:first-child { margin-top: 0; }
     </div>
     <div class="tx-btn-row">
       <button class="tx-btn" onclick="selectTxType('position',this)">📍 Position</button>
-      <button class="tx-btn" disabled>🔄 Rotor-Status <span class="coming">bald</span></button>
     </div>
   </div>
 
-  <div class="tx-group">
+  <div class="tx-group p2-group">
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p2-dot"></span>
       <span class="tx-prio-name p2-col">Kommunikation</span>
@@ -515,11 +601,10 @@ h2:first-child { margin-top: 0; }
     </div>
     <div class="tx-btn-row">
       <button class="tx-btn" onclick="selectTxType('text',this)">💬 Freitext</button>
-      <button class="tx-btn" disabled>📻 CQ-Anruf <span class="coming">bald</span></button>
     </div>
   </div>
 
-  <div class="tx-group">
+  <div class="tx-group p1-group">
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p1-dot"></span>
       <span class="tx-prio-name p1-col">Notfall</span>
@@ -527,14 +612,13 @@ h2:first-child { margin-top: 0; }
     </div>
     <div class="tx-btn-row">
       <button class="tx-btn p1-btn" onclick="selectTxType('emergency',this)">🆘 Notfall-Beacon</button>
-      <button class="tx-btn" disabled>⚕ Ressourcen <span class="coming">bald</span></button>
     </div>
   </div>
 
 </div>
 
   <!-- Wetter-Formular -->
-  <div id="form-weather" class="tx-form">
+  <div id="form-weather" class="tx-form form-p4">
     <div class="field-row"><label>Temperatur</label>
       <input type="number" id="w-temp" value="20.0" step="0.1"><span class="unit">°C</span></div>
     <div class="field-row"><label>Luftfeuchte</label>
@@ -556,7 +640,7 @@ h2:first-child { margin-top: 0; }
   </div>
 
   <!-- Position-Formular -->
-  <div id="form-position" class="tx-form hidden">
+  <div id="form-position" class="tx-form form-p3 hidden">
     <div class="field-row"><label>Latitude</label>
       <input type="number" id="p-lat" value="48.2082" step="0.0001"><span class="unit">°</span></div>
     <div class="field-row"><label>Longitude</label>
@@ -576,14 +660,14 @@ h2:first-child { margin-top: 0; }
   </div>
 
   <!-- Text-Formular -->
-  <div id="form-text" class="tx-form hidden">
+  <div id="form-text" class="tx-form form-p2 hidden">
     <div class="field-row"><label>An (Rufzeichen)</label>
       <input type="text" id="t-to" value="" maxlength="6" style="text-transform:uppercase" placeholder="z.B. OE1XTU"></div>
     <div class="field-row"><label>Nachricht</label>
       <input type="text" id="t-msg" value="" maxlength="56"
              placeholder="Nachricht (max. 56 Byte / 4 Frames)"
              oninput="updateTextCounter()"></div>
-    <div id="text-counter-row" style="font-size:11px;color:var(--text2);margin-bottom:8px;
+    <div id="text-counter-row" style="font-size:var(--fs-xs);color:var(--text2);margin-bottom:8px;
          display:flex;gap:16px;align-items:center;">
       <span id="text-byte-count">0 / 56 Byte</span>
       <span id="text-frame-count">1 Frame</span>
@@ -596,9 +680,9 @@ h2:first-child { margin-top: 0; }
   </div>
 
   <!-- Notfall-Formular -->
-  <div id="form-emergency" class="tx-form hidden">
+  <div id="form-emergency" class="tx-form form-p1 hidden">
     <div style="background:rgba(248,81,73,.12);border:1px solid var(--red);border-radius:4px;
-                padding:8px;margin-bottom:12px;color:var(--red);font-size:12px;">
+                padding:8px;margin-bottom:12px;color:var(--red);font-size:var(--fs-sm);">
       ⚠ Notfall-Frames erhalten Priorität 1 — sofortige Übertragung ohne Cooldown
     </div>
     <div class="field-row"><label>Latitude</label>
@@ -633,41 +717,16 @@ h2:first-child { margin-top: 0; }
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════ TAB: AUDIO -->
-<div id="tab-audio" class="tab-panel">
-  <h2>Audio-Geräte</h2>
-  <div class="audio-cfg-card">
-    <h3>Auswahl Eingang (RX) und Ausgang (TX)</h3>
-
-    <div class="audio-cfg-row">
-      <label>RX-Eingang</label>
-      <select id="ac-rx-device"><option value="">– Standard / wie TX –</option></select>
-    </div>
-
-    <div class="audio-cfg-row">
-      <label>TX-Ausgang</label>
-      <select id="ac-tx-device"><option value="">– Standard –</option></select>
-    </div>
-
-    <div class="audio-cfg-note">
-      Änderungen werden in <code>gateway.json</code> gespeichert.
-      <b>TX-Wechsel</b> wirkt sofort beim nächsten Sendevorgang.
-      <b>RX-Wechsel</b> erfordert einen Neustart des Daemons —
-      der RX-Loop hält das Gerät beim Start fest.
-    </div>
-
-    <div class="audio-cfg-actions">
-      <button class="btn" onclick="saveAudioConfig()">💾 Speichern</button>
-      <button class="btn secondary" onclick="loadAudioConfig()">↻ Neu laden</button>
-    </div>
-
-    <div id="audio-cfg-result"></div>
-  </div>
+<!-- ══════════════════════════════════════════════════════ TAB: EMPFANGEN -->
+<div id="tab-inbox" class="tab-panel">
+  <h2>Empfangene Nachrichten</h2>
+  <div id="inbox-empty" style="color:var(--text2);padding:8px;">Keine Nachrichten empfangen.</div>
+  <div id="inbox-list"></div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════ TAB: STATUS -->
+<!-- ══════════════════════════════════════════════════════ TAB: STATUS & CONFIG -->
 <div id="tab-status" class="tab-panel">
-  <h2>System-Status</h2>
+  <h3>System-Status</h3>
   <div id="status-grid">
     <div class="stat-card"><div class="key">Rufzeichen</div><div class="val accent" id="s-call">–</div></div>
     <div class="stat-card stat-card-split">
@@ -690,25 +749,87 @@ h2:first-child { margin-top: 0; }
     <div class="stat-card"><div class="key">PTT-Backend</div><div class="val" id="s-ptt">–</div></div>
     <div class="stat-card"><div class="key">RX-Frames (Session)</div><div class="val green" id="s-rx-count">0</div></div>
   </div>
+
+  <h3>Audio &amp; PTT</h3>
+  <div class="audio-cfg-card">
+    <div class="audio-cfg-row">
+      <label>Audio-Eingang (RX)</label>
+      <select id="cfg-audio-in"><option value="">– Standard / wie TX –</option></select>
+    </div>
+    <div class="audio-cfg-row">
+      <label>Audio-Ausgang (TX)</label>
+      <select id="cfg-audio-out"><option value="">– Standard –</option></select>
+    </div>
+    <div class="audio-cfg-row">
+      <label>PTT-Backend</label>
+      <select id="cfg-ptt">
+        <option value="null">null (kein PTT)</option>
+        <option value="gpio">gpio</option>
+        <option value="hamlib">hamlib</option>
+      </select>
+    </div>
+    <div class="audio-cfg-note">
+      <b>TX-Wechsel</b> wirkt sofort beim nächsten Sendevorgang.
+      <b>RX-Wechsel</b> erfordert einen Neustart des Daemons —
+      der RX-Loop hält das Gerät beim Start fest.
+    </div>
+    <div class="audio-cfg-actions">
+      <button class="btn" onclick="saveAudioConfig()">💾 Speichern</button>
+      <button class="btn secondary" onclick="loadAudioConfig()">↻ Neu laden</button>
+    </div>
+    <div id="cfg-audio-status"></div>
+  </div>
+
   <div style="margin-top:16px;background:var(--bg2);border:1px solid var(--border);
        border-radius:6px;padding:14px;width:fit-content;max-width:100%;">
     <h2 style="margin-top:0;margin-bottom:10px;">Konfiguration</h2>
     <div style="display:flex;gap:8px;align-items:center;">
-      <label style="color:var(--text2);font-size:12px;width:140px;flex-shrink:0;"
+      <label style="color:var(--text2);font-size:var(--fs-sm);width:140px;flex-shrink:0;"
              title="Lead (vor Audio) = Tail (nach Audio) — symmetrisch">
         PTT Lead/Tail
       </label>
       <input type="number" id="cfg-ptt-delay" value="250" min="0" max="2000" step="10"
              style="background:var(--bg3);border:1px solid var(--border);color:var(--text);
-                    padding:5px 8px;border-radius:4px;font-family:inherit;font-size:12px;
+                    padding:5px 8px;border-radius:4px;font-family:inherit;font-size:var(--fs-sm);
                     width:80px;flex-shrink:0;"
              title="PTT Lead- und Tail-Verzögerung in Millisekunden (Lead = vor Audio, Tail = nach Audio)">
-      <span style="color:var(--text2);font-size:11px;white-space:nowrap;flex-shrink:0;">ms</span>
+      <span style="color:var(--text2);font-size:var(--fs-xs);white-space:nowrap;flex-shrink:0;">ms</span>
       <button class="btn secondary" style="margin-top:0;padding:5px 12px;flex-shrink:0;"
               onclick="savePttDelay()">Speichern</button>
     </div>
-    <div id="cfg-save-result" style="font-size:11px;margin-top:6px;display:none;"></div>
+    <div id="cfg-save-result" style="font-size:var(--fs-xs);margin-top:6px;display:none;"></div>
   </div>
+
+  <h3 style="margin-top:20px;margin-bottom:8px;font-size:var(--fs-sm);
+             text-transform:uppercase;letter-spacing:1px;color:var(--text2);">
+    Darstellung
+  </h3>
+  <div class="status-cfg-row">
+    <label class="cfg-label">Theme</label>
+    <select id="cfg-theme" onchange="applyTheme(this.value)">
+      <option value="dark">Dark Amber</option>
+      <option value="light">Light Clean</option>
+    </select>
+  </div>
+  <div class="status-cfg-row">
+    <label class="cfg-label">Schriftart</label>
+    <select id="cfg-font" onchange="applyFont(this.value)">
+      <option value="mono">Monospace (Standard)</option>
+      <option value="system">System UI</option>
+      <option value="inter">Inter</option>
+      <option value="roboto">Roboto</option>
+    </select>
+  </div>
+  <div class="status-cfg-row">
+    <label class="cfg-label">Schriftgröße</label>
+    <select id="cfg-fontsize" onchange="applyFontSize(this.value)">
+      <option value="12">12 px</option>
+      <option value="13">13 px (Standard)</option>
+      <option value="14">14 px</option>
+      <option value="15">15 px</option>
+    </select>
+  </div>
+
   <div style="margin-top:16px;">
     <button class="btn secondary" onclick="loadStatus()">↻ Aktualisieren</button>
   </div>
@@ -717,7 +838,7 @@ h2:first-child { margin-top: 0; }
 <!-- ══════════════════════════════════════════════════════ TAB: LOG -->
 <div id="tab-log" class="tab-panel">
   <div id="log-controls">
-    <span style="color:var(--text2);font-size:12px;">Ebene:</span>
+    <span style="color:var(--text2);font-size:var(--fs-sm);">Ebene:</span>
     <select id="log-level-filter" onchange="filterLogLevel()">
       <option value="ALL">Alle</option>
       <option value="INFO">INFO+</option>
@@ -752,7 +873,14 @@ const state = {
   txFragQueue: [],    // TX: wartende Einzelfragmente (eigener Name — NICHT txQueue!)
   txFragActive: false,// true = Fragment-Sende-Loop läuft gerade
   _txDoneResolve: null,// Resolver-Callback für _waitForTxDone()
+  inbox:       [],    // Empfangene Freitext-Nachrichten (an mich adressiert)
+  inboxUnread: 0,     // Anzahl ungelesener Nachrichten
+  uptimeBase:  null,  // uptime_s vom letzten loadStatus()
+  uptimeBaseTs: 0,    // Date.now() beim Setzen von uptimeBase
 };
+
+// Freitext-Frame-Typ (0x40 — siehe gust_frame.py FrameType.TEXT)
+const TEXT_FRAME_TYPE = 0x40;
 
 // ═══════════════════════════ THEME ════════════════════════════
 // Dark Amber = Standard (kein data-theme Attribut)
@@ -778,12 +906,62 @@ function applyTheme(name) {
   }
   document.getElementById('theme-btn').textContent = t.btn;
   localStorage.setItem('gust-theme', name);
+  // Dropdown im Status & Config-Tab synchron halten
+  const sel = document.getElementById('cfg-theme');
+  if (sel) sel.value = name;
 }
 
-// Beim Laden: gespeichertes Theme wiederherstellen
+// ── SCHRIFTART / SCHRIFTGRÖSSE (Appearance) ──
+// Wirken über CSS Custom Properties auf :root, damit auch Regeln mit
+// expliziter font-size (var(--fs-*)) zuverlässig mitskalieren.
+const FONTS = {
+  mono:   "'Courier New', monospace",
+  system: "system-ui, -apple-system, sans-serif",
+  inter:  "'Inter', system-ui, sans-serif",
+  roboto: "'Roboto', system-ui, sans-serif",
+};
+
+// Basisgrößen-Stufen in px (korrespondierend zu --fs-base)
+const FONT_SIZES = { '12': 12, '13': 13, '14': 14, '15': 15 };
+
+function applyFont(key) {
+  const family = FONTS[key] || FONTS.mono;
+  const root = document.documentElement;
+  root.style.setProperty('--ui-font', family);
+  localStorage.setItem('gust-font', key);
+  // Dropdown synchronisieren (falls vorhanden)
+  const sel = document.getElementById('cfg-font');
+  if (sel) sel.value = key;
+}
+
+function applyFontSize(baseStr) {
+  const base = parseInt(baseStr, 10);
+  if (isNaN(base) || base < 10 || base > 20) return;
+  const root = document.documentElement;
+  // Alle Größenstufen proportional skalieren — Basis ist 13px
+  const scale = base / 13;
+  root.style.setProperty('--fs-base', base + 'px');
+  root.style.setProperty('--fs-sm',   Math.round(12 * scale) + 'px');
+  root.style.setProperty('--fs-xs',   Math.round(11 * scale) + 'px');
+  root.style.setProperty('--fs-xxs',  Math.round(10 * scale) + 'px');
+  root.style.setProperty('--fs-lg',   Math.round(16 * scale) + 'px');
+  localStorage.setItem('gust-fontsize', baseStr);
+  // Dropdown synchronisieren (falls vorhanden)
+  const sel = document.getElementById('cfg-fontsize');
+  if (sel) sel.value = baseStr;
+}
+
+// Beim Laden: gespeichertes Theme / Schrift wiederherstellen
 (function() {
-  const saved = localStorage.getItem('gust-theme') || 'dark';
-  applyTheme(saved);
+  // Theme
+  const savedTheme = localStorage.getItem('gust-theme') || 'dark';
+  applyTheme(savedTheme);
+  // Font — VOR dem ersten Paint anwenden, damit kein FOUT entsteht
+  const savedFont = localStorage.getItem('gust-font') || 'mono';
+  applyFont(savedFont);
+  // Fontsize
+  const savedSize = localStorage.getItem('gust-fontsize') || '13';
+  applyFontSize(savedSize);
 })();
 
 // ═══════════════════════════ TABS ═════════════════════════════
@@ -792,9 +970,15 @@ function switchTab(name, btn) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
-  if (name === 'status') loadStatus();
-  if (name === 'audio')  loadAudioConfig();
+  if (name === 'status') { loadStatus(); loadAudioConfig(); }
   if (name === 'tx')     fetchTxQueue();
+  if (name === 'inbox') {
+    // Tab geöffnet → alles als gelesen markieren, Badge zurücksetzen
+    state.inbox.forEach(m => m.read = true);
+    state.inboxUnread = 0;
+    updateInboxBadge();
+    renderInbox();
+  }
 }
 
 // ═══════════════════════════ TX FORMS ═════════════════════════
@@ -832,6 +1016,15 @@ function updateTextCounter() {
 }
 
 async function sendTx(type) {
+  // Monitor-Modus: gar nicht erst senden — sonst 503 vom Server.
+  if (state.txAvailable === false) {
+    const el = document.getElementById('tx-result');
+    el.className = 'err'; el.style.display = 'block';
+    el.textContent = '✗ Senden nicht möglich — Monitor-Modus (kein TX-Gateway). '
+                   + 'Starte GUST als Daemon: py gust.py daemon';
+    setTimeout(() => el.style.display = 'none', 5000);
+    return;
+  }
   let payload = {};
   if (type === 'weather') {
     payload = {
@@ -953,6 +1146,10 @@ async function loadStatus() {
       document.getElementById('s-ch-cycle').textContent  =
         `Schedule: ${im} min`;
     }
+    if (s.uptime_s != null) {
+      state.uptimeBase   = s.uptime_s;
+      state.uptimeBaseTs = Date.now();
+    }
     document.getElementById('s-uptime').textContent = formatUptime(s.uptime_s);
     document.getElementById('s-queue').textContent  = s.queue_depth ?? '–';
     document.getElementById('s-last-tx').textContent = s.last_tx ? fmtTs(s.last_tx) : '–';
@@ -1066,12 +1263,12 @@ function clearForm(type) {
 }
 
 // ═══════════════════════════ AUDIO CONFIG ═════════════════════
-// Lädt verfügbare Audio-Geräte + aktuelle Auswahl in die Dropdowns.
-// "Standard" = leerer Wert = sounddevice-Default.
+// Lädt verfügbare Audio-Geräte + aktuelle Auswahl in die Dropdowns des
+// Status & Config-Tabs. "Standard" = leerer Wert = sounddevice-Default.
 // RX = leerer Wert bedeutet "wie TX" (gust_rx.py fällt automatisch zurück).
 async function loadAudioConfig() {
-  const result = document.getElementById('audio-cfg-result');
-  result.style.display = 'none';
+  const statusEl = document.getElementById('cfg-audio-status');
+  if (statusEl) { statusEl.textContent = ''; statusEl.style.color = 'var(--text2)'; }
   try {
     const [devs, cur] = await Promise.all([
       apiFetch('/api/audio/devices'),
@@ -1080,19 +1277,20 @@ async function loadAudioConfig() {
 
     function _fill(selectId, items, currentId, placeholder) {
       const sel = document.getElementById(selectId);
+      if (!sel) return;
       sel.innerHTML = `<option value="">${placeholder}</option>`;
       // Nach Host-API gruppieren (MME, WASAPI, … bzw. ALSA, JACK unter Linux),
       // Reihenfolge des ersten Auftretens beibehalten.
       const groups = new Map();
-      for (const d of items) {
+      for (const d of (items || [])) {
         const api = d.host_api_name || `API ${d.host_api}`;
         if (!groups.has(api)) groups.set(api, []);
         groups.get(api).push(d);
       }
-      for (const [api, devs] of groups) {
+      for (const [api, list] of groups) {
         const og = document.createElement('optgroup');
         og.label = api;
-        for (const d of devs) {
+        for (const d of list) {
           const opt = document.createElement('option');
           opt.value = String(d.id);
           const def = d.is_default ? ' ★' : '';
@@ -1108,50 +1306,54 @@ async function loadAudioConfig() {
       }
     }
 
-    _fill('ac-rx-device', devs.input,  cur.rx_device, '– Standard / wie TX –');
-    _fill('ac-tx-device', devs.output, cur.tx_device, '– Standard –');
+    _fill('cfg-audio-in',  devs.input,  cur.rx_device, '– Standard / wie TX –');
+    _fill('cfg-audio-out', devs.output, cur.tx_device, '– Standard –');
 
-    if (!cur.writable) {
-      result.className = 'warn';
-      result.style.display = 'block';
-      result.textContent = '⚠ Schreiben deaktiviert — kein config_path bekannt. ' +
-                           'Auswahl kann nicht gespeichert werden.';
+    const pttSel = document.getElementById('cfg-ptt');
+    if (pttSel && cur.ptt_backend) pttSel.value = cur.ptt_backend;
+
+    if (statusEl && cur.writable === false) {
+      statusEl.style.color = 'var(--orange)';
+      statusEl.textContent = '⚠ Schreiben deaktiviert — kein config_path bekannt.';
     }
   } catch (e) {
-    result.className = 'err';
-    result.style.display = 'block';
-    result.textContent = '✗ Geräte konnten nicht geladen werden: ' + e.message;
+    if (statusEl) {
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = '✗ Geräte konnten nicht geladen werden: ' + e.message;
+    }
   }
 }
 
 async function saveAudioConfig() {
-  const rxSel = document.getElementById('ac-rx-device').value;
-  const txSel = document.getElementById('ac-tx-device').value;
+  const inSel  = document.getElementById('cfg-audio-in')?.value  ?? '';
+  const outSel = document.getElementById('cfg-audio-out')?.value ?? '';
+  const ptt    = document.getElementById('cfg-ptt')?.value || 'null';
   // Leer = null (= Standard / wie TX bei RX)
   const body = {
-    tx_device: txSel === '' ? null : parseInt(txSel, 10),
-    rx_device: rxSel === '' ? null : parseInt(rxSel, 10),
+    audio: {
+      input:  inSel  === '' ? null : parseInt(inSel, 10),
+      output: outSel === '' ? null : parseInt(outSel, 10),
+    },
+    ptt: { backend: ptt },
   };
 
-  const result = document.getElementById('audio-cfg-result');
-  result.style.display = 'none';
+  const statusEl = document.getElementById('cfg-audio-status');
   try {
-    const r = await apiFetch('/api/audio/config', {
+    const r = await apiFetch('/api/config', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body),
     });
-    result.className = r.rx_restart_required ? 'warn' : 'ok';
-    result.style.display = 'block';
-    let txt = '✓ ' + (r.message || 'Gespeichert');
-    if (r.rx_restart_required) {
-      txt += '  —  ⚠ RX-Wechsel: bitte GUST-Daemon neu starten.';
+    if (statusEl) {
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = '✓ ' + (r.message || 'Konfiguration gespeichert');
     }
-    result.textContent = txt;
+    loadStatus();   // Status-Karten (Audio-Gerät, PTT) auffrischen
   } catch (e) {
-    result.className = 'err';
-    result.style.display = 'block';
-    result.textContent = '✗ Fehler: ' + e.message;
+    if (statusEl) {
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = '✗ Fehler: ' + e.message;
+    }
   }
 }
 
@@ -1190,7 +1392,7 @@ function updateChannelCard(ch, from, typeName, tsStr, snr, isEmerg, isTest) {
   if (!lastEl) return;
   lastEl.textContent = from + ' · ' + typeName;
   const testEl = document.getElementById('ch-test-' + ch);
-  if (testEl) testEl.innerHTML  = isTest ? '<span class="test-pill" style="font-size:10px">TEST</span>' : '';
+  if (testEl) testEl.innerHTML  = isTest ? '<span class="test-pill" style="font-size:var(--fs-xxs)">TEST</span>' : '';
   if (snrEl) {
     snrEl.textContent  = snr != null ? snrLabel(snr) : '';
     snrEl.className    = 'ch-snr ' + snrClass(snr);
@@ -1274,13 +1476,13 @@ function appendRxFrame(frame) {
           <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0"><span class="type" style="width:auto;color:var(--green)">TEXT ✓</span></span>
           <span class="snr">–</span>
           <span class="off"></span>
-          <span class="data">→ ${cached.dest}  "${assembled}" <span style="color:var(--text2);font-size:10px;">[${total}/${total} Frg. ✓]</span></span>`;
+          <span class="data">→ ${cached.dest}  "${assembled}" <span style="color:var(--text2);font-size:var(--fs-xxs);">[${total}/${total} Frg. ✓]</span></span>`;
         feed.appendChild(arow);
       } else {
         // Noch unvollständig → Fortschritt an die Fragment-Zeile hängen
         const miss = total - received;
         row.querySelector('.data')?.insertAdjacentHTML('beforeend',
-          ` <span style="color:var(--text2);font-size:10px;">… warte auf ${miss} Frg.</span>`);
+          ` <span style="color:var(--text2);font-size:var(--fs-xxs);">… warte auf ${miss} Frg.</span>`);
       }
 
       // Verwaiste Cache-Einträge (> 120 s) verwerfen
@@ -1307,6 +1509,169 @@ function appendRxFrame(frame) {
         .toUpperCase() === myCall &&
       document.getElementById('toggle-audio-mine')?.checked)
     playNotify();
+
+  // Inbox: an mich adressierte Freitext-Nachrichten sammeln
+  const _ftInbox = frame.frame_type ?? frame.type;
+  const _fdInbox = frame.payload_decoded || frame.data || {};
+  const _destInbox = (frame.to ?? _fdInbox.dest ?? _fdInbox.to ?? '')
+    .toString().toUpperCase();
+  if ((_ftInbox === TEXT_FRAME_TYPE || frame.type_name === 'TEXT') &&
+      myCall && _destInbox === myCall) {
+    inboxAddFrame(frame);
+  }
+}
+
+// ═══════════════════════════ INBOX (EMPFANGEN) ════════════════
+// Sammelt an das eigene Rufzeichen adressierte Freitext-Frames (0x40),
+// gruppiert mehrteilige Sequenzen und rendert sie im Empfangen-Tab.
+function _esc(s) {
+  return String(s ?? '').replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+function _fragOf(f) { return f.payload_decoded || f.data || {}; }
+
+function inboxAddFrame(frame) {
+  const fd    = _fragOf(frame);
+  const frm   = frame.from ?? '?';
+  const to    = (frame.to ?? fd.dest ?? fd.to ?? state.callsign ?? '?');
+  const seqId = fd.seq_nr ?? frame.seq_id ?? frame.sequence_id ?? null;
+  const total = fd.frag_total ?? frame.seq_total ?? 1;
+  const index = fd.frag_index ?? frame.seq_index ?? 0;
+  const text  = fd.text ?? '';
+  const ts    = frame.ts ?? (Date.now() / 1000);
+
+  let msg;
+  if (!seqId || total <= 1) {
+    // ── Einzelframe ──
+    msg = {
+      id: `single:${ts}:${frm}`, type: 'single', ts, from: frm, to,
+      text, frames: [frame], complete: true, total: 1, received: 1, read: false,
+    };
+    state.inbox.unshift(msg);
+  } else {
+    // ── Multi-Frame ──
+    const seqKey = `seq:${frm}:${seqId}`;
+    msg = state.inbox.find(m => m.type === 'multi' && m.id === seqKey);
+    if (!msg) {
+      msg = { id: seqKey, type: 'multi', ts, from: frm, to, text: '',
+              frames: [], complete: false, total, received: 0, read: false };
+      state.inbox.unshift(msg);
+    }
+    // Doppelte Fragmente (gleicher Index) ignorieren
+    if (!msg.frames.some(f => (_fragOf(f).frag_index ?? 0) === index)) {
+      msg.frames.push(frame);
+    }
+    msg.total    = Math.max(msg.total, total);
+    msg.received = msg.frames.length;
+    msg.complete = msg.received >= msg.total;
+    // Volltext neu aus allen Fragmenten zusammensetzen (sortiert nach Index)
+    msg.text = msg.frames.slice()
+      .sort((a, b) => (_fragOf(a).frag_index ?? 0) - (_fragOf(b).frag_index ?? 0))
+      .map(f => _fragOf(f).text ?? '').join('');
+  }
+
+  // Bei aktivem Inbox-Tab direkt als gelesen markieren
+  const inboxActive = document.getElementById('tab-inbox')?.classList.contains('active');
+  if (inboxActive) msg.read = true;
+
+  renderInbox();
+  updateInboxBadge();
+}
+
+function updateInboxBadge() {
+  const unread = state.inbox.filter(m => !m.read).length;
+  state.inboxUnread = unread;
+  const b = document.getElementById('inbox-badge');
+  if (!b) return;
+  if (unread > 0) { b.textContent = unread; b.classList.remove('hidden'); }
+  else            { b.classList.add('hidden'); }
+}
+
+function renderInbox() {
+  const list  = document.getElementById('inbox-list');
+  const empty = document.getElementById('inbox-empty');
+  if (!list) return;
+  if (!state.inbox.length) {
+    list.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  list.innerHTML = '';
+  state.inbox.forEach(m => {
+    const row = document.createElement('div');
+    row.className = 'inbox-item' + (m.read ? '' : ' inbox-unread');
+    const ts = new Date(m.ts * 1000).toLocaleTimeString('de-AT');
+    const typeBadge = m.type === 'multi'
+      ? `<span class="ib-type multi">MULTI ${m.received}/${m.total}</span>`
+      : `<span class="ib-type">SINGLE</span>`;
+    const txt     = m.text || '';
+    const preview = txt.slice(0, 60) + (txt.length > 60 ? '…' : '');
+    row.innerHTML = `<span class="ib-ts">${ts}</span>
+      <span class="ib-from">${_esc(m.from)}</span>
+      ${typeBadge}
+      <span class="ib-preview">${_esc(preview) || '(kein Text)'}</span>`;
+    row.addEventListener('click', () => showInboxDetail(m));
+    list.appendChild(row);
+  });
+}
+
+function showInboxDetail(msg) {
+  msg.read = true;
+  updateInboxBadge();
+  renderInbox();
+
+  const box = document.getElementById('inbox-modal-content');
+  if (!box) return;
+  const ts = new Date(msg.ts * 1000).toLocaleString('de-AT');
+  let html;
+
+  if (msg.type === 'single') {
+    const f   = msg.frames[0] || {};
+    const ch  = f.channel ?? f.detected_channel ?? '?';
+    const snr = f.snr_db ?? f._snr_db ?? null;
+    html = `<h3>Nachricht von ${_esc(msg.from)} an ${_esc(msg.to)}</h3>
+      <div style="color:var(--text2);font-size:var(--fs-xs);margin-bottom:8px;">${ts}</div>
+      <div style="border-top:1px solid var(--border);border-bottom:1px solid var(--border);
+           padding:10px 0;margin:8px 0;white-space:pre-wrap;">${_esc(msg.text) || '(kein Text)'}</div>
+      <div style="font-size:var(--fs-sm);color:var(--text2);">Frame-Details:<br>
+        Kanal: ${ch} &nbsp;|&nbsp; Frame-Type: 0x40 &nbsp;|&nbsp; CRC: OK
+        &nbsp;|&nbsp; SNR: ${snr != null ? snr.toFixed(1) + ' dB' : '–'}</div>`;
+  } else {
+    const missing = Math.max(0, msg.total - msg.received);
+    const body = msg.complete
+      ? _esc(msg.text)
+      : `${_esc(msg.text)}<br><span style="color:var(--orange);">` +
+        `(unvollständig, ${missing} Frame(s) fehlen)</span>`;
+    // Fragmente nach Index indizieren
+    const byIdx = {};
+    msg.frames.forEach(f => { byIdx[_fragOf(f).frag_index ?? 0] = f; });
+    let rows = '';
+    for (let i = 0; i < msg.total; i++) {
+      const f  = byIdx[i];
+      const t  = f ? new Date((f.ts || msg.ts) * 1000).toLocaleTimeString('de-AT') : '–';
+      const ch = f ? (f.channel ?? f.detected_channel ?? '?') : '–';
+      const st = f ? '✅ empfangen' : '❌ fehlt';
+      rows += `<tr><td>${i + 1}</td><td>${t}</td><td>${ch}</td><td>${st}</td></tr>`;
+    }
+    html = `<h3>Nachricht von ${_esc(msg.from)} an ${_esc(msg.to)}
+        (${msg.received}/${msg.total} Frames)</h3>
+      <div style="color:var(--text2);font-size:var(--fs-xs);margin-bottom:8px;">${ts}</div>
+      <div style="border-top:1px solid var(--border);border-bottom:1px solid var(--border);
+           padding:10px 0;margin:8px 0;white-space:pre-wrap;">${body || '(kein Text)'}</div>
+      <div style="font-size:var(--fs-sm);color:var(--text2);">Frame-Sequenz:</div>
+      <table class="seq-table">
+        <thead><tr><th>Index</th><th>Zeit</th><th>Kanal</th><th>Status</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+  }
+
+  box.innerHTML = html;
+  document.getElementById('inbox-modal').classList.add('open');
+}
+
+function closeInboxModal() {
+  document.getElementById('inbox-modal').classList.remove('open');
 }
 
 function frameDataSummary(f) {
@@ -1520,7 +1885,7 @@ function openFrameModal(frame) {
 function closeModal() {
   document.getElementById('frame-modal').classList.remove('open');
 }
-document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+document.addEventListener('keydown', e => { if(e.key==='Escape'){ closeModal(); closeInboxModal(); } });
 
 // Toggle-Zustand in localStorage speichern
 ['toggle-audio-emerg','toggle-audio-mine'].forEach(id => {
@@ -1623,6 +1988,18 @@ function applyStatusPush(data) {
     const el = document.getElementById('cfg-ptt-delay');
     if (el) el.value = data.ptt_delay_ms;
   }
+  if (data.tx_available != null) applyTxAvailability(data.tx_available);
+}
+
+// Schaltet den Senden-Tab je nach TX-Verfügbarkeit (Daemon vs. Monitor-Modus).
+// Im Monitor-Modus: Hinweisbanner einblenden + Bedienelemente deaktivieren,
+// damit kein Komponieren ins Leere läuft (sonst 503 beim Absenden).
+function applyTxAvailability(avail) {
+  state.txAvailable = avail;
+  const notice = document.getElementById('tx-unavailable');
+  const panel  = document.getElementById('tab-tx');
+  if (notice) notice.classList.toggle('hidden', !!avail);
+  if (panel)  panel.classList.toggle('tx-disabled', !avail);
 }
 
 // ═══════════════════════════ TX COUNTDOWN ═════════════════════
@@ -1726,9 +2103,27 @@ async function apiFetch(path, opts = {}) {
 
 function formatUptime(s) {
   if (s == null) return '–';
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
-  return `${h}h ${m}m ${sec}s`;
+  s = Math.floor(s);
+  const d   = Math.floor(s / 86400);
+  const h   = Math.floor((s % 86400) / 3600);
+  const m   = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const hh = String(h).padStart(2, '0');
+  const mm = String(m).padStart(2, '0');
+  const ss = String(sec).padStart(2, '0');
+  return d > 0 ? `${d}d ${hh}h ${mm}m ${ss}s` : `${h}h ${mm}m ${ss}s`;
 }
+
+// Kontinuierlicher Uptime-Sekundenzähler — läuft unabhängig vom aktiven Tab.
+// Basis (uptimeBase/uptimeBaseTs) wird bei jedem loadStatus() neu gesetzt.
+function _tickUptime() {
+  if (state.uptimeBase == null) return;
+  const el = document.getElementById('s-uptime');
+  if (!el) return;
+  el.textContent = formatUptime(
+    state.uptimeBase + Math.floor((Date.now() - state.uptimeBaseTs) / 1000));
+}
+setInterval(_tickUptime, 1000);
 
 function fmtTs(ts) {
   if (!ts) return '–';
@@ -1743,6 +2138,7 @@ function fmtTs(ts) {
     state.homeChannel = s.home_channel ?? null;
     document.getElementById('callsign-badge').textContent = state.callsign;
     buildChannelGrid(state.homeChannel);
+    if (s.tx_available != null) applyTxAvailability(s.tx_available);
     // Frame-History nachladen
     const hist = await apiFetch('/api/log');
     if (Array.isArray(hist.frames)) hist.frames.forEach(appendRxFrame);
@@ -1764,6 +2160,14 @@ function fmtTs(ts) {
     <div id="frame-modal-body">
       <div id="modal-content"></div>
     </div>
+  </div>
+</div>
+
+<!-- ══ INBOX DETAIL MODAL ══ -->
+<div id="inbox-modal" class="modal-overlay" onclick="if(event.target===this)closeInboxModal()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeInboxModal()">✕</button>
+    <div id="inbox-modal-content"></div>
   </div>
 </div>
 
@@ -1896,6 +2300,7 @@ class WebServer:
         app.router.add_get("/api/status",    self._handle_status)
         app.router.add_get("/api/config",    self._handle_config)
         app.router.add_patch("/api/config",  self._handle_config_patch)
+        app.router.add_post("/api/config",   self._handle_config_post)
         app.router.add_get("/api/log",       self._handle_log)
         app.router.add_post("/api/tx/weather",   self._handle_tx_weather)
         app.router.add_post("/api/tx/position",  self._handle_tx_position)
@@ -1966,6 +2371,9 @@ class WebServer:
         # nach dem Merge setzen, damit er nicht von None überschrieben wird.
         if self._last_rx_ts is not None:
             status["last_rx"] = self._last_rx_ts
+        # TX nur möglich, wenn ein Gateway verdrahtet ist (daemon-Modus).
+        # Im Monitor-Modus (rx / Standalone) ist es None → GUI deaktiviert Senden.
+        status["tx_available"] = self._gateway is not None
         return web.json_response(status)
 
     async def _handle_config(self, _request: web.Request) -> web.Response:
@@ -2023,6 +2431,56 @@ class WebServer:
                 )
 
         return web.json_response({"ok": True, "updated": patch})
+
+    async def _handle_config_post(self, request: web.Request) -> web.Response:
+        """
+        Konfig-Update via POST /api/config (Web-UI "Status & Config"-Tab).
+
+        Akzeptiert u.a.:
+            {"audio": {"input": <int|null>, "output": <int|null>},
+             "ptt":   {"backend": "null"|"gpio"|"hamlib"}}
+
+        Die Werte werden auf die kanonischen Konfig-Schlüssel abgebildet
+        (audio.device = output, rx.device = input, audio.ptt_backend = backend)
+        und in self._config geschrieben. Ist ein config_path bekannt, wird die
+        Auswahl zusätzlich best-effort in gateway.json persistiert.
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(text='{"error":"Ungültiger JSON-Body"}',
+                                     content_type="application/json")
+
+        audio = body.get("audio") or {}
+        ptt   = body.get("ptt")   or {}
+
+        def _coerce(val):
+            if val is None or val == "":
+                return None
+            try:
+                return int(val)
+            except (TypeError, ValueError):
+                return str(val)
+
+        if "output" in audio:
+            self._config.setdefault("audio", {})["device"] = _coerce(audio["output"])
+        if "input" in audio:
+            self._config.setdefault("rx", {})["device"] = _coerce(audio["input"])
+        if "backend" in ptt:
+            self._config.setdefault("audio", {})["ptt_backend"] = str(ptt["backend"])
+
+        # Best-effort-Persistenz — für den MVP nicht kritisch, daher kein Fehler
+        # nach außen, wenn das Schreiben scheitert.
+        if self._config_path is not None:
+            try:
+                async with self._config_write_lock:
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self._save_config_atomic)
+            except Exception as exc:
+                log.warning("POST /api/config: Persistenz fehlgeschlagen: %s", exc)
+
+        self._publish_log("INFO", "Konfiguration via Web aktualisiert")
+        return web.json_response({"ok": True, "message": "Konfiguration gespeichert"})
 
     async def _handle_log(self, _request: web.Request) -> web.Response:
         """Letzte 50 RX-Frames als JSON-Array."""
@@ -2346,7 +2804,8 @@ class WebServer:
         try:
             home_ch = _callsign_to_channel(self._callsign)
             await ws.send_json({"type": "status", "data": {
-                "callsign": self._callsign, "home_channel": home_ch
+                "callsign": self._callsign, "home_channel": home_ch,
+                "tx_available": self._gateway is not None,
             }})
         except Exception:
             self._ws_rx_clients.discard(ws)
