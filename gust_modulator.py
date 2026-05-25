@@ -307,8 +307,9 @@ def _find_sync_candidates(audio: np.ndarray) -> list:
     """
     Energie-basierte SYNC-Kandidatensuche — alle 10 Kanäle, vollvektorisiert.
 
-    Scannt den gesamten NF-Bereich 380–2580 Hz in 8-Hz-Schritten und deckt
-    damit alle GUST-Kanäle (0–9) inklusive ±80 Hz Frequenzoffset ab.
+    Scannt den NF-Bereich 320–2900 Hz in 8-Hz-Schritten und deckt damit alle
+    GUST-Kanäle (0–9) ab. Die Obergrenze 2900 Hz (statt früher 2760) gibt
+    Kanal 9 dieselbe positive Offset-Toleranz wie den unteren Kanälen.
 
     Performance: numpy stride_tricks; 250 Blöcke × 277 f0-Werte → < 0,5 s.
 
@@ -342,8 +343,10 @@ def _find_sync_candidates(audio: np.ndarray) -> list:
 
     candidates = []
 
-    # Range deckt Kanal 0 (400Hz) bis Kanal 9 (2650Hz) inkl. ±100Hz Offset ab
-    for f0 in np.arange(320.0, 2761.0, STEP_HZ):
+    # Range deckt Kanal 0 (400Hz) bis Kanal 9 (2650Hz) ab. Obergrenze 2900 Hz
+    # gibt Kanal 9 dieselbe positive Offset-Toleranz (~+250 Hz) wie die unteren
+    # Kanäle — vorher bei 2760 abgeschnitten (nur +110 Hz), Kanal-9-Asymmetrie.
+    for f0 in np.arange(320.0, 2901.0, STEP_HZ):
         f7 = f0 + 7 * TONE_SPACING
         if f7 > SAMPLE_RATE / 2 - HALF_BW:
             break

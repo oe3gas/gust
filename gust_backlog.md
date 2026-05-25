@@ -76,6 +76,7 @@
 | P7-L | feature | HackRF Dual-Kanal-TX + Parallelkanal | `transmit_iq()`: zwei Kanäle gleichzeitig senden; Diversity-Gewinn im SNR-Test bestätigt |
 | P7-M | bug | HackRF TX-Underrun | Langer `writeStream`-Timeout (1 s) verursachte Firmware-Hänger → Default-Timeout, originale Write-Loop |
 | P7-N | feature | `tx_test.py` Mess-Skript | TX-Testharness: Einzel-/Dual-Kanal, `--channels`, `--gain-sequence`, CSV-Log |
+| P7-O | feature | Scan-Obergrenze 2760→2900 Hz | Breitband-Scan in `_find_sync_candidates` erweitert → Kanal 9 erhält symmetrische positive Offset-Toleranz (vorher Einbruch ab +140 Hz, jetzt ≥ +200 Hz). Keine Regression (Kanäle 0–9 weiter 20/20 in AWGN). Behebt NUR den Offset-Anteil des Kanal-9-Problems, nicht den Filter-Cut → siehe ADR-14. |
 
 ---
 
@@ -88,6 +89,7 @@
 | P8-03 | 🟢 | docs | GitHub Repository aufsetzen | OE3GAS/oe3mode, README, Lizenz CC BY-SA 4.0 | 🔲 |
 | P8-04 | 🟢 | docs | ÖVSV-Präsentation vorbereiten | Folien für OE-Community, Protokollvorstellung | 🔲 |
 | P8-05 | 🟢 | docs | Protokoll bei ÖVSV einreichen | Offizielle Registrierung als OE-Digitalmode | 🔲 |
+| P8-06 | 🟡 | research | Kanalplan vs. SSB-Passband entscheiden | Kanal 9 (obere Töne bis 2868,75 Hz) wird vom Rig-SSB-Filter gecuttet → OTA CRC-Fail. Optionen A–D in **ADR-14** abwägen, mit Spec-Finalisierung (P8-01) koppeln. | 🔲 |
 
 ---
 
@@ -146,6 +148,7 @@
 | ✅ P7-L  | 7 | feature | HackRF Dual-Kanal-TX + Parallelkanal-Diversity | Mai 2026 |
 | ✅ P7-M  | 7 | bug | HackRF TX-Underrun (Default-Timeout-Fix) | Mai 2026 |
 | ✅ P7-N  | 7 | feature | tx_test.py Mess-Skript (--channels, --gain-sequence) | Mai 2026 |
+| ✅ P7-O  | 7 | feature | Scan-Obergrenze 2760→2900 Hz (Kanal-9-Offset-Symmetrie) | Mai 2026 |
 
 ---
 
@@ -207,8 +210,42 @@ verwenden, Write-Loop exakt wie die funktionierende `transmit()` (`pos += sr.ret
 sr.ret > 0 else BLOCK`). Diagnose-Tool `hackrf_diag.py` mit Watchdog-Timer half beim
 Aufspüren.
 
+### ADR-14: Kanal 9 an der SSB-Passband-Kante — Kanalplan überdenken 🔲 ENTWURF
+**Status:** Entwurf, Entscheidung offen → Phase 8 (P8-06, mit P8-01 Spec-Finalisierung).
+
+**Problem (OTA Mai 2026):** Kanal 9 wird über die Luft nur selten dekodiert.
+Empirische Analyse (AWGN- + Filtersimulation, Kanal 9 vs. Kanal 2):
+- In **reiner AWGN** dekodiert Kanal 9 identisch zu Kanal 2 (bis ≤ 0 dB SNR, 20/20). **Kein Decoder-/Logik-Bug.**
+- Mit **steilem SSB-Filter (Höhencut ~2700 Hz)** fällt Kanal 9 auf ~22/30; mit zusätzlich +60 Hz Dial-Offset → ~0/30.
+- Die Fehlerart ist **immer CRC-Fail, nie „kein-SYNC"**: SYNC wird zuverlässig gefunden,
+  aber die oberen Daten-Töne von Kanal 9 (Ton 5/6/7 bei 2806/2837/**2868,75** Hz) liegen
+  am/über der Kante eines typischen 2,4–2,7-kHz-SSB-Filters. Das Rig dämpft sie weg →
+  FFT-argmax liest die Symbole falsch → RS-FEC überlastet → CRC-Fail. **Verlorene HF-Energie,
+  die der Decoder nicht zurückholen kann.**
+
+Ursache ist also der Kanalplan (400–2900 Hz nutzt mehr Bandbreite, als ein Standard-
+SSB-Filter durchlässt), nicht die Software. Ein bereits umgesetzter Decoder-Fix
+(P7-O: Breitband-Scan-Obergrenze 2760 → 2900 Hz) behebt nur die *Offset*-bedingten
+Ausfälle (Kanal-9-Offset-Toleranz jetzt symmetrisch ≥ +200 Hz), nicht den Filter-Cut.
+
+**Optionen für die eigentliche Entscheidung:**
+- **A — Status quo + Betriebshinweis (empfohlen kurzfristig):** Kanalplan unverändert.
+  Dokumentieren: IC-7610 TX/RX-SSB-Bandbreite weit stellen (RX-Filter ≥ 3,0 kHz, TX-BW max);
+  Kanal 9 (ggf. 8) bei Schmalfilter-Rigs meiden. **Kein Protokoll-Break.**
+- **B — Kanalplan nach unten schieben:** z.B. Basis 300 Hz → Kanäle 300–2800 Hz. Behält
+  10 Kanäle, rückt die oberen Töne aber tiefer ins Passband. **Protokoll-Break.**
+- **C — Auf 9 Kanäle reduzieren (0–8, Kanal 9 streichen):** Nutzband 400–2650 Hz, passt in
+  2,4-kHz-Filter. **Protokoll-Break** + ändert die Kanalzuweisung (`SHA-256 % 10` → `% 9`).
+- **D — Engerer Tonabstand / weniger Kanäle in schmalerem Span:** größerer DSP-Eingriff,
+  berührt Orthogonalität (Olivia-8/250-Kompatibilität ginge verloren). Unwahrscheinlich.
+
+**Konsequenz jeder Plan-Änderung (B/C/D):** Protokoll-Break v0.3 → v0.4 **und** Änderung
+der deterministischen Kanalzuweisung — alle Stationen bekommen neue Heimatkanäle. Da v0.3
+noch nicht veröffentlicht ist, ist ein Break vor P8-01 vertretbar. Entscheidung mit der
+Spec-Finalisierung koppeln.
+
 ---
 
 *Dokument: gust_backlog.md*
 *Autor: OE3GAS*
-*Stand: Mai 2026 — Phase 7 Empfänger-Robustheit + SNR-Baseline abgeschlossen; P7-05/H/I/J/K/L/M/N erledigt*
+*Stand: Mai 2026 — Phase 7 Empfänger-Robustheit + SNR-Baseline abgeschlossen; P7-05/H/I/J/K/L/M/N/O erledigt; ADR-14 (Kanal-9/SSB-Passband) als Entwurf offen → P8-06*
