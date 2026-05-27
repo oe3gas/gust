@@ -31,15 +31,32 @@
 
 ---
 
-## PHASE 6 — MQTT-Bridge (optional)
+## PHASE 6 — Connector Layer + MQTT-Bridge ← KONZEPT FERTIG, IMPLEMENTIERUNG OFFEN
+
+Dieses Phase-6-Konzept wurde durch `gust_connector_konzept.md` erweitert.
+Statt einer einfachen MQTT-Brücke wird ein vollständiger Connector Layer
+implementiert, der semantisches Bridging für beliebige externe Protokolle
+ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 
 | ID | Prio | Typ | Titel | Beschreibung | Status |
 |---|---|---|---|---|---|
-| P6-01 | 🟡 | feature | `gust_mqtt.py` — MQTTBridge | Event-Bus-Subscriber: RX-Frames → gust/rx/* publishen | 🔲 |
-| P6-02 | 🟡 | feature | MQTT TX-Input | gust/tx/* subscriben → TX-Queue einreihen | 🔲 |
-| P6-03 | 🟢 | docs | MQTT Topic-Schema dokumentieren | Vollständige Topic-Liste, Payload-Schemata, Beispiele | 🔲 |
-| P6-04 | 🟢 | feature | Home Assistant Integration testen | MQTT Discovery-Format für HA-Sensoren | 🔲 |
-| P6-05 | 🟢 | feature | Node-RED Flow-Beispiel | Beispiel-Flow: GUST RX → Dashboard | 🔲 |
+| P6-01 | 🟡 | feature | `gust_mqtt.py` — MQTTConnector Outbound | RX_FRAME Events → SemanticMapping.map_outbound() → MQTT publish; ersetzt alte MQTTBridge-Outbound-Logik | 🔲 |
+| P6-02 | 🟡 | feature | `gust_mqtt.py` — MQTTConnector Inbound | MQTT subscribe → SemanticMapping.map_inbound() → CONNECTOR_RX Event → TX-Queue | 🔲 |
+| P6-03 | 🟡 | docs | `connectors.yaml` — Topic-Schema | Vollständige YAML-Konfiguration: Broker, Inbound-Rules, Outbound-Templates; ersetzt separate Topic-Doku | 🔲 |
+| P6-04 | 🟢 | feature | Home Assistant Integration | Transform `weather_from_ha_json`; HA Auto-Discovery via `homeassistant/sensor/gust_*/config` | 🔲 |
+| P6-05 | 🟢 | feature | Node-RED Flow-Beispiel | Beispiel-Flow: `gust/rx/*` → Dashboard; unverändert im Scope | 🔲 |
+| P6-06 | 🟡 | feature | `gust_connector.py` — ABC + Registry | `GustConnector` Abstract Base Class + `ConnectorRegistry`; Grundlage für alle Connector-Implementierungen | 🔲 |
+| P6-07 | 🟡 | feature | `gust_transforms.py` — Transform-Bibliothek | `weather_from_ha_json`, `position_from_aprs_json`, `passthrough`, `sensor_from_json`; `SemanticMapping` YAML-Loader + Matcher | 🔲 |
+| P6-08 | 🟡 | feature | `connectors.yaml` — Konfigurations-Schema | YAML-Schema mit Inbound/Outbound-Regeln, topic-Wildcard-Matching, from_call-Templates | 🔲 |
+| P6-09 | 🟢 | feature | `gust_eventbus.py` — CONNECTOR_RX EventType | Neue EventType-Konstante `CONNECTOR_RX = "connector_rx"`; MQTT_RX bleibt als Alias | 🔲 |
+
+### Ergänzend geplante Connectors (Phase 8/9)
+
+| ID | Typ | Titel | Beschreibung |
+|---|---|---|---|
+| P6-10 | feature | `WebhookConnector` | aiohttp POST-Handler, kein Broker nötig |
+| P6-11 | feature | `MeshtasticConnector` | LoRa-Mesh-Bridge (siehe P7-09); from_call aus Node-ID |
+| P6-12 | feature | `APRSConnector` | APRS-IS oder TNC; `position_from_aprs_json` bereits in gust_transforms.py |
 
 ---
 
@@ -80,16 +97,38 @@
 
 ---
 
+## PHASE 9 — Protokoll v0.5: Costas-SYNC · Kanalreduktion · IQ-Eingang ✅ ABGESCHLOSSEN
+
+| ID | Prio | Typ | Titel | Beschreibung | Status |
+|---|---|---|---|---|---|
+| P9-01 | 🔴 | feature | Kanalplan v0.5 | `CHANNEL_BASE_HZ=600`, `N_CHANNELS=8`; Scan-Range 500–2510 Hz; Protokoll-Break dokumentiert | ✅ |
+| P9-02 | 🔴 | feature | Costas-8 SYNC | `SYNC_SYMBOLS=[2,0,6,7,1,4,3,5]`; 8-Ton-Scoring in `_find_sync_candidates()`; Selbsttest angepasst | ✅ |
+| P9-03 | 🟡 | feature | Passband-Equalizer | `_build_equalizer()` + `_fft_detect_symbol_eq()`; `demodulate(use_equalizer=True)` | ✅ |
+| P9-04 | 🟡 | feature | `gust_iq_rx.py` — IQ-Eingang | RTL-SDR Filterbank, Breitband-Modus, `IQReceiver` asyncio-Klasse; CF32-Datei-Dekodierung | ✅ |
+| P9-05 | 🟡 | feature | Web-UI 8-Kanal-Grid | CSS Grid 5→4 Spalten; Kanalplan 600–2600 Hz in `buildChannelGrid()` | ✅ |
+| P9-06 | 🟢 | docs | Spec v0.5 | §3.1/§3.2 Kanalplan, §3.3 Costas-SYNC, §3.x IQ-Eingang | ✅ |
+| P9-07 | 🟢 | docs | Knowledge-Update Phase 9 | gust_knowledge.md: Costas-Abschnitt, IQ-Abschnitt, Connector-Konzept-Übersicht | ✅ |
+| P9-08 | 🔴 | feature | GitHub Repository | OE3GAS/gust initialisieren, README.md, .gitignore, Commit | ✅ |
+
+### Aus Feature-Ideen übernommen
+
+| ID | Aktion |
+|---|---|
+| IDEA-05 | → P9-04 (SDR-Monitor-Modus) ✅ umgesetzt |
+| P7-07   | → Geschlossen: Preamble-Länge bleibt 256 ms; SYNC-Qualität durch Costas-Array verbessert |
+
+---
+
 ## PHASE 8 — Dokumentation & Veröffentlichung
 
 | ID | Prio | Typ | Titel | Beschreibung | Status |
 |---|---|---|---|---|---|
 | P8-01 | 🟡 | docs | Protokollspezifikation finalisieren | Vollständiges Markdown-Dokument v0.3, publikationsreif | 🔲 |
 | P8-02 | 🟡 | docs | Installationsanleitung RPi | Schritt-für-Schritt: OS, Python, Hardware, gateway.json | 🔲 |
-| P8-03 | 🟢 | docs | GitHub Repository aufsetzen | OE3GAS/oe3mode, README, Lizenz CC BY-SA 4.0 | 🔲 |
+| P8-03 | 🟢 | docs | GitHub Repository aufsetzen | OE3GAS/gust, README, Lizenz CC BY-SA 4.0 | ✅ |
 | P8-04 | 🟢 | docs | ÖVSV-Präsentation vorbereiten | Folien für OE-Community, Protokollvorstellung | 🔲 |
 | P8-05 | 🟢 | docs | Protokoll bei ÖVSV einreichen | Offizielle Registrierung als OE-Digitalmode | 🔲 |
-| P8-06 | 🟡 | research | Kanalplan vs. SSB-Passband entscheiden | Kanal 9 (obere Töne bis 2868,75 Hz) wird vom Rig-SSB-Filter gecuttet → OTA CRC-Fail. Optionen A–D in **ADR-14** abwägen, mit Spec-Finalisierung (P8-01) koppeln. | 🔲 |
+| P8-06 | 🟡 | research | Kanalplan vs. SSB-Passband entscheiden | Kanal 9 (obere Töne bis 2868,75 Hz) wird vom Rig-SSB-Filter gecuttet → OTA CRC-Fail. Optionen A–D in **ADR-14** abgewogen → **Entscheidung gefallen** (Variante C-Ableitung: 8 Kanäle 600–2600 Hz, v0.5). Umgesetzt in P9-01. | ✅ |
 
 ---
 
@@ -117,7 +156,7 @@
 | IDEA-02 | feature | Winlink-Integration | GUST als alternativer Transportkanal für Winlink-Nachrichten |
 | IDEA-03 | feature | Frequenz-Agility | Automatischer Kanalwechsel bei hoher Kollisionsrate (CSMA-ähnlich) |
 | IDEA-04 | feature | GPS-Direktanbindung | NMEA-Stream von USB-GPS direkt als Positions-Frame-Quelle |
-| IDEA-05 | feature | SDR-Monitor-Modus | Direkter IQ-Eingang von SDRplay/RTL-SDR ohne Soundkarte |
+| ~~IDEA-05~~ | feature | ~~SDR-Monitor-Modus~~ | ~~Direkter IQ-Eingang von SDRplay/RTL-SDR ohne Soundkarte~~ → **Umgesetzt als P9-04** |
 | IDEA-06 | feature | Frame-Statistik-Dashboard | Langzeit-Statistik: Frames/Tag, Kanalbelegung, Top-Stationen |
 | IDEA-07 | feature | htmx/Alpine.js Migration | Web-UI reaktiver machen ohne Build-System |
 | IDEA-08 | research | GUST auf VHF/UHF | Gleiche Protokollschicht, andere Frequenzarchitektur für 2m/70cm |
@@ -210,8 +249,9 @@ verwenden, Write-Loop exakt wie die funktionierende `transmit()` (`pos += sr.ret
 sr.ret > 0 else BLOCK`). Diagnose-Tool `hackrf_diag.py` mit Watchdog-Timer half beim
 Aufspüren.
 
-### ADR-14: Kanal 9 an der SSB-Passband-Kante — Kanalplan überdenken 🔲 ENTWURF
-**Status:** Entwurf, Entscheidung offen → Phase 8 (P8-06, mit P8-01 Spec-Finalisierung).
+### ADR-14: Protokoll v0.5 — Kanalplan 8 Kanäle + Costas-SYNC + IQ-Eingang ✅
+**Status:** Entschieden und umgesetzt (Phase 9, Mai 2026). Löst den ursprünglichen
+Entwurf (Kanal-9/SSB-Passband-Kante) und P8-06 auf.
 
 **Problem (OTA Mai 2026):** Kanal 9 wird über die Luft nur selten dekodiert.
 Empirische Analyse (AWGN- + Filtersimulation, Kanal 9 vs. Kanal 2):
@@ -228,24 +268,36 @@ SSB-Filter durchlässt), nicht die Software. Ein bereits umgesetzter Decoder-Fix
 (P7-O: Breitband-Scan-Obergrenze 2760 → 2900 Hz) behebt nur die *Offset*-bedingten
 Ausfälle (Kanal-9-Offset-Toleranz jetzt symmetrisch ≥ +200 Hz), nicht den Filter-Cut.
 
-**Optionen für die eigentliche Entscheidung:**
-- **A — Status quo + Betriebshinweis (empfohlen kurzfristig):** Kanalplan unverändert.
-  Dokumentieren: IC-7610 TX/RX-SSB-Bandbreite weit stellen (RX-Filter ≥ 3,0 kHz, TX-BW max);
-  Kanal 9 (ggf. 8) bei Schmalfilter-Rigs meiden. **Kein Protokoll-Break.**
-- **B — Kanalplan nach unten schieben:** z.B. Basis 300 Hz → Kanäle 300–2800 Hz. Behält
-  10 Kanäle, rückt die oberen Töne aber tiefer ins Passband. **Protokoll-Break.**
-- **C — Auf 9 Kanäle reduzieren (0–8, Kanal 9 streichen):** Nutzband 400–2650 Hz, passt in
-  2,4-kHz-Filter. **Protokoll-Break** + ändert die Kanalzuweisung (`SHA-256 % 10` → `% 9`).
-- **D — Engerer Tonabstand / weniger Kanäle in schmalerem Span:** größerer DSP-Eingriff,
-  berührt Orthogonalität (Olivia-8/250-Kompatibilität ginge verloren). Unwahrscheinlich.
+**Abgewogene Optionen (Entwurf):** A — Status quo + Betriebshinweis (kein Break);
+B — Kanalplan nach unten schieben (Basis 300 Hz, 10 Kanäle, Break); C — auf 9 Kanäle
+reduzieren (Kanal 9 streichen, Break + `SHA-256 % 9`); D — engerer Tonabstand
+(größerer DSP-Eingriff, Orthogonalität gefährdet). Die umgesetzte v0.5 ist eine
+konsequentere Ableitung von C: **beide** Randkanäle (0+9 alt) entfernt.
 
-**Konsequenz jeder Plan-Änderung (B/C/D):** Protokoll-Break v0.3 → v0.4 **und** Änderung
-der deterministischen Kanalzuweisung — alle Stationen bekommen neue Heimatkanäle. Da v0.3
-noch nicht veröffentlicht ist, ist ein Break vor P8-01 vertretbar. Entscheidung mit der
-Spec-Finalisierung koppeln.
+**Motivation:** On-Air-Tests und Analyse zeigten dass Kanäle 0 und 9 (alt: 400 Hz /
+2650–2900 Hz) im SSB-Filterrolloff lagen (bis −10 dB). Der alternierende SYNC
+[7,0,7,0,7,0,7,0] verwendete nur 2 von 8 Tönen — kein Equalizer möglich und
+suboptimale Autokorrelation. IQ-Eingang war als IDEA-05 bereits priorisiert.
+**Entscheidung:** Sofortiger Schnitt auf 8 Kanäle (600–2600 Hz, SSB-Plateau ±0,5 dB),
+Ersatz durch verifiziertes Costas-Array der Ordnung 8 ([2,0,6,7,1,4,3,5]),
+additiver IQ-Eingang als neues Modul gust_iq_rx.py. Protokoll-Break auf v0.5
+akzeptiert — GitHub-Repository noch nicht angelegt (P8-03 offen), kein
+Rückwärtskompatibilitätsproblem. Decoder-Eingriff: minimal — nur SYNC_SYMBOLS-
+Konstante + Sync-Scoring-Algorithmus in _find_sync_candidates(), Datendekodierung
+vollständig unverändert.
+
+### ADR-15: Connector Layer — Semantic Bridging statt simpler MQTT-Brücke
+Motivation: P6-01/02 (einfache MQTT-Brücke) ist semantisch blind — externer JSON
+landet als Rohbytes, der Gateway muss den Typ erraten. Für Home Assistant,
+APRS, Meshtastic usw. braucht es eine echte Übersetzungsschicht.
+Entscheidung: Neues Abstraktionsmodell (gust_connector_konzept.md):
+GustConnector ABC + ConnectorRegistry + SemanticMapping (YAML-konfiguriert) +
+Transform-Bibliothek. Frame-Layer und Event-Bus bleiben vollständig unverändert.
+P6-01 bis P6-05 bleiben als Items, werden aber inhaltlich auf das neue Modell
+angehoben. Neue Items P6-06 bis P6-09 für die Basisschicht.
 
 ---
 
 *Dokument: gust_backlog.md*
 *Autor: OE3GAS*
-*Stand: Mai 2026 — Phase 7 Empfänger-Robustheit + SNR-Baseline abgeschlossen; P7-05/H/I/J/K/L/M/N/O erledigt; ADR-14 (Kanal-9/SSB-Passband) als Entwurf offen → P8-06*
+*Stand: Mai 2026 — Phase 9 (Protokoll v0.5: Costas-SYNC, Kanalplan 8 Kanäle 600–2600 Hz, IQ-Eingang) abgeschlossen; ADR-14 entschieden & umgesetzt, P8-06 geschlossen; Phase 7 (Empfänger-Robustheit + SNR-Baseline) abgeschlossen*

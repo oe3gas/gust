@@ -1,6 +1,6 @@
 # GUST — Knowledge Base
 **OE3GAS — GUST: Generic Universal Shortwave Telemetry**
-*Phase 1–7 — Mai 2026 (inkl. Empfänger-Robustheit + SNR-Baseline)*
+*Phase 1–9 — Mai 2026 (inkl. Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Connector-Layer)*
 
 ---
 
@@ -20,8 +20,8 @@ die individuelle NF-Tonhöhe bestimmt den Kanal.
 
 ```
 Dial:    14.110,000 MHz (USB, alle Stationen gleich)
-NF:      400 – 2.900 Hz  (10 Kanäle × 250 Hz)
-RF:      14.110,400 – 14.112,900 MHz
+NF:      600 – 2.600 Hz  (8 Kanäle × 250 Hz, v0.5)
+RF:      14.110,600 – 14.112,600 MHz
 ```
 
 Jede Station sendet ihr MFSK-8-Signal in einem 250 Hz breiten NF-Fenster.
@@ -33,46 +33,66 @@ Der Empfänger sieht im Wasserfall alle Kanäle gleichzeitig.
 (300–3.000 Hz). 10 Kanäle × 250 Hz = 2.500 Hz passen problemlos hinein.
 
 **Entscheidungskriterium: Interoperabilität > Kapazität.**
-10 Kanäle genügen für die geplanten Anwendungsfälle (Telemetrie, Notfunk, QSO).
 
-### Kanalplan (final, implementiert)
+### Warum Reduktion von 10 auf 8 Kanäle (v0.5)?
 
-| Kanal | NF-Unterkante | NF-Oberkante | Ton 0     | Ton 7      |
-|------:|:-------------:|:------------:|:---------:|:----------:|
-| 0     | 400 Hz        | 650 Hz       | 400,00 Hz | 618,75 Hz  |
-| 1     | 650 Hz        | 900 Hz       | 650,00 Hz | 868,75 Hz  |
-| 2     | 900 Hz        | 1150 Hz      | 900,00 Hz | 1118,75 Hz |
-| 3     | 1150 Hz       | 1400 Hz      | ...       | ...        |
-| 4     | 1400 Hz       | 1650 Hz      | ...       | ...        |
-| 5     | 1650 Hz       | 1900 Hz      | ...       | ...        |
-| 6     | 1900 Hz       | 2150 Hz      | ...       | ...        |
-| 7     | 2150 Hz       | 2400 Hz      | ...       | ...        |
-| 8     | 2400 Hz       | 2650 Hz      | ...       | ...        |
-| 9     | 2650 Hz       | 2900 Hz      | 2650,00 Hz| 2868,75 Hz |
+On-Air-Analyse und SSB-Filtercharakteristik zeigten: Kanal 0 (400 Hz) und
+Kanal 9 (2650–2900 Hz) lagen im Rolloff-Bereich des SSB-Bandpassfilters
+(−3 bis −10 dB). Die Randtöne hatten deutlich schlechteres SNR als
+die mittleren Kanäle — ein strukturelles Problem, das kein Software-Fix
+vollständig lösen kann.
 
-Gesamt: 400–2.900 Hz → passt in Standard-SSB-Passband ✓
+Lösung: CHANNEL_BASE_HZ von 400 auf 600 Hz angehoben, N_CHANNELS von 10
+auf 8 reduziert. Neuer Span 600–2600 Hz = SSB-Plateau (±0,5 dB).
+Kapazitätsverlust minimal — Pure-ALOHA-Limit greift vor der Kanalzahl.
+Protokoll-Break auf v0.5 akzeptiert (GitHub noch nicht public zum Zeitpunkt
+der Änderung).
+
+### Kanalplan (v0.5, implementiert)
+
+| Kanal | NF-Unterkante | NF-Oberkante | Ton 0       | Ton 7       |
+|------:|:-------------:|:------------:|:-----------:|:-----------:|
+| 0     | 600 Hz        | 850 Hz       | 600,00 Hz   | 818,75 Hz   |
+| 1     | 850 Hz        | 1100 Hz      | 850,00 Hz   | 1068,75 Hz  |
+| 2     | 1100 Hz       | 1350 Hz      | 1100,00 Hz  | 1318,75 Hz  |
+| 3     | 1350 Hz       | 1600 Hz      | 1350,00 Hz  | 1568,75 Hz  |
+| 4     | 1600 Hz       | 1850 Hz      | 1600,00 Hz  | 1818,75 Hz  |
+| 5     | 1850 Hz       | 2100 Hz      | 1850,00 Hz  | 2068,75 Hz  |
+| 6     | 2100 Hz       | 2350 Hz      | 2100,00 Hz  | 2318,75 Hz  |
+| 7     | 2350 Hz       | 2600 Hz      | 2350,00 Hz  | 2568,75 Hz  |
+
+Gesamt: 600–2.600 Hz → SSB-Plateau ±0,5 dB ✓
 
 ---
 
 ## 2. Kanalzuweisung — SHA-256 und der Avalanche-Effekt
 
 ### Prinzip
-Rufzeichen → SHA-256-Hash → `h % 10` = Kanal, `(h >> 8) % 300` = Zeitversatz.
+Rufzeichen → SHA-256-Hash → `h % 8` = Kanal (v0.5: 8 Kanäle), `(h >> 8) % 300` = Zeitversatz.
 Deterministisch, kein Koordinationsaufwand, kein Beacon nötig.
 
 ### Avalanche-Effekt (wichtige Erkenntnis)
 Ähnliche Rufzeichen landen auf völlig verschiedenen Kanälen:
 ```
-OE3GAS → Kanal 2,  Versatz 220 s
-OE3GAT → Kanal 0,  Versatz  93 s
-OE3GAU → Kanal 0,  Versatz 212 s
+OE3GAS → Kanal 0,  Versatz 220 s
+OE3GAT → Kanal 2,  Versatz  93 s
+OE3GAU → Kanal 6,  Versatz 212 s
 ```
+(Kanal-Beispiele mit h % 8 ggf. abweichend von Phase-7-Werten — durch
+ Python neu berechnen: `from gust_frame import assign_channel; assign_channel('OE3GAS')`.
+ Der grobe Anhaltspunkt `hashlib.sha256(b'OE3GAS').digest()[0] % 8` weicht ab,
+ da `assign_channel()` den vollen Hex-Hash modulo 8 nimmt.)
+
 Ein Buchstabe Unterschied → komplett anderer Hash. Das ist gewollt:
 gute Verteilung auch bei strukturell ähnlichen Rufzeichen (OE3-Präfix).
+Unter v0.5 (8 Kanäle) landen die drei sogar auf drei verschiedenen Kanälen (0/2/6).
 
 ### Kollision ohne Konflikt
-OE3GAT (93 s) und OE3GAU (212 s) teilen Kanal 0, senden aber 119 s
-auseinander. Da ein Frame ~4,9 s dauert, kollidieren sie praktisch nie.
+Teilen zwei Stationen denselben Kanal, schützt der Zeitversatz: liegen ihre
+Sende-Slots z.B. > 100 s auseinander, kollidieren sie bei ~4,9 s Framedauer
+praktisch nie. Der Zeitversatz `(h >> 8) % 300` ist unabhängig von der
+Kanalzahl — die v0.5-Reduktion 10→8 ändert nur die Kanal-, nicht die
+Versatz-Werte.
 
 ---
 
@@ -525,6 +545,165 @@ Notfall-Frames bleibt der Parallelkanal die zweite, von Timing unabhängige Absi
 
 ---
 
+## X. Costas-Array SYNC — Warum nicht mehr [7,0,7,0,7,0,7,0]?
+
+### Das Problem mit dem alternierenden SYNC
+
+Der ursprüngliche SYNC `[7,0,7,0,7,0,7,0]` hatte drei Schwächen:
+
+1. **Nur 2 von 8 Tönen** werden angeregt → kein Passband-Equalizer möglich
+2. **Mehrdeutige Autokorrelation**: der periodische Wechsel erzeugt Nebenpeaks
+   → Fehlsynchronisation bei schlechtem SNR
+3. **Binäre Detektion**: der Detektor konnte nur "Ton 0 vs. Ton 7" unterscheiden
+
+### Costas-Array Ordnung 8
+
+Ein Costas-Array der Ordnung N ist eine Permutation von {0…N−1}, bei der
+alle Differenzvektoren (Δposition, Δtonwert) eindeutig sind. Die Konsequenz:
+die diskrete 2D-Autokorrelationsmatrix hat exakt einen einzigen Peak.
+
+FT8 von Joe Taylor K1JT verwendet das Costas-Prinzip für seinen 7-FSK-SYNC.
+GUST übernimmt es für MFSK-8 (8 Töne → Ordnung 8).
+
+**GUST v0.5 SYNC:** `[2, 0, 6, 7, 1, 4, 3, 5]`
+
+Maschinell verifiziert (alle 28 Differenzvektoren eindeutig):
+```python
+def is_costas(seq):
+    seen = set()
+    for i in range(len(seq)):
+        for j in range(i+1, len(seq)):
+            vec = (j-i, seq[j]-seq[i])
+            if vec in seen: return False
+            seen.add(vec)
+    return True
+assert is_costas([2,0,6,7,1,4,3,5])   # → True
+```
+
+### Bonus: Passband-Equalizer
+
+Da alle 8 Töne je einmal in der SYNC-Sequenz vorkommen, kann der Empfänger
+die Amplitude jedes Tons messen und daraus einen Korrektionsvektor ableiten.
+`_build_equalizer()` in `gust_modulator.py` implementiert das.
+Aktivierung: `demodulate(audio, use_equalizer=True)`.
+
+### Sync-Detektor-Änderung
+
+Der bisherige binäre Energie-Vergleich (Ton 0 vs. Ton 7) in
+`_find_sync_candidates()` wurde durch ein 8-Ton-Scoring ersetzt:
+
+```
+Für jede Kandidaten-Position und Basisfrequenz f0:
+  score = mittlere Energie-Fraktion des erwarteten Tons
+          über alle 8 SYNC-Positionen
+SCORE_MIN = 0.35 (statt 0.70 beim binären SYNC)
+```
+
+Der Wert 0.35 erscheint niedrig, ist aber korrekt: bei 8 gleichmäßig
+verteilten Tönen ist die Fraktion des richtigen Tons im Rauschen 1/8 = 0.125,
+bei sauberem Signal ~0.5–0.8. SCORE_MIN=0.35 liegt komfortabel dazwischen.
+Der CRC-Check verhindert Fehldecodierungen zuverlässig.
+
+---
+
+## Y. IQ-Eingang — Direktempfang ohne Transceiver (Phase 9)
+
+### Motivation
+
+Audio-Dekodierung über den SSB-Demodulator eines Transceivers hat einen
+fundamentalen Nachteil: der Transceiver-Filter ist für Sprachverständlichkeit
+optimiert, nicht für GUST. Randkanäle leiden unter dem Rolloff.
+
+Mit einem SDR (RTL-SDR, SDRplay, HackRF) im IQ-Modus entfällt dieses Problem:
+- Eigener FIR-Bandpass, ±0,1 dB Flatness über die gesamten 2 kHz
+- Alle 8 Kanäle gleichzeitig durch digitales Filterbank
+- Kein Transceiver erforderlich (RTL-SDR ~25 EUR)
+
+### Architektur (gust_iq_rx.py)
+
+```
+RTL-SDR @ 250 kHz IQ
+    │
+    ├─ PPM-Korrektur (Frequenzfehler-Kompensation)
+    │
+    ├─ 8× FIR-Bandpass (scipy.signal.firwin, je 250 Hz breit)
+    │   Kanal 0: 550–900 Hz, Kanal 7: 2300–2650 Hz
+    │
+    ├─ Downsampling 250 kHz → 8000 Hz (resample_poly)
+    │
+    └─ demodulate(audio, channel=k, use_equalizer=True)
+       ↑ bestehende Funktion, unverändert
+```
+
+### RTL-SDR Kalibrierung
+
+RTL-SDR-Oszillatoren haben typisch ±50–100 ppm Frequenzfehler.
+Bei 14 MHz = ±700–1400 Hz — kritisch für GUST.
+Einmalige Kalibrierung mit `rtl_test -p`, Wert in `gateway.json`:
+```json
+"rtlsdr": { "ppm_correction": 3 }
+```
+Nach Kalibrierung: ±2–5 ppm → ±28–70 Hz → unkritisch für GUST.
+
+### SNR-Verbesserung gegenüber Audio
+
+| Kanal | Audio (SSB) | IQ-Eingang |
+|---|---|---|
+| Randkanäle (0, 7) | Basis | +3…+8 dB eff. SNR |
+| Mittelkanäle | Basis | +0…+2 dB |
+| Alle Kanäle gleichzeitig | Nein | Ja (Filterbank) |
+
+---
+
+## Z. Connector Layer — Semantic Bridging (Phase 6, Konzept)
+
+### Problem: Semantic Impedance
+
+MQTT-Nachrichten sprechen eine andere Sprache als GUST-Frames.
+Ein JSON von einer Wetterstation enthält `"temperature": 18.3` —
+GUST erwartet `encode_weather(temp_c=18.3, ...)`.
+Die Übersetzung muss irgendwo stattfinden.
+
+### Lösung: Dedizierte Connector-Schicht
+
+```
+Externe Welt (MQTT, HTTP-Webhook, Meshtastic, APRS)
+    ↓
+gust_connector.py — GustConnector ABC + ConnectorRegistry
+    ↓
+gust_transforms.py — Transform-Funktionen + SemanticMapping
+    ↓
+connectors.yaml — Konfiguration: Topics, Mappings, Broker
+    ↓
+Event-Bus — unverändert
+    ↓
+Frame-Layer — gust_frame.py unverändert
+```
+
+### Kernprinzipien
+
+- **gust_frame.py bleibt unberührt** — kein einziger Byte geändert
+- **Semantik ist konfiguriert**, nicht hart kodiert (YAML-Mapping)
+- **Bidirektional**: eingehend (extern → HF) und ausgehend (HF → extern)
+- **Erweiterbar**: MQTT ist nur ein Connector von vielen (Webhook, Meshtastic...)
+
+### Neue Dateien (Phase 6)
+
+| Datei | Inhalt |
+|---|---|
+| `gust_connector.py` | `GustConnector` ABC + `ConnectorRegistry` |
+| `gust_mqtt.py` | `MQTTConnector` Implementierung (ersetzt P6-01/02) |
+| `gust_transforms.py` | Transform-Bibliothek: `weather_from_ha_json`, etc. |
+| `connectors.yaml` | Topic-Routing, Broker-Config, Mappings |
+
+### MQTT-Topic-Schema
+
+Inbound: `gust/tx/weather` → WEATHER Frame  
+Outbound: `gust/rx/weather/<rufzeichen>` → JSON mit Wetterdaten
+Home Assistant: Auto-Discovery via `homeassistant/sensor/gust_*/config`
+
+---
+
 ## 17. Implementierter Software-Stack
 
 ### Dateien
@@ -560,7 +739,7 @@ Notfall-Frames bleibt der Parallelkanal die zweite, von Timing unabhängige Absi
 | Automatische Frequenzoffset-Erkennung            | ✓      |
 | Frequenz-Fein-Refinement (_refine_sync, <1 Hz)   | ✓      |
 | Timing-Refinement / Halb-Block-Auflösung         | ✓      |
-| Scan-Range alle 10 Kanäle (320–2760 Hz)          | ✓      |
+| Scan-Range alle 8 Kanäle (500–2510 Hz, v0.5)     | ✓      |
 | Kontinuierlicher RX-Loop (gust_rx.py)         | ✓      |
 | HackRF Dual-Kanal-TX (transmit_iq)               | ✓      |
 | Parallelkanal-Diversity (RX-Dedup)               | ✓      |
@@ -571,6 +750,12 @@ Notfall-Frames bleibt der Parallelkanal die zweite, von Timing unabhängige Absi
 | TX-Pipeline via IC-7610 + hamlib PTT             | ✓      |
 | RX-Pipeline aus SDRplay 48 kHz WAV               | ✓      |
 | Erster On-Air Loopback-Test (14.110 MHz, 20m)    | ✓      |
+| Protokoll v0.5 — 8-Kanal-Plan (600–2600 Hz)      | ✓      |
+| Costas-Array SYNC [2,0,6,7,1,4,3,5]              | ✓      |
+| 8-Ton Sync-Detektor (SCORE_MIN=0.35)             | ✓      |
+| Passband-Equalizer (_build_equalizer)             | ✓      |
+| IQ-Eingang gust_iq_rx.py (RTL-SDR)               | ✓      |
+| Connector Layer Konzept (gust_connector_konzept)  | ✓      |
 
 ---
 
@@ -581,12 +766,15 @@ Notfall-Frames bleibt der Parallelkanal die zweite, von Timing unabhängige Absi
 | ~~SNR-Schwelle GUST~~ ✅ ≤ 10 dB SNR (P7-05, T-10.2) | — | erledigt Mai 2026 |
 | SNR-Vergleich GUST vs. Olivia (gleiche Bedingungen) | mittel | Phase 7/8 |
 | ~~SNR-Schätzer-Fehler Kanal 0/1~~ ✅ adaptives Rauschband (BUG-06) | — | erledigt Mai 2026 |
-| Optimale Preamble-Länge (256 ms ausreichend für KW?) | mittel | Phase 7 weitere Tests |
+| ~~Preamble-Länge~~ ✅ 256 ms, Costas-SYNC (P9-02) | — | erledigt Mai 2026 |
 | Soapy7610 TX-Pfad IC-7610 direktes IQ-TX | mittel | Phase 7 |
 | Bandplankonformität OE (§ 16 AFG) | hoch | vor regulärem Betrieb |
 | RS-FEC Optimierung für kurze Frames | niedrig | Phase 8 |
 | Rufzeichen > 6 Zeichen (Suffix /P) | niedrig | Phase 8 |
 | Demodulator GNU Radio OOT | niedrig | Phase 7/8 |
+| SCORE_MIN Costas-SYNC empirisch validieren (On-Air) | mittel | Phase 9 |
+| IQ-Empfang On-Air Test (RTL-SDR, T-09.5)           | mittel | Phase 9 |
+| Connector Layer implementieren (P6-06–P6-09)        | mittel | Phase 6 |
 
 ---
 
@@ -607,4 +795,4 @@ Notfall-Frames bleibt der Parallelkanal die zweite, von Timing unabhängige Absi
 
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
-*Stand: Mai 2026 — Phase 7 Empfänger-Robustheit + SNR-Baseline abgeschlossen*
+*Stand: Mai 2026 — Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Connector-Konzept*

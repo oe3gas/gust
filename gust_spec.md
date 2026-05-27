@@ -2,7 +2,7 @@
 **OE3GAS — Generic Universal Shortwave Telemetry**
 
 > *GUST — Generic Universal Shortwave Telemetry — a terse HF broadcast protocol inspired by Olivia, optimized for sub-5-second transmissions.*
-*Version 0.4 — 17. Mai 2026*
+*Version 0.5 — Mai 2026*
 
 ---
 
@@ -64,38 +64,37 @@ Alle Stationen stellen **dieselbe Dial-Frequenz** ein. Die NF-Tonhöhe des MFSK-
 
 ```
 Dial-Frequenz:  z.B. 14.110,000 MHz (USB)
-NF-Kanal 0:     400– 650 Hz  → RF 14.110,400–14.110,650 MHz
-NF-Kanal 9:    2650–2900 Hz  → RF 14.112,650–14.112,900 MHz
-Gesamt-Span:    400–2900 Hz  = 2.500 Hz  → Standard-SSB-Passband ✓
+NF-Kanal 0:      600– 850 Hz  → RF 14.110,600–14.110,850 MHz
+NF-Kanal 7:     2350–2600 Hz  → RF 14.112,350–14.112,600 MHz
+Gesamt-Span:     600–2600 Hz  = 2.000 Hz  → SSB-Plateau ±0,5 dB ✓
+(Kanäle 0+9 alt bei 400/2650–2900 Hz entfernt — lagen im SSB-Filterrolloff)
 ```
 
 ### 3.2 Kanalplan
 
-| Kanal | NF-Unterkante | NF-Oberkante | Ton 0      | Ton 7       |
-|------:|:-------------:|:------------:|:----------:|:-----------:|
-| 0     | 400 Hz        | 650 Hz       | 400,00 Hz  | 618,75 Hz   |
-| 1     | 650 Hz        | 900 Hz       | 650,00 Hz  | 868,75 Hz   |
-| 2     | 900 Hz        | 1150 Hz      | 900,00 Hz  | 1118,75 Hz  |
-| 3     | 1150 Hz       | 1400 Hz      | 1150,00 Hz | 1368,75 Hz  |
-| 4     | 1400 Hz       | 1650 Hz      | 1400,00 Hz | 1618,75 Hz  |
-| 5     | 1650 Hz       | 1900 Hz      | 1650,00 Hz | 1868,75 Hz  |
-| 6     | 1900 Hz       | 2150 Hz      | 1900,00 Hz | 2118,75 Hz  |
-| 7     | 2150 Hz       | 2400 Hz      | 2150,00 Hz | 2368,75 Hz  |
-| 8     | 2400 Hz       | 2650 Hz      | 2400,00 Hz | 2618,75 Hz  |
-| 9     | 2650 Hz       | 2900 Hz      | 2650,00 Hz | 2868,75 Hz  |
+| Kanal | NF-Unterkante | NF-Oberkante | Ton 0       | Ton 7       |
+|------:|:-------------:|:------------:|:-----------:|:-----------:|
+| 0     | 600 Hz        | 850 Hz       | 600,00 Hz   | 818,75 Hz   |
+| 1     | 850 Hz        | 1100 Hz      | 850,00 Hz   | 1068,75 Hz  |
+| 2     | 1100 Hz       | 1350 Hz      | 1100,00 Hz  | 1318,75 Hz  |
+| 3     | 1350 Hz       | 1600 Hz      | 1350,00 Hz  | 1568,75 Hz  |
+| 4     | 1600 Hz       | 1850 Hz      | 1600,00 Hz  | 1818,75 Hz  |
+| 5     | 1850 Hz       | 2100 Hz      | 1850,00 Hz  | 2068,75 Hz  |
+| 6     | 2100 Hz       | 2350 Hz      | 2100,00 Hz  | 2318,75 Hz  |
+| 7     | 2350 Hz       | 2600 Hz      | 2350,00 Hz  | 2568,75 Hz  |
 
 ### 3.3 Frame-Struktur
 
 ```
 ┌──────────┬──────────┬──────────┬──────────┬────────────────┬──────────┐
-│ SYNC (4) │ TYPE (1) │  CH  (1) │ FROM (4) │ PAYLOAD (var.) │ CRC (2)  │
+│ SYNC (8) │ TYPE (1) │  CH  (1) │ FROM (4) │ PAYLOAD (var.) │ CRC (2)  │
 │  Symbole │   Byte   │   Byte   │   Byte   │  max. 20 Byte  │   Byte   │
 └──────────┴──────────┴──────────┴──────────┴────────────────┴──────────┘
 ```
 
 | Feld | Größe | Beschreibung |
 |---|---|---|
-| SYNC | 4 Symbole / 128 ms | Tonfolge [7,0,7,0] — alternierend höchster/niedrigster Ton |
+| SYNC | 8 Symbole / 256 ms | Costas-Array [2,0,6,7,1,4,3,5] — alle 8 Töne je einmal, optimale Autokorrelation |
 | TYPE | 1 Byte | Frame-Typ (siehe 3.4) |
 | CH | 1 Byte | Kanal + Flags (siehe unten) |
 | FROM | 4 Byte | Rufzeichen, Basis-40-kodiert (max. 6 Zeichen) |
@@ -120,10 +119,27 @@ den Kanal korrekt — das TEST-Bit wird stillschweigend ignoriert.
 Payload encode_weather():   14 Byte
 build_frame():              22 Byte  (TYPE+CH+FROM+PAYLOAD+CRC)
 rs_encode():                54 Byte  (+32 Byte RS-Parität)
-frame_to_symbol_stream():   60 Symbole  (4 SYNC + 56 Daten)
+frame_to_symbol_stream():   60 Symbole  (8 SYNC + 52 Daten)
 Audiodauer (Nutzsignal):     1,92 s
 Audiodauer (mit Stille):     4,87 s  (inkl. 200 ms Pause vor/nach)
 ```
+
+### 3.x Eingangsquellen
+
+GUST unterstützt ab v0.5 zwei unabhängige Empfangspfade:
+
+| Quelle | Modul | Hardware | Kanäle gleichzeitig |
+|---|---|---|---|
+| Audio (SSB) | `gust_rx.py` | IC-7610, beliebiger Transceiver | 1 (aktiver Kanal) |
+| IQ-Strom | `gust_iq_rx.py` | RTL-SDR, SDRplay, HackRF RX | alle 8 parallel |
+
+**IQ-Empfangspfad (v0.5):**
+- Direkte Verbindung zum SDR, keine SSB-Demodulation
+- Digitales FIR-Filterbank: 8 × 250 Hz Bandpass, ±0,1 dB Flatness
+- Passband-Equalizer: aus Costas-SYNC automatisch kalibriert
+- RTL-SDR konfigurierbar via `gateway.json` Block `rtlsdr`
+- PPM-Kalibrierung: `rtl_test -p` → Wert in `ppm_correction` eintragen
+- Mindestanforderung: RTL-SDR mit 250 kHz Sample-Rate (alle gängigen Modelle)
 
 ### 3.4 Frame-Typen
 
@@ -538,9 +554,9 @@ Bandplans und decken sich mit dem ÖVSV-Bandplan für OE.
 | 15 m | 21090–21110 kHz | 21,090–21,110 | Digitales Sub-Band |
 | 10 m | 28120–28150 kHz | 28,120–28,150 | Digitales Sub-Band |
 
-Die Dial-Frequenz wird je Band so gewählt, dass die NF-Kanäle 0–9
-(400–2900 Hz) vollständig innerhalb des jeweiligen Segments liegen.
-Beispiel 20 m: Dial 14,110 MHz → RF 14,1104–14,1129 MHz ∈ [14,110–14,125] ✓
+Die Dial-Frequenz wird je Band so gewählt, dass die NF-Kanäle 0–7
+(600–2600 Hz, v0.5) vollständig innerhalb des jeweiligen Segments liegen.
+Beispiel 20 m: Dial 14,110 MHz → RF 14,1106–14,1126 MHz ∈ [14,110–14,125] ✓
 
 ### VHF/UHF — Zusatztests
 

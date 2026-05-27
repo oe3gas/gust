@@ -23,12 +23,11 @@ Schnittstelle zu Phase 2 (Frame Layer):
   RX:  demodulate()  →  parse_frame() + decode_payload()
 
 Kanalplan (aus gust_frame):
-  Kanal 0:   400– 650 Hz    Kanal 5: 1650–1900 Hz
-  Kanal 1:   650– 900 Hz    Kanal 6: 1900–2150 Hz
-  Kanal 2:   900–1150 Hz    Kanal 7: 2150–2400 Hz
-  Kanal 3:  1150–1400 Hz    Kanal 8: 2400–2650 Hz
-  Kanal 4:  1400–1650 Hz    Kanal 9: 2650–2900 Hz
-  → Gesamtspan 400–2900 Hz, passt in Standard-SSB-Passband
+  Kanal 0:   600– 850 Hz    Kanal 4: 1600–1850 Hz
+  Kanal 1:   850–1100 Hz    Kanal 5: 1850–2100 Hz
+  Kanal 2:  1100–1350 Hz    Kanal 6: 2100–2350 Hz
+  Kanal 3:  1350–1600 Hz    Kanal 7: 2350–2600 Hz
+  → Gesamtspan 600–2600 Hz (v0.5), SSB-Plateau ±0,5 dB
 """
 
 import numpy as np
@@ -303,29 +302,102 @@ def _fft_detect_symbol(block: np.ndarray, tone_freqs: np.ndarray) -> int:
     ])
     return int(np.argmax(magnitudes))
 
+
+def _build_equalizer(audio: np.ndarray, sync_pos: int,
+                     tone_freqs: np.ndarray) -> np.ndarray:
+    """
+    Passband-Equalizer aus dem Costas-SYNC ableiten (v0.5).
+
+    Da der Costas-SYNC alle 8 Töne je einmal enthält, kann der Empfänger
+    die empfangene Amplitude jedes Tons messen und einen Korrektionsvektor
+    berechnen. Dieser kompensiert den SSB-Filterrolloff automatisch.
+
+    Wird von demodulate() aufgerufen, wenn use_equalizer=True.
+
+    Args:
+        audio:      Vollständiges Audio-Array
+        sync_pos:   Sample-Position des SYNC-Starts (aus _find_sync_candidates)
+        tone_freqs: 8 Tonfrequenzen des Kanals (Hz)
+
+    Returns:
+        eq: np.ndarray, shape (8,), Korrektionsfaktoren (≥ 1.0)
+            eq[i] > 1 bedeutet: Ton i war gedämpft → wird verstärkt
+            eq[i] = 1 bedeutet: Ton i hatte Referenzamplitude
+    """
+    measured = np.zeros(8, dtype=np.float64)
+
+    for i, tone_idx in enumerate(SYNC_SYMBOLS):
+        # Fenster des i-ten SYNC-Symbols aus dem Audio schneiden
+        start = sync_pos + i * SAMPLES_PER_SYM
+        end   = start + SAMPLES_PER_SYM
+        if end > len(audio):
+            measured[tone_idx] = 1.0
+            continue
+        block    = audio[start:end]
+        spectrum = np.abs(np.fft.rfft(block, n=FFT_PAD_N))
+        # Amplitude am erwarteten Ton messen
+        bin_idx  = round(tone_freqs[tone_idx] / SAMPLE_RATE * FFT_PAD_N)
+        bin_idx  = max(0, min(len(spectrum) - 1, bin_idx))
+        measured[tone_idx] = float(spectrum[bin_idx])
+
+    # Referenz = stärkster Ton (ungedämpft), Korrektionsfaktor = ref / gemessen
+    ref = max(measured.max(), 1e-6)
+    eq  = ref / np.maximum(measured, 1e-6)
+    return eq.astype(np.float64)
+
+
+def _fft_detect_symbol_eq(block: np.ndarray, tone_freqs: np.ndarray,
+                           eq: np.ndarray) -> int:
+    """
+    Symbol-Erkennung mit Passband-Equalizer.
+
+    Identisch zu _fft_detect_symbol(), aber die FFT-Amplitude jedes Tons
+    wird vor dem argmax mit eq[i] multipliziert. Das kompensiert ungleiche
+    Ton-Amplituden durch SSB-Filterrolloff oder SDR-Nichtlinearität.
+
+    Args:
+        block:      256-Sample-Audioblock
+        tone_freqs: 8 Tonfrequenzen (Hz)
+        eq:         Korrektionsvektor aus _build_equalizer(), shape (8,)
+
+    Returns:
+        int: Erkannter Symbol-Index 0–7
+    """
+    spectrum   = np.abs(np.fft.rfft(block, n=FFT_PAD_N))
+    magnitudes = np.array([
+        spectrum[round(f / SAMPLE_RATE * FFT_PAD_N)]
+        for f in tone_freqs
+    ], dtype=np.float64)
+    return int(np.argmax(magnitudes * eq))
+
+
 def _find_sync_candidates(audio: np.ndarray) -> list:
     """
-    Energie-basierte SYNC-Kandidatensuche — alle 10 Kanäle, vollvektorisiert.
+    Energie-basierte SYNC-Kandidatensuche — alle 8 Kanäle (v0.5), vollvektorisiert.
 
-    Scannt den NF-Bereich 320–2900 Hz in 8-Hz-Schritten und deckt damit alle
-    GUST-Kanäle (0–9) ab. Die Obergrenze 2900 Hz (statt früher 2760) gibt
-    Kanal 9 dieselbe positive Offset-Toleranz wie den unteren Kanälen.
+    Scannt den NF-Bereich 500–2510 Hz in 8-Hz-Schritten und deckt damit alle
+    GUST-Kanäle (0–7, v0.5: 600–2600 Hz) inklusive ±100 Hz Frequenzoffset ab.
 
-    Performance: numpy stride_tricks; 250 Blöcke × 277 f0-Werte → < 0,5 s.
+    Costas-SYNC (v0.5): SYNC_SYMBOLS enthält alle 8 Töne je einmal.
+    Score = mittlere Energie-Fraktion des erwarteten Tons über alle 8 SYNC-Positionen.
+    Optimale Autokorrelation durch Costas-Eigenschaft → scharfer, eindeutiger Peak.
+
+    Performance: numpy stride_tricks; ~250 Blöcke × 250 f0-Werte → < 0,5 s.
 
     Kandidaten-Format: (score: float, block_pos: int, f0_hz: float)
-      f0_hz = tatsächliche Ton-0-Frequenz (kein Offset-Wert).
+      f0_hz = tatsächliche Ton-0-Frequenz des Kandidaten.
     """
-    SCORE_MIN      = 0.70   # Schwelle — mit CRC-Verifikation in receive() sicher
-    MAX_CANDIDATES = 12    # Maximal Kandidaten in Multi-Hyp.-Schleife
+    SCORE_MIN      = 0.35   # Costas hat 8 Töne, gleichmäßige Energie → Erwartung ~0,35–0,50
+    MAX_CANDIDATES = 12
     HALF_BW        = 8.0
     STEP_HZ        = 8.0
-    HOP            = SAMPLES_PER_SYM // 2   # 128 — Halb-Block-Auflösung fürs Timing
+    HOP            = SAMPLES_PER_SYM // 2   # 128 Samples — Halb-Block-Auflösung
 
     if len(audio) < (len(SYNC_SYMBOLS) + 2) * SAMPLES_PER_SYM:
         return []
 
     bin_res = SAMPLE_RATE / FFT_PAD_N
+    n_sync  = len(SYNC_SYMBOLS)  # = 8
 
     # Überlappende 256-Sample-Fenster im 128-Sample-Raster (zero-copy)
     n_pos = (len(audio) - SAMPLES_PER_SYM) // HOP + 1
@@ -336,49 +408,47 @@ def _find_sync_candidates(audio: np.ndarray) -> list:
     # Spektren aller Fenster (mit Zero-Padding auf FFT_PAD_N)
     padded = np.zeros((n_pos, FFT_PAD_N), dtype=np.float32)
     padded[:, :SAMPLES_PER_SYM] = frames
-    spectra = np.abs(np.fft.rfft(padded, axis=1))
+    spectra = np.abs(np.fft.rfft(padded, axis=1))   # (n_pos, FFT_PAD_N//2+1)
 
-    # SYNC-Maske: True = Ton 7 erwartet
-    sync_is_7 = np.array([s == 7 for s in SYNC_SYMBOLS], dtype=bool)
+    # SYNC-Ton-Indizes: welchen der 8 Töne erwartet Position i?
+    sync_tones = np.array(SYNC_SYMBOLS, dtype=int)   # z.B. [2,0,6,7,1,4,3,5]
 
     candidates = []
 
-    # Range deckt Kanal 0 (400Hz) bis Kanal 9 (2650Hz) ab. Obergrenze 2900 Hz
-    # gibt Kanal 9 dieselbe positive Offset-Toleranz (~+250 Hz) wie die unteren
-    # Kanäle — vorher bei 2760 abgeschnitten (nur +110 Hz), Kanal-9-Asymmetrie.
-    for f0 in np.arange(320.0, 2901.0, STEP_HZ):
-        f7 = f0 + 7 * TONE_SPACING
-        if f7 > SAMPLE_RATE / 2 - HALF_BW:
+    # Scan-Range: Kanal 0 v0.5 bei 600 Hz → untere Grenze 500 Hz (±100 Hz Offset)
+    #             Kanal 7 v0.5 bei 2350 Hz → obere Grenze ca. 2510 Hz
+    for f0 in np.arange(500.0, 2511.0, STEP_HZ):
+        f_max = f0 + 7 * TONE_SPACING   # höchster Ton = Ton 7
+        if f_max > SAMPLE_RATE / 2 - HALF_BW:
             break
 
-        lo0 = max(0, int((f0 - HALF_BW) / bin_res))
-        hi0 = min(spectra.shape[1], int((f0 + HALF_BW) / bin_res) + 1)
-        lo7 = max(0, int((f7 - HALF_BW) / bin_res))
-        hi7 = min(spectra.shape[1], int((f7 + HALF_BW) / bin_res) + 1)
+        # Energie für alle 8 Töne an allen Zeitpositionen: e_tone shape = (8, n_pos)
+        e_tone = np.zeros((8, n_pos), dtype=np.float64)
+        for k in range(8):
+            tf  = f0 + k * TONE_SPACING
+            lo  = max(0, int((tf - HALF_BW) / bin_res))
+            hi  = min(spectra.shape[1], int((tf + HALF_BW) / bin_res) + 1)
+            e_tone[k] = np.sum(spectra[:, lo:hi] ** 2, axis=1)
 
-        e0 = np.sum(spectra[:, lo0:hi0] ** 2, axis=1)
-        e7 = np.sum(spectra[:, lo7:hi7] ** 2, axis=1)
-        total = e0 + e7 + 1e-12
-        r0 = e0 / total
-        r7 = e7 / total
+        # Normalisieren: Energie-Fraktion pro Ton (Summe über alle 8 Töne = 1)
+        total = np.sum(e_tone, axis=0) + 1e-12   # (n_pos,)
+        r = e_tone / total                         # (8, n_pos)
 
-        # SYNC-Symbole liegen 256 Samples = 2 HOPs auseinander.
-        # Gleitfenster: 8 Werte mit Schrittweite 2 im HOP-Raster.
-        N = n_pos - 2 * (len(SYNC_SYMBOLS) - 1)
+        # Gleitfenster-Score: 8 SYNC-Symbole, je 2 HOPs auseinander
+        # Score[t] = mean über i von r[sync_tones[i], t + 2*i]
+        N = n_pos - 2 * (n_sync - 1)
         if N < 1:
             continue
-        st = r0.strides[0]
-        r0_win = np.lib.stride_tricks.as_strided(r0, shape=(N, 8), strides=(st, 2 * st))
-        r7_win = np.lib.stride_tricks.as_strided(r7, shape=(N, 8), strides=(st, 2 * st))
 
-        expected = np.where(sync_is_7, r7_win, r0_win)
-        scores   = np.mean(expected, axis=1)
+        scores = np.zeros(N, dtype=np.float64)
+        for i, tone_idx in enumerate(sync_tones):
+            scores += r[tone_idx, 2 * i : 2 * i + N]
+        scores /= n_sync
 
-        best_pos   = int(np.argmax(scores))   # in HOP-Einheiten
+        best_pos   = int(np.argmax(scores))
         best_score = float(scores[best_pos])
 
         if best_score >= SCORE_MIN:
-            # Sample-Position = HOP-Index × HOP
             candidates.append((best_score, best_pos * HOP, float(f0)))
 
     candidates.sort(key=lambda x: -x[0])
@@ -405,10 +475,11 @@ def _find_sync_wideband(audio: np.ndarray) -> tuple:
 
 
 def demodulate(
-    audio:        np.ndarray,
-    channel:      int   = None,
-    sync_symbols: list  = None,
-    freq_offset:  float = 0.0,
+    audio:         np.ndarray,
+    channel:       int   = None,
+    sync_symbols:  list  = None,
+    freq_offset:   float = 0.0,
+    use_equalizer: bool  = False,
 ) -> tuple:
     """
     MFSK-8 Demodulator.
@@ -423,6 +494,9 @@ def demodulate(
         channel:     Kanal 0–9, oder None für automatische Erkennung
         sync_symbols: SYNC-Sequenz (Standard: SYNC_SYMBOLS)
         freq_offset: Manueller Frequenzversatz Hz (nur im Direktmodus)
+        use_equalizer: True = Passband-Equalizer aus Costas-SYNC ableiten.
+                       Kompensiert SSB-Filterrolloff automatisch.
+                       Empfohlen für Randkanäle und IQ-Eingang. (default: False)
 
     Returns:
         (data_symbols, sync_found, sync_offset_samples, detected_channel, detected_offset)
@@ -461,13 +535,23 @@ def demodulate(
         data_start = sync_pos_s + len(sync_symbols) * SAMPLES_PER_SYM
         data_audio = audio[data_start:]
         n_blocks   = len(data_audio) // SAMPLES_PER_SYM
-        data_syms  = [
-            _fft_detect_symbol(
-                data_audio[i*SAMPLES_PER_SYM:(i+1)*SAMPLES_PER_SYM],
-                tone_freqs
-            )
-            for i in range(n_blocks)
-        ]
+        if use_equalizer and sync_pos_s >= 0:
+            eq = _build_equalizer(audio, sync_pos_s, tone_freqs)
+            data_syms = [
+                _fft_detect_symbol_eq(
+                    data_audio[i*SAMPLES_PER_SYM:(i+1)*SAMPLES_PER_SYM],
+                    tone_freqs, eq
+                )
+                for i in range(n_blocks)
+            ]
+        else:
+            data_syms = [
+                _fft_detect_symbol(
+                    data_audio[i*SAMPLES_PER_SYM:(i+1)*SAMPLES_PER_SYM],
+                    tone_freqs
+                )
+                for i in range(n_blocks)
+            ]
         return data_syms, True, sync_pos_s, nearest_ch, computed_offset
 
     else:
@@ -492,10 +576,26 @@ def demodulate(
                 break
 
         if sync_pos is None:
+            # Ohne gefundenen SYNC: use_equalizer wird ignoriert
             return all_symbols, False, -1, channel, freq_offset
 
-        data_syms = all_symbols[sync_pos + sync_len:]
-        return data_syms, True, sync_pos * SAMPLES_PER_SYM, channel, freq_offset
+        sync_pos_s = sync_pos * SAMPLES_PER_SYM
+        if use_equalizer and sync_pos_s >= 0:
+            # Datensymbole mit Passband-Equalizer aus dem Costas-SYNC neu dekodieren
+            eq         = _build_equalizer(audio, sync_pos_s, tone_freqs)
+            data_start = sync_pos_s + sync_len * SAMPLES_PER_SYM
+            data_audio = audio[data_start:]
+            n_data     = len(data_audio) // SAMPLES_PER_SYM
+            data_syms  = [
+                _fft_detect_symbol_eq(
+                    data_audio[i*SAMPLES_PER_SYM:(i+1)*SAMPLES_PER_SYM],
+                    tone_freqs, eq
+                )
+                for i in range(n_data)
+            ]
+        else:
+            data_syms = all_symbols[sync_pos + sync_len:]
+        return data_syms, True, sync_pos_s, channel, freq_offset
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -563,13 +663,20 @@ def _sync_energy_at_sample(audio: np.ndarray, sample_pos: int, f0: float) -> flo
     """
     Single-Bin SYNC-Energie an Sample-Position und Basisfrequenz.
 
-    Summiert die Energie am jeweils ERWARTETEN Ton (7 oder 0) über alle
-    8 SYNC-Symbole. Scharfes Maximum am wahren (f0, Timing) — Basis für
-    Frequenz- UND Timing-Feinabstimmung.
+    Summiert die Energie am jeweils ERWARTETEN Ton über alle 8 SYNC-Symbole.
+    Scharfes Maximum am wahren (f0, Timing) — Basis für Frequenz- UND
+    Timing-Feinabstimmung.
+
+    v0.5: allgemein für das Costas-SYNC-Array (alle 8 Töne), nicht mehr nur
+    Ton 0/7. Für jedes SYNC-Symbol wird der Bin des tatsächlich erwarteten
+    Tons ausgewertet.
     """
-    bin0 = round(f0 / SAMPLE_RATE * FFT_PAD_N)
-    bin7 = round((f0 + 7 * TONE_SPACING) / SAMPLE_RATE * FFT_PAD_N)
-    if bin7 >= FFT_PAD_N // 2 or sample_pos < 0:
+    if sample_pos < 0:
+        return 0.0
+    # Bin-Index je möglicher Ton (0–7) vorberechnen
+    tone_bins = [round((f0 + k * TONE_SPACING) / SAMPLE_RATE * FFT_PAD_N)
+                 for k in range(N_TONES)]
+    if tone_bins[-1] >= FFT_PAD_N // 2:
         return 0.0
     e = 0.0
     for i, sym in enumerate(SYNC_SYMBOLS):
@@ -578,7 +685,7 @@ def _sync_energy_at_sample(audio: np.ndarray, sample_pos: int, f0: float) -> flo
         if len(blk) < SAMPLES_PER_SYM:
             return 0.0
         spec = np.abs(np.fft.rfft(blk, n=FFT_PAD_N))
-        e += spec[bin7] if sym == 7 else spec[bin0]
+        e += spec[tone_bins[sym]]
     return float(e)
 
 
@@ -641,20 +748,25 @@ def _refine_sync(audio: np.ndarray, sample_pos: int, f0_coarse: float) -> tuple:
 
 
 def receive(
-    audio:       np.ndarray,
-    channel:     int   = None,
-    use_fec:     bool  = True,
-    freq_offset: float = 0.0,
+    audio:         np.ndarray,
+    channel:       int   = None,
+    use_fec:       bool  = True,
+    freq_offset:   float = 0.0,
+    use_equalizer: bool  = False,
 ) -> dict:
     """
     Vollständige RX-Pipeline: Audio → dekodiertes Dict.
 
     Breitband-Modus (channel=None):
-      Multi-Hypothesen mit CRC-Verifikation. Alle Kanäle 0–9 werden
+      Multi-Hypothesen mit CRC-Verifikation. Alle Kanäle 0–7 werden
       erfasst. Erster Kandidat mit CRC OK wird zurückgegeben.
 
-    Direktmodus (channel=0–9):
+    Direktmodus (channel=0–7):
       Dekodierung auf einem bekannten Kanal mit optionalem freq_offset.
+
+    use_equalizer (v0.5): Passband-Equalizer aus dem Costas-SYNC ableiten
+      (kompensiert SSB-Filterrolloff / SDR-Nichtlinearität). Wirkt in beiden
+      Modi auf die Datensymbol-Dekodierung. Empfohlen für den IQ-Eingang.
     """
     from gust_frame import (
         symbols_to_bytes, rs_decode, _RS_AVAILABLE,
@@ -671,7 +783,8 @@ def receive(
     # ── Direktmodus ───────────────────────────────────────────────────
     if channel is not None:
         data_symbols, sync_found, sync_offset, det_ch, det_offset = demodulate(
-            audio, channel=channel, freq_offset=freq_offset
+            audio, channel=channel, freq_offset=freq_offset,
+            use_equalizer=use_equalizer,
         )
         return _build_result_direct(
             data_symbols, sync_found, sync_offset, det_ch, det_offset,
@@ -702,13 +815,23 @@ def receive(
         if n_blocks < 1:
             continue
 
-        data_syms = [
-            _fft_detect_symbol(
-                data_audio[i * SAMPLES_PER_SYM:(i + 1) * SAMPLES_PER_SYM],
-                tone_freqs,
-            )
-            for i in range(n_blocks)
-        ]
+        if use_equalizer and sync_pos_s >= 0:
+            eq = _build_equalizer(audio, sync_pos_s, tone_freqs)
+            data_syms = [
+                _fft_detect_symbol_eq(
+                    data_audio[i * SAMPLES_PER_SYM:(i + 1) * SAMPLES_PER_SYM],
+                    tone_freqs, eq,
+                )
+                for i in range(n_blocks)
+            ]
+        else:
+            data_syms = [
+                _fft_detect_symbol(
+                    data_audio[i * SAMPLES_PER_SYM:(i + 1) * SAMPLES_PER_SYM],
+                    tone_freqs,
+                )
+                for i in range(n_blocks)
+            ]
 
         res = {
             "sync_found":        True,
@@ -1035,7 +1158,7 @@ def _run_tests():
     if not (sync_ok and crc_ok and from_ok and type_ok):
         errors.append("Loopback: Frame nicht korrekt dekodiert")
 
-    # ── Test 7: Alle 10 Kanäle ────────────────────────────────────
+    # ── Test 7: Alle 8 Kanäle ─────────────────────────────────────
     print("\n── Test 7: Alle Kanäle — Ton-Peak (zero-padded FFT) ──")
     print(f"  {'Kanal':>5}  {'Basis Hz':>9}  {'Peak Hz':>9}  {'Δ Hz':>6}  Status")
     all_ok = True
@@ -1089,8 +1212,8 @@ def _intro_and_prompt() -> bool:
   ──────────────────────────────
   • MFSK-8 Modulation: 8 Töne im Abstand 31,25 Hz, 32 ms je Symbol,
     phasenkontinuierlich mit optionalem Raised-Cosine-Fenster
-  • Kanalbewusst: ordnet die 8 Töne in einen der 10 NF-Kanäle ein
-    (Bandbreite 250 Hz je Kanal, Span 400–2900 Hz im SSB-Passband)
+  • Kanalbewusst: ordnet die 8 Töne in einen der 8 NF-Kanäle ein
+    (Bandbreite 250 Hz je Kanal, Span 600–2600 Hz im SSB-Passband)
   • SYNC-Detektion: erkennt die 8-Symbol-Präambel im Breitband-Scan,
     schärft Frequenz und Timing nach (sub-Hz, sample-genau)
   • FFT-Demodulator (zero-padded 4096) → Symbole → Bytes → Frame

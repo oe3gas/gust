@@ -202,7 +202,7 @@ main { padding: 16px; max-width: 1200px; }
 #audio-meter.nosig   .am-status { color: var(--red); }
 
 /* ── CHANNEL GRID ── */
-#channel-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px; }
+#channel-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
 .ch-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
            padding: 8px 10px; cursor: default; transition: border-color .2s; }
 .ch-card.home    { border-color: var(--accent); }
@@ -480,7 +480,7 @@ h2:first-child { margin-top: 0; }
   main { padding: 10px 8px; }
   nav { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   nav button { padding: 8px 10px; font-size: var(--fs-xs); white-space: nowrap; }
-  #channel-grid { grid-template-columns: repeat(2, 1fr); }  /* 5→2 Spalten */
+  #channel-grid { grid-template-columns: repeat(2, 1fr); }  /* 4→2 Spalten */
   #status-grid  { grid-template-columns: repeat(2, 1fr); }  /* 3→2 Spalten */
   .stat-card-split { flex-direction: column; }               /* Split-Card untereinander */
   .split-divider   { width: auto; height: 1px; }
@@ -532,7 +532,7 @@ h2:first-child { margin-top: 0; }
     </div>
   </div>
 
-  <h2>Kanalübersicht — 10 Kanäle (400–2900 Hz NF)</h2>
+  <h2>Kanalübersicht — 8 Kanäle (600–2600 Hz NF)</h2>
   <div id="channel-grid"></div>
 
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px;">
@@ -1361,8 +1361,8 @@ async function saveAudioConfig() {
 function buildChannelGrid(homeChannel) {
   const grid = document.getElementById('channel-grid');
   const plan = [
-    [0,'400–650'],[1,'650–900'],[2,'900–1150'],[3,'1150–1400'],[4,'1400–1650'],
-    [5,'1650–1900'],[6,'1900–2150'],[7,'2150–2400'],[8,'2400–2650'],[9,'2650–2900']
+    [0,'600–850'],[1,'850–1100'],[2,'1100–1350'],[3,'1350–1600'],
+    [4,'1600–1850'],[5,'1850–2100'],[6,'2100–2350'],[7,'2350–2600']
   ];
   grid.innerHTML = plan.map(([ch, freq]) => `
     <div class="ch-card ${ch === homeChannel ? 'home' : ''}" id="ch-card-${ch}">

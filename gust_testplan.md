@@ -1,6 +1,6 @@
 # GUST — Testplan
 **OE3GAS — Systematische Verifikation aller Komponenten**
-*Stand: Mai 2026 — Phase 7 On-Air-Test abgeschlossen*
+*Stand: Mai 2026 — Phase 7 On-Air-Test abgeschlossen · Phase 9 Tests definiert*
 
 ---
 
@@ -241,6 +241,56 @@ Zwei Stationen, gleicher Kanal, Frameverlustrate messen.
 
 ### T-10.4 MeshCom End-to-End (OA) 🔲
 LoRa → GUST-Gateway → HF → Remote-Empfänger → MQTT-Echo.
+
+---
+
+## Phase 9 — Protokoll v0.5 Tests
+
+### T-09.1 — Kanalplan-Regression (8 Kanäle)
+
+**Ziel:** Sicherstellen dass alle neuen Kanäle korrekt moduliert und dekodiert werden.
+**Methode:** `python gust_modulator.py` → Selbsttest "Test 7: Alle Kanäle"
+**Erwartung:** 8 Kanäle (600, 850, 1100, 1350, 1600, 1850, 2100, 2350 Hz), alle ✓
+**Status:** 🔲
+
+### T-09.2 — Costas-SYNC Loopback
+
+**Ziel:** Vollständiger TX→WAV→RX Loopback mit neuem SYNC.
+**Methode:** `python gust_modulator.py` Loopback-Test (oder vac_loopback_test.py)
+**Erwartung:** Frame korrekt dekodiert, SYNC gefunden, CRC OK, alle Kanäle 0–7
+**Status:** 🔲
+
+### T-09.3 — Costas-SYNC Timing-Robustheit
+
+**Ziel:** Sicherstellen dass der neue Sync-Detektor bei beliebigem Sample-Offset funktioniert.
+**Methode:** Wie T-ADR-11 — Frame an zufälligen Positionen im Puffer testen
+**Erwartung:** Alle Offsets 0–255 Samples dekodierbar
+**Status:** 🔲
+
+### T-09.4 — SCORE_MIN Kalibrierung
+
+**Ziel:** Optimalen SCORE_MIN-Wert für Costas-SYNC empirisch bestimmen.
+**Methode:** TX mit HackRF bei abnehmenden Gain-Stufen (wie T-10.2), SCORE_MIN variieren
+**Erwartung:** SCORE_MIN=0.35 → keine Fehldetektionen bei SNR > 10 dB
+**Hinweis:** Falls Fehldetektionen auftreten, SCORE_MIN auf 0.40 erhöhen (CRC fängt Rest ab)
+**Status:** 🔲
+
+### T-09.5 — IQ-Eingang Loopback
+
+**Ziel:** gust_iq_rx.py dekodiert eine CF32-Datei korrekt.
+**Methode:**
+  1. `python gust_tx_test.py --channels 0 3 7 --save-cf32 test.cf32`
+  2. `python gust_iq_rx.py --file test.cf32 --freq 14110000`
+**Erwartung:** Alle 3 Frames auf Kanälen 0, 3, 7 dekodiert
+**Status:** 🔲
+
+### T-09.6 — Equalizer Wirksamkeit
+
+**Ziel:** Equalizer verbessert Dekodierung auf simulierten Randkanälen.
+**Methode:** Audio mit künstlichem Hochpass filtern (simuliert SSB-Rolloff), Kanal 0
+  dekodieren mit und ohne use_equalizer=True.
+**Erwartung:** use_equalizer=True dekodiert auch bei -6 dB Tondämpfung
+**Status:** 🔲
 
 ---
 

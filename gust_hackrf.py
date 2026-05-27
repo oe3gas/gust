@@ -20,7 +20,7 @@ Unterstützte Hardware:
   Installiert prüfen:
     python3 -c "import SoapySDR; print(SoapySDR.getAPIVersion())"
     SoapySDRUtil --probe=driver=hackrf    # HackRF erkennen
-    SoapySDRUtil --probe=driver=soapy7610 # IC-7610 erkennen
+    SoapySDRUtil --probe=driver=IC7610 # IC-7610 erkennen
 
 ── Labortest-Szenario (Phase 3) ──────────────────────────────────────
   HackRF TX → Koaxialkabel (Dämpfungsglied) → SDRplay / IC-7610 RX
@@ -312,9 +312,9 @@ class Soapy7610Transmitter:
     liefert IQ-Streams mit bis zu 192 kHz Bandbreite.
 
     Installationsvoraussetzungen:
-        - soapy7610 compiliert und in SoapySDR-Modulpfad installiert
+        - IC7610 compiliert und in SoapySDR-Modulpfad installiert
         - IC-7610 per USB verbunden, CI-V aktiviert
-        - Verify: SoapySDRUtil --probe=driver=soapy7610
+        - Verify: SoapySDRUtil --probe=driver=IC7610
 
     Dieser TX-Pfad umgeht die Soundkarte und steuert den IC-7610
     direkt als SDR. Vorteil: volle 100W Ausgangsleistung des IC-7610.
@@ -326,7 +326,7 @@ class Soapy7610Transmitter:
     def __init__(
         self,
         freq_hz:     float = LAB_TX_FREQ_HZ,
-        device_args: str   = "driver=soapy7610",
+        device_args: str   = "driver=IC7610",
     ):
         if not _SOAPY_AVAILABLE:
             raise RuntimeError("SoapySDR nicht installiert.")
@@ -337,7 +337,7 @@ class Soapy7610Transmitter:
     def open(self):
         """IC-7610 via Soapy7610 initialisieren."""
         print(f"[Soapy7610] Initialisiere IC-7610...")
-        self._sdr = SoapySDR.Device({"driver": "soapy7610"})
+        self._sdr = SoapySDR.Device({"driver": "IC7610"})
 
         self._sdr.setSampleRate(SOAPY_SDR_TX, 0, float(SOAPY7610_SAMPLE_RATE))
         self._sdr.setFrequency(SOAPY_SDR_TX, 0, self.freq_hz)

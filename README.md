@@ -4,7 +4,7 @@
 
 GUST is an open amateur radio digital protocol for robust one-way transmission of telemetry data and short messages on shortwave (HF). It serves as an **HF backbone** between local data sources (weather stations, LoRa/Meshtastic meshes, sensors) and remote receive-only stations — independent of internet infrastructure.
 
-Developed by **OE3GAS** (Vienna, Austria) · License: CC BY-SA 4.0
+Developed by **OE3GAS** (Vienna, Austria) · Protocol **v0.5** (May 2026) · License: CC BY-SA 4.0
 
 ---
 
@@ -15,12 +15,14 @@ Developed by **OE3GAS** (Vienna, Austria) · License: CC BY-SA 4.0
 | Modulation | MFSK-8 (8 tones, orthogonal) |
 | Symbol rate | 31.25 Baud |
 | Channel bandwidth | 250 Hz |
-| Channels | 10 (NF 400–2900 Hz, fits standard SSB passband) |
+| Channels | 8 (NF 600–2600 Hz, SSB plateau ±0.5 dB) |
+| SYNC | Costas array [2,0,6,7,1,4,3,5] (order 8, single autocorrelation peak) |
 | Frame duration | 4.1–5.4 s (typ. 4.9 s for weather) |
 | FEC | Reed-Solomon RS(255,223), shortened for short frames |
 | CRC | CRC-16/CCITT-FALSE |
 | Dial frequency | 14.110 MHz USB (20 m, all stations identical) |
-| Channel assignment | SHA-256(callsign) % 10 — deterministic, no coordination |
+| Channel assignment | SHA-256(callsign) % 8 — deterministic, no coordination |
+| Input sources | Audio (SSB transceiver) · IQ (RTL-SDR, all 8 channels in parallel) |
 
 ### Frame Types
 
@@ -93,6 +95,7 @@ gust_modulator.py     — MFSK-8 modulator / demodulator (FFT-based)
 gust_audio.py         — Audio I/O, PTT control (GPIO / hamlib / null)
 gust_hackrf.py        — HackRF One TX path (SoapySDR)
 gust_rx.py            — Continuous RX loop (asyncio, ring buffer, dedup cache)
+gust_iq_rx.py         — IQ input path (RTL-SDR filterbank, all 8 channels)
 gust_decode.py        — Standalone decoder helper
 gust_eventbus.py      — asyncio fan-out event bus
 gust_web.py           — aiohttp web server, REST API, WebSocket, web UI
@@ -160,9 +163,10 @@ Install: `pip install -r requirements.txt`
 | 3 | Hardware integration | ✅ Complete |
 | 4 | Source integration | ✅ Complete |
 | 5 | Web interface & event bus | ✅ Complete |
-| 6 | MQTT bridge | 🔲 Optional / deferred |
+| 6 | Connector layer + MQTT bridge | 🔲 Concept ready, implementation open |
 | 7 | On-air tests & decoder robustness | ✅ Largely complete |
 | 8 | Publication | 🚧 In progress |
+| 9 | Protocol v0.5: Costas-SYNC · 8-channel plan · IQ input | ✅ Complete |
 
 Decoder performance (HackRF → IC-7610 loopback): decode threshold ≤ 10 dB SNR, 100% frame recovery rate (20/20 simplex test, May 2026).
 

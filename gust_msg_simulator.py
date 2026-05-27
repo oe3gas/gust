@@ -19,7 +19,7 @@ import random
 import time
 from typing import Optional
 
-from gust_frame import assign_channel
+from gust_frame import assign_channel, EVTYPE_OTHER
 
 # ── Frame-Typ-Namen ─────────────────────────────────────────────────────────
 _TYPE_NAMES = {
@@ -123,18 +123,28 @@ def _make_emergency(callsign: str, channel: int,
         "snr_db":     round(random.uniform(10.0, 20.0), 1),
         "freq_offset_hz": round(random.uniform(-20.0, 20.0), 1),
         "data": {
-            "lat_deg":        round(lat + random.uniform(-0.01, 0.01), 5),
-            "lon_deg":        round(lon + random.uniform(-0.01, 0.01), 5),
-            "persons":        random.randint(1, 5),
-            "injury_code":    random.randint(0, 3),
-            "resource_flags": 0,
-            "needs_water":    False,
-            "needs_food":     False,
-            "needs_medical":  random.choice([True, False]),
-            "needs_evac":     False,
-            "priority":       3,
-            "priority_str":   "URGENT",
-            "text_snippet":   random.choice(["SOS", "HELP", "MEDI", "FIRE"]),
+            "lat_deg":          round(lat + random.uniform(-0.01, 0.01), 5),
+            "lon_deg":          round(lon + random.uniform(-0.01, 0.01), 5),
+            "persons":          random.randint(1, 5),
+            "event_type":       random.randint(1, 5),
+            "priority":         3,
+            "priority_str":     "EMERGENCY",
+            "injury":           random.randint(0, 3),
+            "injury_str":       random.choice(["UNKNOWN","MINOR","SERIOUS","CRITICAL"]),
+            "gps_fix":          True,
+            "battery_ok":       True,
+            "relay_request":    False,
+            "resource_flags":   0,
+            "needs_medical":    random.choice([True, False]),
+            "needs_fire":       False,
+            "needs_rescue":     False,
+            "needs_water":      False,
+            "needs_shelter":    False,
+            "needs_comms":      False,
+            "needs_transport":  False,
+            "needs_hazmat":     False,
+            "timestamp_s":      0,
+            "text_snippet":     random.choice(["SOS", "HELP", "MEDI", "FIRE"]),
         },
     }
 

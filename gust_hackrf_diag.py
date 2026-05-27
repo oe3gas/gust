@@ -78,10 +78,16 @@ def make_dual_iq():
     from gust_hackrf import nf_to_iq_usb
     from gust_frame import (
         FrameType, encode_emergency_beacon, PRIO_URGENT, INJURY_MINOR,
+        EVTYPE_MEDICAL,
     )
     emg = encode_emergency_beacon(
-        lat_deg=48.2, lon_deg=16.3, persons=2, injury_code=INJURY_MINOR,
-        resource_flags=0, priority=PRIO_URGENT, text_snippet="HELP",
+        lat_deg=48.2, lon_deg=16.3,
+        persons=2,
+        event_type=EVTYPE_MEDICAL,
+        injury_code=INJURY_MINOR,
+        resource_flags=0,
+        priority=PRIO_URGENT,
+        text_snippet="HELP",
     )
     audio_a, _, _ = transmit(FrameType.EMERG_BEACON, "OE3GAS", emg,
                              channel=2, use_fec=True, window=True, add_silence_ms=100)

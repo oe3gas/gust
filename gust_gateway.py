@@ -91,6 +91,7 @@ def _encode_payload(frame_type_str: str, data: dict) -> tuple:
         FrameType,
         encode_weather, encode_position, encode_emergency_beacon,
         fragment_text,
+        EVTYPE_OTHER,
         INJURY_UNKNOWN,
         POS_FLAG_MOBILE, POS_FLAG_GPS_FIX,
         PRIO_URGENT,
@@ -128,12 +129,13 @@ def _encode_payload(frame_type_str: str, data: dict) -> tuple:
     if t == "emergency":
         snippet = str(data.get("text_snippet", "HELP"))[:8].upper()
         payload = encode_emergency_beacon(
-            lat_deg        = float(data.get("lat",      48.2082)),
-            lon_deg        = float(data.get("lon",      16.3738)),
-            persons        = int(  data.get("persons",  1)),
-            injury_code    = int(  data.get("injury",   INJURY_UNKNOWN)),
-            resource_flags = 0,
-            priority       = int(  data.get("priority", PRIO_URGENT)),
+            lat_deg        = float(data.get("lat",        48.2082)),
+            lon_deg        = float(data.get("lon",        16.3738)),
+            persons        = int(  data.get("persons",    1)),
+            event_type     = int(  data.get("event_type", EVTYPE_OTHER)),
+            injury_code    = int(  data.get("injury",     INJURY_UNKNOWN)),
+            resource_flags = int(  data.get("resources",  0)),
+            priority       = int(  data.get("priority",   PRIO_URGENT)),
             text_snippet   = snippet,
         )
         return FrameType.EMERG_BEACON, [payload]

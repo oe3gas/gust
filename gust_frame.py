@@ -45,12 +45,12 @@ VERSION = "0.3.0"
 # Broadcast-Adresse (TO-Feld: alle Stationen)
 BROADCAST_ADDR = b'\xff\xff\xff\xff'
 
-# MFSK-8 SYNC-Preamble: 8 Symbole (v0.3)
-# [7,0,7,0,7,0,7,0] = alternierend höchster/niedrigster Ton
+# MFSK-8 SYNC-Preamble: 8 Symbole (v0.5)
+# Costas-Array Ordnung 8 (maschinell verifiziert — alle 28 Differenzvektoren eindeutig)
+# Ersetzt [7,0,7,0,7,0,7,0]: alle 8 Töne je einmal → Equalizer-Basis + optimale Autokorrelation
 # Dauer: 8 × 32 ms = 256 ms
-# Δf zwischen Ton 7 und Ton 0 = 7 × 31,25 = 218,75 Hz (kanalunabhängig)
 # → Breitband-Decoder kann SYNC ohne Vorabwissen über den Kanal finden
-SYNC_SYMBOLS = [7, 0, 7, 0, 7, 0, 7, 0]
+SYNC_SYMBOLS = [2, 0, 6, 7, 1, 4, 3, 5]
 
 # RS(255,223) Parameter
 RS_N = 255          # Codeword-Länge
@@ -385,75 +385,248 @@ def decode_rotor_cmd(payload: bytes) -> dict:
     }
 
 
+# Prioritätsstufen (Bits 7–6 des Flags-Byte) — ICS-213 / ARRL NTS konform
+PRIO_ROUTINE   = 0b00   # Routine
+PRIO_WELFARE   = 0b01   # Wohlbefinden / Info
+PRIO_URGENT    = 0b10   # Dringend
+PRIO_EMERGENCY = 0b11   # Notfall — unmittelbare Lebensgefahr
+
+# Aliases für Rückwärtskompatibilität (deprecated, werden in v0.4 entfernt)
+PRIO_LOW    = PRIO_ROUTINE
+PRIO_MEDIUM = PRIO_WELFARE
+PRIO_HIGH   = PRIO_URGENT
+# PRIO_URGENT already defined above — no alias needed
+
+# Verletzungsgrad (Bits 5–4 des Flags-Byte)
+INJR_UNKNOWN  = 0b00
+INJR_MINOR    = 0b01
+INJR_SERIOUS  = 0b10
+INJR_CRITICAL = 0b11
+
+# Rückwärtskompatibilität: alte Namen INJURY_* → INJR_* (deprecated, v0.4 entfernt).
+# Konservativ ergänzt: externe Module (gust.py, gust_gateway.py, gust_tx_test.py,
+# gust_hackrf_diag.py) sowie der Legacy-Smoke-Test importieren noch INJURY_*.
+# Diese Aliase halten sie lauffähig, ohne die anderen Dateien zu ändern.
+INJURY_UNKNOWN  = INJR_UNKNOWN
+INJURY_MINOR    = INJR_MINOR
+INJURY_SERIOUS  = INJR_SERIOUS
+INJURY_CRITICAL = INJR_CRITICAL
+
+# Status-Bits (Bits 3–0 des Flags-Byte)
+FLAG_GPS = 0x08   # Bit 3: GPS-Fix gültig
+FLAG_BAT = 0x04   # Bit 2: Batterie OK
+FLAG_RLY = 0x02   # Bit 1: Relay-Request
+
+# Ressourcen-Flags (Offset 11) — alle 8 Bit definiert
+# Nach ICS Resource Management (FEMA) und OCHA Humanitarian Glossary
+RSRC_MEDICAL   = 0x01   # Bit 0: Sanitäter / Arzt
+RSRC_FIRE      = 0x02   # Bit 1: Feuerwehr
+RSRC_RESCUE    = 0x04   # Bit 2: Technische Rettung
+RSRC_WATER     = 0x08   # Bit 3: Wasser / Lebensmittel
+RSRC_SHELTER   = 0x10   # Bit 4: Unterkunft
+RSRC_COMMS     = 0x20   # Bit 5: Kommunikationsunterstützung
+RSRC_TRANSPORT = 0x40   # Bit 6: Transport / Fahrzeuge
+RSRC_HAZMAT    = 0x80   # Bit 7: HAZMAT-Team
+
+# Rückwärtskompatibilität: alter Name RSRC_FOOD → RSRC_WATER (gleiche Semantik)
+RSRC_FOOD = RSRC_WATER
+# Rückwärtskompatibilität: alter Name RSRC_EVAC → RSRC_TRANSPORT
+RSRC_EVAC = RSRC_TRANSPORT
+
+# Ereignistyp-Kodes (Offset 9) — abgeleitet aus OASIS CAP v1.2
+EVTYPE_FIRE      = 0x01
+EVTYPE_FLOOD     = 0x02
+EVTYPE_MEDICAL   = 0x03
+EVTYPE_SAR       = 0x04   # Search and Rescue
+EVTYPE_INFRA     = 0x05   # Infrastrukturschaden
+EVTYPE_QUAKE     = 0x06
+EVTYPE_MISSING   = 0x07   # Vermisste Person(en)
+EVTYPE_UNREST    = 0x08   # Civil Unrest
+EVTYPE_ACCIDENT  = 0x09
+EVTYPE_COLLAPSE  = 0x0A   # Gebäudeeinsturz
+EVTYPE_STORM     = 0x0B
+EVTYPE_LANDSLIDE = 0x0C
+EVTYPE_POWEROUT  = 0x0D
+EVTYPE_COMMSOUT  = 0x0E
+EVTYPE_EVAC      = 0x0F   # Evakuierung erforderlich
+EVTYPE_CBRNE     = 0x10
+EVTYPE_MCI       = 0x11   # Mass Casualty Incident
+EVTYPE_WILDFIRE  = 0x13
+EVTYPE_OTHER     = 0xFF
+
 # ──────────────────────────────────────────────────────────────────────
 # 0x20  NOTFALL-BEACON  (20 Byte)
 #
-#   0–3   Latitude         int32  Mikrograd
-#   4–7   Longitude        int32  Mikrograd
-#   8     Personenanzahl   uint8
-#   9     Verletzungscode  uint8  (0=unbekannt,1=leicht,2=schwer,3=kritisch)
-#  10     Ressourcen-Flags uint8  (bit0=Wasser, bit1=Nahrung, bit2=Medizin, bit3=Evakuierung)
-#  11     Priorität        uint8  (0=niedrig, 1=mittel, 2=hoch, 3=sofort)
-#  12–19  Freitext-Snippet 8 Byte ASCII
+#   0– 3  Latitude        int32   Mikrograd
+#   4– 7  Longitude       int32   Mikrograd
+#   8     Personenanzahl  uint8   (0x00=unbekannt, 0xFF=MCI)
+#   9     Ereignistyp     uint8   (EVTYPE_*, 0x00=ungültig)
+#  10     Flags-Byte      uint8   bits7-6=PRIO, bits5-4=INJR,
+#                                 bit3=GPS, bit2=BAT, bit1=RLY, bit0=res
+#  11     Ressourcen      uint8   Bitmask RSRC_* (angefordert)
+#  12–13  Zeitstempel     uint16  Sekunden mod 65536
+#  14–19  Freitext        6 Byte  ASCII, NUL-aufgefüllt
+#
+# struct-Format: '>iiB B B B H 6s'  = 20 Byte
 # ──────────────────────────────────────────────────────────────────────
-_EMERG_FMT = '>iiBBBB8s'   # 20 Byte
+_EMERG_FMT = '>iiB B B B H 6s'   # 20 Byte
 
-# Verletzungscodes
-INJURY_UNKNOWN  = 0
-INJURY_MINOR    = 1
-INJURY_SERIOUS  = 2
-INJURY_CRITICAL = 3
-
-# Ressourcen-Flags
-RSRC_WATER    = 0x01
-RSRC_FOOD     = 0x02
-RSRC_MEDICAL  = 0x04
-RSRC_EVAC     = 0x08
-
-# Prioritätsstufen
-PRIO_LOW      = 0
-PRIO_MEDIUM   = 1
-PRIO_HIGH     = 2
-PRIO_URGENT   = 3
+_PRIO_NAMES = {0: "ROUTINE", 1: "WELFARE", 2: "URGENT", 3: "EMERGENCY"}
+_INJR_NAMES = {0: "UNKNOWN", 1: "MINOR",   2: "SERIOUS", 3: "CRITICAL"}
 
 def encode_emergency_beacon(
     lat_deg:        float,
     lon_deg:        float,
     persons:        int,
-    injury_code:    int,
-    resource_flags: int,
-    priority:       int,
-    text_snippet:   str = "",
+    event_type:     int,
+    priority:       int   = PRIO_EMERGENCY,
+    injury:         int   = INJR_UNKNOWN,
+    status_flags:   int   = 0,
+    resource_flags: int   = 0,
+    timestamp:      int   = 0,
+    text_snippet:   str   = "",
+    # Legacy parameter kept for call-site compatibility — ignored
+    injury_code:    int   = None,
 ) -> bytes:
-    """Frame 0x20 — Notfall-Beacon (20 Byte)."""
-    snippet = text_snippet.encode('ascii', errors='replace').ljust(8)[:8]
+    """Frame 0x20 — Notfall-Beacon (20 Byte, Protokoll v0.3+).
+
+    BREAKING CHANGE (v0.3 → 20-Byte-Layout):
+      Die POSITIONELLE Signatur hat sich gegenüber dem alten 16-Byte-Frame
+      geändert. Alt war (lat, lon, persons, injury_code, resource_flags,
+      priority, text_snippet); neu ist (lat, lon, persons, event_type,
+      priority, injury, status_flags, resource_flags, timestamp,
+      text_snippet). Alte positionelle Aufrufe brechen daher; Aufrufer
+      müssen auf Keyword-Argumente umgestellt werden. Das Legacy-Kwarg
+      `injury_code=` wird weiterhin akzeptiert (auf `injury` gemappt).
+
+    Flags-Byte (Offset 10):
+      bits 7-6 = priority (PRIO_ROUTINE … PRIO_EMERGENCY)
+      bits 5-4 = injury   (INJR_UNKNOWN … INJR_CRITICAL)
+      bit  3   = GPS-Fix gültig  (FLAG_GPS)
+      bit  2   = Batterie OK     (FLAG_BAT)
+      bit  1   = Relay-Request   (FLAG_RLY)
+      bit  0   = reserviert, immer 0
+    """
+    # Legacy: if old-style injury_code kwarg was passed, use it
+    if injury_code is not None:
+        injury = injury_code
+    flags_byte = ((priority & 0x03) << 6) \
+               | ((injury   & 0x03) << 4) \
+               | (status_flags & 0x0F)
+    snippet = text_snippet.encode('ascii', errors='replace')[:6]
+    snippet = snippet.ljust(6, b'\x00')
     return struct.pack(_EMERG_FMT,
         int(round(lat_deg * 1_000_000)),
         int(round(lon_deg * 1_000_000)),
-        int(persons) & 0xFF,
-        int(injury_code) & 0xFF,
+        int(persons)       & 0xFF,
+        int(event_type)    & 0xFF,
+        flags_byte,
         int(resource_flags) & 0xFF,
-        int(priority) & 0xFF,
+        int(timestamp)      & 0xFFFF,
         snippet,
     )
 
 def decode_emergency_beacon(payload: bytes) -> dict:
-    lat, lon, persons, injury, resources, prio, snippet = \
+    """Frame 0x20 → Dict."""
+    lat, lon, per, evt, flg, rsrc, ts, snip = \
         struct.unpack(_EMERG_FMT, payload[:20])
-    prio_names = {0: "LOW", 1: "MEDIUM", 2: "HIGH", 3: "URGENT"}
+    prio = (flg >> 6) & 0x03
+    injr = (flg >> 4) & 0x03
     return {
-        "lat_deg":        lat / 1_000_000,
-        "lon_deg":        lon / 1_000_000,
-        "persons":        persons,
-        "injury_code":    injury,
-        "resource_flags": resources,
-        "needs_water":    bool(resources & RSRC_WATER),
-        "needs_food":     bool(resources & RSRC_FOOD),
-        "needs_medical":  bool(resources & RSRC_MEDICAL),
-        "needs_evac":     bool(resources & RSRC_EVAC),
+        "lat_deg":        lat  / 1_000_000,
+        "lon_deg":        lon  / 1_000_000,
+        "persons":        per,
+        "event_type":     evt,
         "priority":       prio,
-        "priority_str":   prio_names.get(prio, "?"),
-        "text_snippet":   snippet.decode('ascii', errors='replace').strip(),
+        "priority_str":   _PRIO_NAMES.get(prio, "?"),
+        "injury":         injr,
+        "injury_str":     _INJR_NAMES.get(injr, "?"),
+        "gps_fix":        bool(flg & FLAG_GPS),
+        "battery_ok":     bool(flg & FLAG_BAT),
+        "relay_request":  bool(flg & FLAG_RLY),
+        "resource_flags": rsrc,
+        "needs_medical":  bool(rsrc & RSRC_MEDICAL),
+        "needs_fire":     bool(rsrc & RSRC_FIRE),
+        "needs_rescue":   bool(rsrc & RSRC_RESCUE),
+        "needs_water":    bool(rsrc & RSRC_WATER),
+        "needs_shelter":  bool(rsrc & RSRC_SHELTER),
+        "needs_comms":    bool(rsrc & RSRC_COMMS),
+        "needs_transport":bool(rsrc & RSRC_TRANSPORT),
+        "needs_hazmat":   bool(rsrc & RSRC_HAZMAT),
+        "timestamp_s":    ts,
+        "text_snippet":   snip.rstrip(b'\x00 ').decode('ascii', 'replace'),
+        # Legacy keys for call-site compatibility
+        "resource_flags": rsrc,
+        "priority_str":   _PRIO_NAMES.get(prio, "?"),
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 0x21  NOTFALL-RESSOURCENSTATUS  (8 Byte)
+#
+# Quittierung + Ressourcenrückmeldung für Frame 0x20.
+# Wird directed gesendet (FROM = quittierungssender, Payload Byte4-7 =
+# gequittierte Station).
+#
+#   0    Ereignistyp-Echo  uint8  (spiegelt 0x20 Offset 9)
+#   1    Verfügbare Ressourcen  uint8  (gleiche Bitmask wie 0x20 Offset 11)
+#   2    ETA in Minuten    uint8  (0x00=sofort, 0xFF=unbekannt)
+#   3    Flags             uint8  (bit0=ACK, bit1=RLC, bits7-2=reserviert)
+#   4–7  Gequittiertes Rufzeichen  4 Byte Basis-40
+#
+# struct-Format: '>BBBB4s'  = 8 Byte
+# ──────────────────────────────────────────────────────────────────────
+_EMERG_RSRC_FMT = '>BBBB4s'   # 8 Byte
+
+# Flags für Frame 0x21
+ACK_FLAG = 0x01   # Bit 0: immer 1 in gültigem EMERG_RSRC
+RLC_FLAG = 0x02   # Bit 1: Relay-Confirm (Station leitet Meldung weiter)
+
+def encode_emerg_rsrc(
+    event_type_echo:  int,
+    avail_resources:  int,
+    eta_minutes:      int,
+    acked_callsign:   str,
+    relay_confirm:    bool = False,
+) -> bytes:
+    """Frame 0x21 — Notfall-Ressourcenstatus / ACK (8 Byte).
+
+    event_type_echo : EVTYPE_* aus dem empfangenen Frame 0x20
+    avail_resources : RSRC_* Bitmask — verfügbare (nicht angeforderte!) Ressourcen
+    eta_minutes     : 0=sofort, 1-254=Minuten, 255=unbekannt
+    acked_callsign  : Rufzeichen der Station, deren 0x20 quittiert wird
+    relay_confirm   : True wenn diese Station die Meldung aktiv weiterleitet
+    """
+    flags = ACK_FLAG
+    if relay_confirm:
+        flags |= RLC_FLAG
+    return struct.pack(_EMERG_RSRC_FMT,
+        int(event_type_echo) & 0xFF,
+        int(avail_resources) & 0xFF,
+        int(eta_minutes)     & 0xFF,
+        flags,
+        encode_callsign(acked_callsign),
+    )
+
+def decode_emerg_rsrc(payload: bytes) -> dict:
+    """Frame 0x21 → Dict."""
+    evt, rsrc, eta, flags, call_raw = \
+        struct.unpack(_EMERG_RSRC_FMT, payload[:8])
+    return {
+        "event_type_echo":  evt,
+        "avail_resources":  rsrc,
+        "avail_medical":    bool(rsrc & RSRC_MEDICAL),
+        "avail_fire":       bool(rsrc & RSRC_FIRE),
+        "avail_rescue":     bool(rsrc & RSRC_RESCUE),
+        "avail_water":      bool(rsrc & RSRC_WATER),
+        "avail_shelter":    bool(rsrc & RSRC_SHELTER),
+        "avail_comms":      bool(rsrc & RSRC_COMMS),
+        "avail_transport":  bool(rsrc & RSRC_TRANSPORT),
+        "avail_hazmat":     bool(rsrc & RSRC_HAZMAT),
+        "eta_minutes":      eta,
+        "ack_valid":        bool(flags & ACK_FLAG),
+        "relay_confirm":    bool(flags & RLC_FLAG),
+        "acked_callsign":   decode_callsign(call_raw),
     }
 
 
@@ -618,6 +791,7 @@ def decode_payload(frame_type: int, payload: bytes) -> Optional[dict]:
         FrameType.ROTOR_STATUS: decode_rotor_status,
         FrameType.ROTOR_CMD:    decode_rotor_cmd,
         FrameType.EMERG_BEACON: decode_emergency_beacon,
+        FrameType.EMERG_RSRC:   decode_emerg_rsrc,
         FrameType.TEXT:         decode_text_fragment,
         FrameType.CQ:           decode_cq,
     }
@@ -763,30 +937,30 @@ def symbol_stream_stats(symbols: list) -> dict:
 # Die NF-Tonhöhe bestimmt den Kanal — identisch zum FT8-Prinzip.
 #
 # Beispiel: Dial 14.110,000 MHz (USB)
-#   NF 400 Hz  → RF 14.110,400 MHz  (Kanal 0)
-#   NF 650 Hz  → RF 14.110,650 MHz  (Kanal 1)
+#   NF 600 Hz   → RF 14.110,600 MHz  (Kanal 0)
+#   NF 850 Hz   → RF 14.110,850 MHz  (Kanal 1)
 #   ...
-#   NF 2.650 Hz → RF 14.112,650 MHz (Kanal 9)
-#   NF 2.900 Hz → RF 14.112,900 MHz (obere Grenze Kanal 9)
+#   NF 2.350 Hz → RF 14.112,350 MHz  (Kanal 7)
+#   NF 2.600 Hz → RF 14.112,600 MHz  (obere Grenze Kanal 7)
 #
-# Gesamtbandbreite: 10 × 250 Hz = 2.500 Hz  →  passt in Standard-SSB
-# Passband-Bereich: 400 – 2.900 Hz (gut innerhalb 300–3.000 Hz SSB-Filter)
+# Gesamtbandbreite: 8 × 250 Hz = 2.000 Hz  →  600–2600 Hz (SSB-Plateau ±0,5 dB)
+# Randkanäle 0+9 alt (400 Hz / 2650–2900 Hz) entfernt — lagen im SSB-Filterrolloff.
 #
-# Kanalplan:
+# Kanalplan v0.5:
 #   Kanal  NF-Unterkante  NF-Oberkante   8 Töne bei
-#      0      400 Hz         650 Hz      400,431,462,…,619 Hz
-#      1      650 Hz         900 Hz      650,681,712,…,869 Hz
-#      2      900 Hz        1150 Hz      …
-#      …
-#      9     2650 Hz        2900 Hz      2650,2681,…,2869 Hz
+#      0      600 Hz         850 Hz      600,631,...,819 Hz
+#      1      850 Hz        1100 Hz      850,881,...,1069 Hz
+#      2     1100 Hz        1350 Hz      ...
+#      ...
+#      7     2350 Hz        2600 Hz      2350,2381,...,2569 Hz
 #
 # Prinzip Kanalzuweisung: Rufzeichen → SHA-256 → Kanal + Zeitversatz
 # Kein Koordinationsaufwand, Pure ALOHA (Kollisionsanalyse → Spec §4.2)
 
-N_CHANNELS       = 10       # Standard-SSB-kompatibel (2,5 kHz Gesamtbandbreite)
+N_CHANNELS       = 8        # Reduziert von 10 — Kanäle 0+9 alt lagen im SSB-Rolloff
 FRAME_FLAG_TEST  = 0x80     # Bit 7 im CHANNEL-Byte: Frame ist ein Testframe
 CHANNEL_BW_HZ    = 250      # Bandbreite je Kanal (= MFSK-8 Tonabstand × 8)
-CHANNEL_BASE_HZ  = 400.0    # NF-Unterkante Kanal 0 (Hz)
+CHANNEL_BASE_HZ  = 600.0    # War 400.0 — neuer Span 600–2600 Hz, SSB-Plateau ±0,5 dB
 
 def assign_channel(
     callsign:    str,
@@ -818,14 +992,13 @@ def channel_frequency(channel: int, base_freq_hz: float = CHANNEL_BASE_HZ) -> fl
     """
     Gibt die NF-Unterkante eines Kanals zurück (Hz).
 
-    Kanalplan (Standard, 10 Kanäle):
-      Kanal 0:  400 Hz   Kanal 5: 1650 Hz
-      Kanal 1:  650 Hz   Kanal 6: 1900 Hz
-      Kanal 2:  900 Hz   Kanal 7: 2150 Hz
-      Kanal 3: 1150 Hz   Kanal 8: 2400 Hz
-      Kanal 4: 1400 Hz   Kanal 9: 2650 Hz  (Oberkante: 2900 Hz)
+    Kanalplan (Standard, 8 Kanäle, v0.5):
+      Kanal 0:  600 Hz   Kanal 4: 1600 Hz
+      Kanal 1:  850 Hz   Kanal 5: 1850 Hz
+      Kanal 2: 1100 Hz   Kanal 6: 2100 Hz
+      Kanal 3: 1350 Hz   Kanal 7: 2350 Hz  (Oberkante: 2600 Hz)
 
-    Gesamtspan: 400–2900 Hz → passt in Standard-SSB-Passband (300–3000 Hz).
+    Gesamtspan: 600–2600 Hz → SSB-Plateau ±0,5 dB (innerhalb 300–3000 Hz Passband).
     Der MFSK-8-Modulator legt BASE_FREQ auf diesen Wert; die 8 Töne
     liegen dann bei base + 0×31,25 Hz bis base + 7×31,25 Hz.
     """
@@ -946,21 +1119,96 @@ def _run_tests():
           f"gps_fix={pos_back['gps_fix']}")
     print("  ✓")
 
-    # ── Test 5: Notfall-Beacon ─────────────────────────────────────
-    print("\n── Test 5: Notfall-Beacon (0x20) ──")
+    # ── Test 5: Notfall-Beacon 0x20 v2 (20 Byte) ───────────────────────
+    print("\n── Test 5: Notfall-Beacon 0x20 v2 (20 Byte) ──")
     emerg_payload = encode_emergency_beacon(
         lat_deg=47.810, lon_deg=13.055,
-        persons=3, injury_code=INJURY_SERIOUS,
-        resource_flags=RSRC_WATER | RSRC_MEDICAL,
-        priority=PRIO_URGENT,
-        text_snippet="TRAPPED"
+        persons=5,
+        event_type=EVTYPE_FLOOD,
+        priority=PRIO_EMERGENCY,
+        injury=INJR_SERIOUS,
+        status_flags=FLAG_GPS | FLAG_BAT | FLAG_RLY,
+        resource_flags=RSRC_MEDICAL | RSRC_TRANSPORT,
+        timestamp=3600,
+        text_snippet="FLOOD",
     )
+    assert len(emerg_payload) == 20, \
+        f"0x20 Payload falsche Länge: {len(emerg_payload)} (erwartet 20)"
     print(f"  Payload ({len(emerg_payload)} Byte):")
     print(hexdump(emerg_payload))
-    emerg_back = decode_emergency_beacon(emerg_payload)
-    print(f"  Dekodiert: pos={emerg_back['lat_deg']:.3f}°N/{emerg_back['lon_deg']:.3f}°E  "
-          f"prio={emerg_back['priority_str']}  "
-          f"text='{emerg_back['text_snippet']}'")
+    eb = decode_emergency_beacon(emerg_payload)
+    assert eb["priority_str"]  == "EMERGENCY",  f"Prio: {eb['priority_str']}"
+    assert eb["injury_str"]    == "SERIOUS",    f"Injr: {eb['injury_str']}"
+    assert eb["event_type"]    == EVTYPE_FLOOD, f"EvType: {eb['event_type']}"
+    assert eb["gps_fix"]       == True,         "GPS-Flag"
+    assert eb["relay_request"] == True,         "RLY-Flag"
+    assert eb["needs_medical"] == True,         "RSRC_MEDICAL"
+    assert eb["needs_transport"]== True,        "RSRC_TRANSPORT"
+    assert eb["timestamp_s"]   == 3600,         f"TS: {eb['timestamp_s']}"
+    assert eb["text_snippet"]  == "FLOOD",      f"Snippet: {eb['text_snippet']}"
+    print(f"  Prio={eb['priority_str']}  Injr={eb['injury_str']}  "
+          f"EvType=0x{eb['event_type']:02X}  GPS={eb['gps_fix']}  "
+          f"Snippet='{eb['text_snippet']}'")
+    print("  ✓")
+
+    # ── Test 11: Notfall-Ressourcenstatus 0x21 (8 Byte) ────────────────
+    print("\n── Test 11: EMERG_RSRC 0x21 (8 Byte) ──")
+    rsrc_payload = encode_emerg_rsrc(
+        event_type_echo=EVTYPE_FLOOD,
+        avail_resources=RSRC_MEDICAL | RSRC_TRANSPORT,
+        eta_minutes=20,
+        acked_callsign="OE3GAS",
+        relay_confirm=False,
+    )
+    assert len(rsrc_payload) == 8, \
+        f"0x21 Payload falsche Länge: {len(rsrc_payload)} (erwartet 8)"
+    print(f"  Payload ({len(rsrc_payload)} Byte):")
+    print(hexdump(rsrc_payload))
+    rd = decode_emerg_rsrc(rsrc_payload)
+    assert rd["event_type_echo"] == EVTYPE_FLOOD,  f"Echo: {rd['event_type_echo']}"
+    assert rd["eta_minutes"]     == 20,            f"ETA: {rd['eta_minutes']}"
+    assert rd["ack_valid"]       == True,          "ACK-Flag"
+    assert rd["relay_confirm"]   == False,         "RLC-Flag"
+    assert rd["acked_callsign"]  == "OE3GAS",      f"Call: {rd['acked_callsign']}"
+    assert rd["avail_medical"]   == True,          "avail_medical"
+    assert rd["avail_transport"] == True,          "avail_transport"
+    assert rd["avail_fire"]      == False,         "avail_fire should be False"
+    print(f"  ACK={rd['ack_valid']}  ETA={rd['eta_minutes']}min  "
+          f"Caller={rd['acked_callsign']}  "
+          f"Avail=0x{rd['avail_resources']:02X}")
+    print("  ✓")
+
+    # ── Test 12: 0x20/0x21 Ressourcenabgleich ──────────────────────────
+    print("\n── Test 12: 0x20/0x21 Ressourcenabgleich ──")
+    requested = decode_emergency_beacon(emerg_payload)["resource_flags"]
+    available = decode_emerg_rsrc(rsrc_payload)["avail_resources"]
+    covered   = requested & available
+    missing   = requested & (~available & 0xFF)
+    assert covered == (RSRC_MEDICAL | RSRC_TRANSPORT), \
+        f"Covered falsch: 0b{covered:08b}"
+    assert missing == 0, f"Missing sollte 0 sein, ist: 0b{missing:08b}"
+    print(f"  Requested: 0b{requested:08b}")
+    print(f"  Available: 0b{available:08b}")
+    print(f"  Covered:   0b{covered:08b}  Missing: 0b{missing:08b}")
+    print("  ✓  Alle angeforderten Ressourcen gedeckt")
+
+    # ── Test 13: 0x21 via Frame-Build + dispatch ────────────────────────
+    print("\n── Test 13: 0x21 Frame-Build → Parse → decode_payload ──")
+    ch, _ = assign_channel("OE1XTU")
+    frame_21 = build_frame(FrameType.EMERG_RSRC, "OE1XTU", rsrc_payload, ch)
+    parsed_21 = parse_frame(frame_21)
+    assert parsed_21 is not None,          "parse_frame returned None"
+    assert parsed_21["crc_ok"],            "CRC-Fehler Frame 0x21"
+    assert parsed_21["type"] == 0x21,      f"Typ: {parsed_21['type']}"
+    assert parsed_21["from"] == "OE1XTU",  f"FROM: {parsed_21['from']}"
+    decoded_21 = decode_payload(FrameType.EMERG_RSRC, parsed_21["payload"])
+    assert decoded_21 is not None,         "decode_payload lieferte None für 0x21"
+    assert decoded_21["ack_valid"],        "ACK-Flag nach Frame-Roundtrip"
+    print(f"  FROM={parsed_21['from']}  TYPE=0x{parsed_21['type']:02X}  "
+          f"CRC={'✓' if parsed_21['crc_ok'] else '✗'}")
+    print(f"  Decoded: ACK={decoded_21['ack_valid']}  "
+          f"ETA={decoded_21['eta_minutes']}min  "
+          f"Acked={decoded_21['acked_callsign']}")
     print("  ✓")
 
     # ── Test 6: Text-Fragmentierung ────────────────────────────────
