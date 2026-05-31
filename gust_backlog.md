@@ -28,6 +28,30 @@
 | P5-10 | 🟡 | refactor | Event-Bus in Gateway | Verdrahtung in demo_wiring.py + gust.py daemon | ✅ |
 | P5-11 | 🟢 | feature | Web-UI: Dark + Light Theme | Dark Amber + Light Clean, localStorage | ✅ |
 | P5-12 | 🟢 | feature | Web-UI: Frame-History | deque(maxlen=50), /api/log beim Laden, /ws/rx Echtzeit | ✅ |
+| P5-13 | 🟡 | refactor | Web-UI Config-Tab: Strukturierung in Unterseiten | Aktueller Config-Tab ist eine einzelne, lange Seite mit Audio, SDR, PTT, Gateway-Parametern. Mit dem Hamlib-Feature (P5-14) wird er zu unübersichtlich. **Lösung: Tab-interne Unternavigation** (Sub-Tabs oder vertikale Sidebar) mit diesen Sektionen: (1) **Gateway** — Rufzeichen, Web-Port, API-Key, Betriebsmodus; (2) **Audio** — TX/RX-Gerät, Pegel, PTT-Backend-Auswahl (null / hamlib / gpio), PTT-Delay; (3) **Transceiver (Hamlib)** — sichtbar/aktiv nur wenn PTT-Backend = hamlib oder auto_start = true; COM-Port-Dropdown, Rig-Modell-Suche, Baudrate, Auto-Start-Toggle, Verbinden-Button mit Live-Status; (4) **SDR-TX (SoapySDR)** — bestehende SoapySDR-Sektion unverändert hierher verschoben; (5) **Connectors** — MQTT-Broker, Topics, HA-Integration (Vorbereitung Phase 6). Umsetzungsregel: Alle Sektionen schreiben nur in `gateway.json` — kein Konfigurations-Split. Sektion (3) blendet sich automatisch aus wenn `ptt_backend != "hamlib"`. Aktive Sektion wird im `localStorage` gemerkt (kein Reset beim Reload). | ✅ |
+| P5-14 | 🟡 | feature | Web-UI: Hamlib/rigctld-Konfiguration | Neue Sektion „Transceiver (Hamlib)" im Config-Tab (siehe P5-13). **Backend-Endpunkte:** `GET /api/hamlib/ports` — serielle Ports enumerieren (`/dev/ttyUSB*`, `/dev/ttyACM*`, `COM*`; plattformübergreifend via `serial.tools.list_ports`); `GET /api/hamlib/models?q=<suchbegriff>` — `rigctld --list` parsen, nach Suchbegriff filtern, max. 50 Treffer zurückgeben (Format: `[{"id": 2034, "label": "Kenwood TS-790"}, …]`); `GET /api/hamlib/status` — TCP-Connect auf `hamlib_host:hamlib_port`, bei Erfolg `f`-Kommando senden → Frequenz zurückgeben; `POST /api/hamlib/start` — ruft `ensure_rigctld_running()` mit aktuellem `rigctld`-Block auf; `POST /api/hamlib/stop` — sendet SIGTERM/terminate() an intern gestarteten rigctld-Prozess (nur wenn GUST ihn gestartet hat; extern gestartete rigctld-Prozesse werden nicht berührt); `POST /api/hamlib/config` — schreibt `rigctld`-Block + `audio.ptt_backend` + `audio.hamlib_host/port` atomar in `gateway.json`. **GUI-Elemente:** COM-Port-Dropdown mit Rescan-Button; Rig-Modell-Suchfeld (Freitext → Live-Suche gegen `/api/hamlib/models`) mit Anzeige von ID + Label; Baudrate-Dropdown (1200 / 4800 / 9600 / 19200 / 38400 / 57600 / 115200); Auto-Start-Checkbox; Speichern-Button; Verbinden-&-Testen-Button → zeigt rigctld-Status + aktuelle Frequenz oder Fehlermeldung. **gateway.json-Resultat:** `audio.ptt_backend = "hamlib"`, `rigctld.auto_start`, `rigctld.rig_model`, `rigctld.device`, `rigctld.baud` — identisch mit bisherigem manuellen Format, nur jetzt GUI-gesteuert. **Abhängigkeit:** P5-13 (Unterseiten-Struktur) sollte zuerst oder parallel umgesetzt werden. | ✅ |
+
+### Umsetzungsnotiz P5-13 / P5-14 (Mai 2026)
+
+Alle Änderungen ausschließlich in `gust_web.py`; Spec in `gust_spec.md §4.4` ergänzt.
+
+- **Sub-Navigation** im Config-Tab umgesetzt mit 4 Unterseiten: **Audio & PTT**
+  (inkl. PTT-Lead/Tail), **Transceiver (Hamlib)**, **SDR-TX (SoapySDR)**,
+  **Darstellung** (Theme/Schrift). Aktiver Sub-Tab in `localStorage`
+  (`gust_cfg_subtab`), System-Status-Grid bleibt dauerhaft oben sichtbar.
+- **6 Hamlib-Endpunkte** wie spezifiziert implementiert
+  (`ports`/`models`/`status`/`start`/`stop`/`config`); `_handle_hamlib_*`-Methoden
+  + `self._rigctld_proc`-Handle. End-to-End gegen Standalone-Server getestet
+  (Port-Enumeration, `rigctld --list`-Parsing, TCP-Probe, Stop-Guard).
+- **Abweichungen vom ursprünglichen P5-13-Entwurf:**
+  - Sektion **Gateway** (Rufzeichen/Web-Port/API-Key) und Sektion **Connectors**
+    (MQTT/HA, Phase-6-Vorbereitung) **nicht** als eigene Unterseiten gebaut —
+    zurückgestellt (Gateway-Felder unverändert, Connectors → Phase 6).
+    Stattdessen wurde die bestehende **Darstellung** als eigene Unterseite geführt.
+  - Hamlib-Unterseite ist **immer sichtbar** (kein Auto-Ausblenden bei
+    `ptt_backend != "hamlib"`); das Speichern setzt `ptt_backend = "hamlib"`.
+  - `models`-Label = vollständige `rigctld --list`-Zeile (Hersteller + Modell +
+    Version + Status), nicht nur „Hersteller Modell" — Spec-konform („Rest = Label").
 
 ---
 
@@ -50,13 +74,27 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | P6-08 | 🟡 | feature | `connectors.yaml` — Konfigurations-Schema | YAML-Schema mit Inbound/Outbound-Regeln, topic-Wildcard-Matching, from_call-Templates | 🔲 |
 | P6-09 | 🟢 | feature | `gust_eventbus.py` — CONNECTOR_RX EventType | Neue EventType-Konstante `CONNECTOR_RX = "connector_rx"`; MQTT_RX bleibt als Alias | 🔲 |
 
+### Transform-Bibliothek Erweiterungen
+
+| ID | Prio | Typ | Titel | Beschreibung | Status |
+|---|---|---|---|---|---|
+| P6-10 | 🟡 | feature | `weather_from_ecowitt` — Froggit/Ambient/Fine-Offset | Transform für Ecowitt-Protokoll (HP2000 Pro, WS2900, WH2650 u.a.). Felder: `temp`→`temp_c`, `humidity`, `baromrel`→`pressure_hpa` (NN-normiert), `windspeed`, `winddir`, `rainrate`, `uv`; `batt`-Inversion (`batt==0` → gut → `flags\|=0x01`); `metric=1`-Prüfung; **PASSKEY wird aktiv verworfen und nie geloggt**. | 🔲 |
+| P6-11 | 🟡 | feature | `field_map` — generischer YAML-Transform (Stufe 2) | Transform ohne Python-Code: Benutzer definiert Key-Mapping in `connectors.yaml` (`temp_c: "temp_aussen"`). Optional: `scale`-Faktor pro Feld (z.B. `scale: 0.1` für Zehntelgrad-Quellen). Aufgerufen über `transform: field_map` + `field_map:`-Block. Ermöglicht eigene Sensoren ohne Code-Änderung. | 🔲 |
+
+### Test-Infrastruktur
+
+| ID | Prio | Typ | Titel | Beschreibung | Status |
+|---|---|---|---|---|---|
+| P6-12 | 🟡 | feature | `test_transforms.py` — offline Unit-Tests | Vollständige Unit-Tests für alle Transform-Funktionen ohne Broker. Tests: `weather_from_ecowitt` mit Froggit-Sample-JSON; Roundtrip → `encode_weather()` → 14 Byte; PASSKEY-Ausschluss (Security); `field_map` mit benutzerdefiniertem Mapping; `weather_from_ha_json`; `passthrough`. Läuft ohne Netz, ohne Infrastruktur. | 🔲 |
+| P6-13 | 🟡 | feature | `amqtt` pytest-Fixture für Integrationstests | `amqtt` (pure Python, `pip install amqtt`) als In-Process-Broker-Fixture für pytest. Port 18830 (kein Konflikt mit System-Mosquitto). Ermöglicht vollständige Connector-Roundtrip-Tests ohne externen Broker. Alternativ: `test.mosquitto.org` als öffentlicher Fallback (Konfiguration via `GUST_TEST_BROKER` Env-Variable). | 🔲 |
+
 ### Ergänzend geplante Connectors (Phase 8/9)
 
 | ID | Typ | Titel | Beschreibung |
 |---|---|---|---|
-| P6-10 | feature | `WebhookConnector` | aiohttp POST-Handler, kein Broker nötig |
-| P6-11 | feature | `MeshtasticConnector` | LoRa-Mesh-Bridge (siehe P7-09); from_call aus Node-ID |
-| P6-12 | feature | `APRSConnector` | APRS-IS oder TNC; `position_from_aprs_json` bereits in gust_transforms.py |
+| P6-14 | feature | `WebhookConnector` | aiohttp POST-Handler, kein Broker nötig |
+| P6-15 | feature | `MeshtasticConnector` | LoRa-Mesh-Bridge (siehe P7-09); from_call aus Node-ID |
+| P6-16 | feature | `APRSConnector` | APRS-IS oder TNC; `position_from_aprs_json` bereits in gust_transforms.py |
 
 ---
 
@@ -67,7 +105,7 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | P7-01 | 🔴 | research | Bandplan OE prüfen | §16 AFG geklärt: GUST-Aussendungen sind lizenzkonform als Datenübertragung im digitalen Sub-Band eingestuft. Testfrequenzen dokumentiert in gust_spec.md §8. | ✅ |
 | P7-02 | 🔴 | feature | TX-Hardware-Verdrahtung in gust.py | cmd_tx(): gust_frame → gust_modulator → gust_audio verketten | ✅ |
 | P7-03 | 🔴 | feature | Symbol-Windowing Raised Cosine | Flanken glätten, Spectral Leakage reduzieren | ✅ |
-| P7-04 | 🔴 | feature | Soapy7610 TX-Pfad | IC-7610 direktes IQ-TX via SoapySDR | 🔲 |
+| P7-04 | 🔴 | feature | SoapySDR TX-Pfad (generisch) | Direktes IQ-TX über beliebiges SoapySDR-Gerät (HackRF, IC-7610, Lime, Pluto …), nicht auf ein Treiber-Modul festgenagelt. Neues Modul `gust_soapy_tx.py` mit `SoapyTxBackend` (dünne, generische Schicht analog PTT-Backend). Geräteauswahl ausschließlich per `Device.enumerate()`-Discovery — kein manuelles Args-/Pfad-Feld. REST `/api/sdr/devices` (enumerate + Rescan) + `/api/sdr/caps` + `/api/sdr/config` → GUI-Dropdown im Config-Tab; gespeichert werden Device-Args (driver + serial/label) in `gateway.json.sdr_tx.device_args`, nicht der Listenindex. TX-only-Filter via `getNumChannels(SOAPY_SDR_TX)`; Gain/Sample-Rate/Antenne nach Auswahl dynamisch aus dem Gerät; `listModules()` als ausklappbare Diagnose-Anzeige unter dem Dropdown. `cmd_tx()` verzweigt bei `sdr_tx.enabled` über `_tx_via_sdr()`. Siehe ADR-16. | ✅ |
 | P7-05 | 🔴 | research | SNR-Schwelle messen | HackRF TX-Gain-Stepping (Gain-Folge via `tx_test.py --gain-sequence`); empirische Baseline ermittelt → siehe T-10.2 | ✅ |
 | P7-06 | 🟡 | feature | Erster On-Air-Test | IC-7610 TX → SDRplay RX, Frame dekodieren | ✅ |
 | P7-07 | 🟡 | research | Preamble-Länge optimieren | 8 Symbole (256 ms) — ausreichend für KW? Weitere Tests nötig | 🔲 |
@@ -123,7 +161,7 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 
 | ID | Prio | Typ | Titel | Beschreibung | Status |
 |---|---|---|---|---|---|
-| P8-01 | 🟡 | docs | Protokollspezifikation finalisieren | Vollständiges Markdown-Dokument v0.3, publikationsreif | 🔲 |
+| P8-01 | 🟡 | docs | Protokollspezifikation finalisieren | Vollständiges Markdown-Dokument v0.5 (Costas-SYNC, 8 Kanäle 600–2600 Hz, IQ-Eingang), publikationsreif | 🔲 |
 | P8-02 | 🟡 | docs | Installationsanleitung RPi | Schritt-für-Schritt: OS, Python, Hardware, gateway.json | 🔲 |
 | P8-03 | 🟢 | docs | GitHub Repository aufsetzen | OE3GAS/gust, README, Lizenz CC BY-SA 4.0 | ✅ |
 | P8-04 | 🟢 | docs | ÖVSV-Präsentation vorbereiten | Folien für OE-Community, Protokollvorstellung | 🔲 |
@@ -188,6 +226,7 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | ✅ P7-M  | 7 | bug | HackRF TX-Underrun (Default-Timeout-Fix) | Mai 2026 |
 | ✅ P7-N  | 7 | feature | tx_test.py Mess-Skript (--channels, --gain-sequence) | Mai 2026 |
 | ✅ P7-O  | 7 | feature | Scan-Obergrenze 2760→2900 Hz (Kanal-9-Offset-Symmetrie) | Mai 2026 |
+| ✅ P7-04 | 7 | feature | Generischer SoapySDR-TX-Backend (`gust_soapy_tx.py`, ADR-16) | Mai 2026 |
 
 ---
 
@@ -296,8 +335,33 @@ Transform-Bibliothek. Frame-Layer und Event-Bus bleiben vollständig unveränder
 P6-01 bis P6-05 bleiben als Items, werden aber inhaltlich auf das neue Modell
 angehoben. Neue Items P6-06 bis P6-09 für die Basisschicht.
 
+### ADR-16: SoapySDR TX — Geräteauswahl per Discovery, kein Hardcoding
+Motivation: Der ursprüngliche Titel „Soapy7610" suggerierte eine Festlegung auf
+die IC-7610. SoapySDR ist aber gerade die herstellerneutrale Abstraktion — „7610"
+ist nur *ein* Satz Device-Args unter vielen. Eine Festverdrahtung auf einen
+Treiber-/DLL-Namen widerspricht dem Sinn der Schicht.
+Entscheidung: TX-Geräte werden ausschließlich über `SoapySDR.Device.enumerate()`
+entdeckt (Auto-Discovery). **Bewusst KEIN** manuelles Device-Args- oder
+Plugin-Pfad-Eingabefeld in der GUI (Designentscheidung OE3GAS, Mai 2026) —
+Recovery bei fehlendem Gerät erfolgt über „Rescan". Persistiert werden die vollen
+Device-Args (driver + serial/label) in `gateway.json`, NICHT der Enumerations-Index
+(Reihenfolge nach Reboot/USB-Replug nicht stabil — dieselbe Lehre wie ADR-09 bei
+Audiogeräten). Konsequenzen für die Implementierung:
+- `SoapyTxBackend` (neues Modul `gust_soapy_tx.py`) nimmt generische Args entgegen;
+  „7610" ist kein Sonderfall mehr, sondern ein gespeicherter Args-Satz.
+- TX-Fähigkeit beim Befüllen des Dropdowns prüfen: `getNumChannels(SOAPY_SDR_TX)`
+  > 0; RX-only-Geräte (z. B. RTL-SDR) ausgrauen/warnen.
+- Gain-Modell, Sample-Rate-Bereich und Antennenports sind treiberabhängig und
+  werden nach Auswahl dynamisch abgefragt (`listGains`/`getGainRange`/
+  `getSampleRateRange`/`listAntennas`); Gain nicht als roher Int speichern
+  (HackRF mehrstufig vs. einzelne benannte Gains), sondern normalisiert (0–1)
+  oder als benannte Elemente, pro Gerät gemappt.
+- `SoapySDR.listModules()` wird rein diagnostisch angezeigt (Status-Tab oder unter
+  dem Dropdown), damit erkennbar ist, ob das passende Treiber-Modul geladen wurde —
+  reine Anzeige, kein Eingabefeld (bleibt im „nur enumerate"-Rahmen).
+
 ---
 
 *Dokument: gust_backlog.md*
 *Autor: OE3GAS*
-*Stand: Mai 2026 — Phase 9 (Protokoll v0.5: Costas-SYNC, Kanalplan 8 Kanäle 600–2600 Hz, IQ-Eingang) abgeschlossen; ADR-14 entschieden & umgesetzt, P8-06 geschlossen; Phase 7 (Empfänger-Robustheit + SNR-Baseline) abgeschlossen*
+*Stand: Mai 2026 — Phase 9 (Protokoll v0.5) abgeschlossen; P5-13 Config-Tab-Strukturierung erweitert; P5-14 Hamlib-GUI-Konfiguration neu*

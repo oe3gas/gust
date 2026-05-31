@@ -352,6 +352,12 @@ class EventBus:
 | POST | `/api/tx/text_fragment` | Einzelnes vorberechnetes Text-Fragment (Schedule-getaktet vom Web-UI) |
 | POST | `/api/tx/emergency` | Notfall-Frame (sofort, Prio 1) |
 | GET | `/api/log` | Letzte N Einträge aus dem Logfile |
+| GET | `/api/hamlib/ports` | Verfügbare serielle Ports (pyserial `list_ports`) |
+| GET | `/api/hamlib/models` | Hamlib-Rig-Liste (`?q=`Suchstring, max. 50 Treffer) |
+| GET | `/api/hamlib/status` | rigctld TCP-Erreichbarkeit + aktuelle Frequenz |
+| POST | `/api/hamlib/start` | rigctld starten (`ensure_rigctld_running`) |
+| POST | `/api/hamlib/stop` | rigctld stoppen (nur wenn GUST ihn gestartet hat) |
+| POST | `/api/hamlib/config` | rigctld-Block + `ptt_backend` in `gateway.json` schreiben |
 
 **WebSocket-Endpunkte:**
 

@@ -156,6 +156,68 @@ header h1 span { color: var(--text2); font-size: var(--fs-xs); font-weight: norm
                 background: var(--text2); transition: background .3s; }
 #ws-indicator.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
 #ws-indicator.error     { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+
+/* ── DAEMON HEARTBEAT ─────────────────────────────────── */
+#daemon-hb {
+  display: flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 4px;
+  font-size: 11px; font-weight: bold; letter-spacing: 0.05em;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  cursor: default; user-select: none;
+  transition: background .3s, border-color .3s;
+}
+.hb-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text2); flex-shrink: 0;
+  transition: background .3s;
+}
+.hb-label { color: var(--text2); transition: color .3s; }
+
+#daemon-hb.hb-alive  .hb-dot   { background: var(--green); animation: hb-pulse 2s ease-in-out infinite; }
+#daemon-hb.hb-alive  .hb-label { color: var(--green); }
+#daemon-hb.hb-warn   .hb-dot   { background: var(--orange); animation: hb-blink 0.7s step-end infinite; }
+#daemon-hb.hb-warn   .hb-label { color: var(--orange); }
+#daemon-hb.hb-dead   .hb-dot   { background: var(--red); animation: none; }
+#daemon-hb.hb-dead   .hb-label { color: var(--red); }
+
+@keyframes hb-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.85); }
+}
+@keyframes hb-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* ── OFFLINE BANNER ───────────────────────────────────── */
+#daemon-offline-banner {
+  display: none;
+  background: var(--red); color: #fff;
+  padding: 7px 16px; text-align: center;
+  font-size: 12px; font-weight: bold;
+  border-bottom: 2px solid rgba(0,0,0,0.25);
+  letter-spacing: 0.03em;
+}
+#daemon-offline-banner.visible { display: block; }
+#onair-banner {
+  display: none;
+  background: var(--red);
+  color: #fff;
+  padding: 8px 16px;
+  text-align: center;
+  font-size: var(--fs-sm);
+  font-weight: bold;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border-bottom: 2px solid rgba(0,0,0,0.3);
+  animation: onair-pulse 1s ease-in-out infinite alternate;
+}
+#onair-banner.visible { display: block; }
+@keyframes onair-pulse {
+  from { opacity: 1.0; }
+  to   { opacity: 0.6; }
+}
 #theme-btn { background: none; border: 1px solid var(--border); color: var(--text2);
              padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: var(--fs-sm); }
 #theme-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -491,6 +553,57 @@ h2:first-child { margin-top: 0; }
   #rx-feed  { height: 200px; }
   #log-feed { height: 260px; }
 }
+
+/* ── Config Sub-Tabs ─────────────────────────────────────── */
+.cfg-subnav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 0;
+  padding: 0;
+}
+.cfg-subnav button {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 16px;
+  color: var(--text2);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  transition: color .15s, background .15s, border-color .15s;
+  white-space: nowrap;
+}
+.cfg-subnav button:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--bg2);
+}
+.cfg-subnav button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--bg2);
+  font-weight: bold;
+}
+.cfg-subpanel { display: none; }
+.cfg-subpanel.active { display: block; }
+
+/* ── Hamlib-Sektion ──────────────────────────────────────── */
+.hamlib-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: var(--fs-sm);
+}
+.hamlib-status-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--text2);
+  flex-shrink: 0;
+}
+.hamlib-status-dot.ok  { background: var(--green); }
+.hamlib-status-dot.err { background: var(--red); }
 </style>
 </head>
 <body>
@@ -499,13 +612,19 @@ h2:first-child { margin-top: 0; }
   <h1>GUST <span>Generic Universal Shortwave Telemetry</span></h1>
   <span id="callsign-badge">–</span>
   <span id="ws-indicator" title="WebSocket Status"></span>
+  <div id="daemon-hb" class="hb-unknown" title="GUST Daemon Status">
+    <span class="hb-dot"></span>
+    <span class="hb-label">DAEMON</span>
+  </div>
   <button id="theme-btn" onclick="toggleTheme()" title="Theme wechseln">🌙 Light</button>
 </header>
+<div id="daemon-offline-banner"></div>
+<div id="onair-banner">📡 ON AIR</div>
 
 <nav>
   <button class="active" onclick="switchTab('monitor',this)">📡 Monitor</button>
   <button onclick="switchTab('tx',this)">📤 Senden</button>
-  <button onclick="switchTab('inbox',this)">📨 Empfangen <span id="inbox-badge" class="inbox-badge hidden">0</span></button>
+  <button onclick="switchTab('inbox',this)">💬 Kommunikation <span id="inbox-badge" class="inbox-badge hidden">0</span></button>
   <button onclick="switchTab('status',this)">⚙ Status &amp; Config</button>
   <button onclick="switchTab('log',this)">🗒 Log</button>
 </nav>
@@ -719,9 +838,25 @@ h2:first-child { margin-top: 0; }
 
 <!-- ══════════════════════════════════════════════════════ TAB: EMPFANGEN -->
 <div id="tab-inbox" class="tab-panel">
-  <h2>Empfangene Nachrichten</h2>
-  <div id="inbox-empty" style="color:var(--text2);padding:8px;">Keine Nachrichten empfangen.</div>
-  <div id="inbox-list"></div>
+  <!-- Sub-Navigation -->
+  <div style="display:flex;gap:8px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:8px;">
+    <button id="comm-tab-rx" class="btn active" onclick="switchCommTab('rx')"
+            style="font-size:var(--fs-sm);">📨 Empfangen</button>
+    <button id="comm-tab-tx" class="btn secondary" onclick="switchCommTab('tx')"
+            style="font-size:var(--fs-sm);">📤 Gesendet</button>
+  </div>
+
+  <!-- Empfangen -->
+  <div id="comm-panel-rx">
+    <div id="inbox-empty" style="color:var(--text2);padding:8px;">Keine Nachrichten empfangen.</div>
+    <div id="inbox-list"></div>
+  </div>
+
+  <!-- Gesendet -->
+  <div id="comm-panel-tx" style="display:none;">
+    <div id="sent-empty" style="color:var(--text2);padding:8px;">Noch nichts gesendet.</div>
+    <div id="sent-list"></div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════ TAB: STATUS & CONFIG -->
@@ -750,107 +885,293 @@ h2:first-child { margin-top: 0; }
     <div class="stat-card"><div class="key">RX-Frames (Session)</div><div class="val green" id="s-rx-count">0</div></div>
   </div>
 
-  <h3>Audio &amp; PTT</h3>
-  <div class="audio-cfg-card">
-    <div class="audio-cfg-row">
-      <label>Audio-Eingang (RX)</label>
-      <select id="cfg-audio-in"><option value="">– Standard / wie TX –</option></select>
+  <!-- Konfiguration — Trennbereich mit Header -->
+  <div style="margin-top:24px;margin-bottom:12px;
+              border-top:1px solid var(--border);padding-top:16px;
+              display:flex;align-items:center;gap:12px;">
+    <h3 style="margin:0;font-size:var(--fs-sm);text-transform:uppercase;
+               letter-spacing:1px;color:var(--text2);white-space:nowrap;">
+      ⚙ Konfiguration
+    </h3>
+    <div style="flex:1;height:1px;background:var(--border);"></div>
+  </div>
+  <nav class="cfg-subnav">
+    <button class="active" onclick="switchCfgTab('cfg-audio',this)">🔊 Audio &amp; PTT</button>
+    <button onclick="switchCfgTab('cfg-hamlib',this)">📻 Transceiver (Hamlib)</button>
+    <button onclick="switchCfgTab('cfg-sdr',this)">📡 SDR-TX (SoapySDR)</button>
+    <button onclick="switchCfgTab('cfg-display',this)">🎨 Darstellung</button>
+  </nav>
+
+  <!-- ── Unterseite: Audio & PTT ── -->
+  <div id="cfg-audio" class="cfg-subpanel active">
+    <div class="audio-cfg-card">
+      <div class="audio-cfg-row">
+        <label>Audio-Eingang (RX)</label>
+        <select id="cfg-audio-in"><option value="">– Standard / wie TX –</option></select>
+      </div>
+      <div class="audio-cfg-row">
+        <label>Audio-Ausgang (TX)</label>
+        <select id="cfg-audio-out"><option value="">– Standard –</option></select>
+      </div>
+      <div class="audio-cfg-row">
+        <label>PTT-Backend</label>
+        <select id="cfg-ptt">
+          <option value="null">null (kein PTT)</option>
+          <option value="gpio">gpio</option>
+          <option value="hamlib">hamlib</option>
+        </select>
+      </div>
+      <div class="audio-cfg-note">
+        <b>TX-Wechsel</b> wirkt sofort beim nächsten Sendevorgang.
+        <b>RX-Wechsel</b> erfordert einen Neustart des Daemons —
+        der RX-Loop hält das Gerät beim Start fest.
+      </div>
+      <div class="audio-cfg-actions">
+        <button class="btn" onclick="saveAudioConfig()">💾 Speichern</button>
+        <button class="btn secondary" onclick="loadAudioConfig()">↻ Neu laden</button>
+      </div>
+      <div id="cfg-audio-status"></div>
     </div>
-    <div class="audio-cfg-row">
-      <label>Audio-Ausgang (TX)</label>
-      <select id="cfg-audio-out"><option value="">– Standard –</option></select>
+
+    <div style="margin-top:16px;background:var(--bg2);border:1px solid var(--border);
+         border-radius:6px;padding:14px;width:fit-content;max-width:100%;">
+      <h2 style="margin-top:0;margin-bottom:10px;">PTT-Timing</h2>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <label style="color:var(--text2);font-size:var(--fs-sm);width:140px;flex-shrink:0;"
+               title="Lead (vor Audio) = Tail (nach Audio) — symmetrisch">
+          PTT Lead/Tail
+        </label>
+        <input type="number" id="cfg-ptt-delay" value="250" min="0" max="2000" step="10"
+               style="background:var(--bg3);border:1px solid var(--border);color:var(--text);
+                      padding:5px 8px;border-radius:4px;font-family:inherit;font-size:var(--fs-sm);
+                      width:80px;flex-shrink:0;"
+               title="PTT Lead- und Tail-Verzögerung in Millisekunden (Lead = vor Audio, Tail = nach Audio)">
+        <span style="color:var(--text2);font-size:var(--fs-xs);white-space:nowrap;flex-shrink:0;">ms</span>
+        <button class="btn secondary" style="margin-top:0;padding:5px 12px;flex-shrink:0;"
+                onclick="savePttDelay()">Speichern</button>
+      </div>
+      <div id="cfg-save-result" style="font-size:var(--fs-xs);margin-top:6px;display:none;"></div>
     </div>
-    <div class="audio-cfg-row">
-      <label>PTT-Backend</label>
-      <select id="cfg-ptt">
-        <option value="null">null (kein PTT)</option>
-        <option value="gpio">gpio</option>
-        <option value="hamlib">hamlib</option>
+  </div>
+
+  <!-- ── Unterseite: Transceiver (Hamlib) ── -->
+  <div id="cfg-hamlib" class="cfg-subpanel">
+    <div class="audio-cfg-card">
+      <div class="hamlib-status-row" id="hamlib-status-row" style="display:none;margin-bottom:12px;">
+        <div class="hamlib-status-dot" id="hamlib-status-dot"></div>
+        <span id="hamlib-status-text"></span>
+      </div>
+      <div id="cfg-hamlib-status" style="margin-bottom:6px;"></div>
+      <div class="audio-cfg-row">
+        <label>Serieller Port</label>
+        <select id="hamlib-port"><option value="">– (Rescan) –</option></select>
+        <button class="btn secondary" style="margin-top:0;padding:5px 12px;flex-shrink:0;"
+                onclick="rescanHamlibPorts()">↻ Rescan</button>
+      </div>
+      <div class="audio-cfg-row">
+        <label>Gewähltes Modell</label>
+        <span id="hamlib-model-selected" style="color:var(--accent);font-size:var(--fs-sm);">–</span>
+        <input type="hidden" id="hamlib-model-id" value="">
+      </div>
+      <div class="audio-cfg-row">
+        <label>Rig-Modell suchen</label>
+        <input type="text" id="hamlib-model-search" placeholder="Suche (z.B. TS-790)"
+               oninput="searchHamlibModels(this.value)"
+               style="flex:1;background:var(--bg3);border:1px solid var(--border);
+                      color:var(--text);padding:6px 10px;border-radius:4px;
+                      font-family:inherit;font-size:var(--fs-sm);">
+      </div>
+      <div class="audio-cfg-row" style="align-items:flex-start;">
+        <label style="padding-top:4px;"> </label>
+        <select id="hamlib-model-list" size="5"
+                style="flex:1;background:var(--bg3);border:1px solid var(--border);
+                       color:var(--text);padding:4px;border-radius:4px;
+                       font-family:inherit;font-size:var(--fs-sm);min-height:90px;"
+                onchange="onHamlibModelSelect(this)">
+          <option value="">– Suche oben eingeben –</option>
+        </select>
+      </div>
+      <div class="audio-cfg-row">
+        <label>Baudrate</label>
+        <select id="hamlib-baud">
+          <option value="1200">1200</option>
+          <option value="4800">4800</option>
+          <option value="9600" selected>9600</option>
+          <option value="19200">19200</option>
+          <option value="38400">38400</option>
+          <option value="57600">57600</option>
+          <option value="115200">115200</option>
+        </select>
+      </div>
+      <div class="audio-cfg-row">
+        <label class="toggle-sw" style="width:auto;cursor:pointer;">
+          <input type="checkbox" id="hamlib-autostart" checked>
+          rigctld automatisch starten (auto_start)
+        </label>
+      </div>
+      <div class="audio-cfg-note">
+        GUST startet rigctld beim Hochfahren automatisch mit den eingetragenen
+        Parametern. PTT-Backend wird auf <b>hamlib</b> gesetzt. Extern gestartete
+        rigctld-Instanzen werden nicht beendet.
+      </div>
+      <div class="audio-cfg-actions">
+        <button class="btn" onclick="saveHamlibConfig()">💾 Speichern</button>
+        <button class="btn secondary" onclick="loadHamlibConfig()">↻ Neu laden</button>
+        <button class="btn secondary" onclick="testHamlibConnection()">🔌 Verbinden &amp; Testen</button>
+        <button class="btn secondary" id="tune-btn" onclick="toggleTune()"
+                style="border-color:var(--orange);color:var(--orange);">
+          📡 Tune
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Unterseite: SDR-TX ── -->
+  <div id="cfg-sdr" class="cfg-subpanel">
+    <div class="audio-cfg-card sdr-cfg-card">
+      <div class="audio-cfg-row">
+        <label class="toggle-sw" style="width:auto;cursor:pointer;">
+          <input type="checkbox" id="sdr-enabled">
+          Aktiv — TX über SDR statt NF-Audio
+        </label>
+      </div>
+      <div class="audio-cfg-row">
+        <label>TX-Gerät</label>
+        <select id="sdr-device"><option value="">– (Rescan starten) –</option></select>
+        <button class="btn secondary" style="margin-top:0;padding:5px 12px;flex-shrink:0;"
+                onclick="rescanSdrDevices()" title="SoapySDR.Device.enumerate() neu aufrufen">
+          ↻ Rescan
+        </button>
+      </div>
+      <div class="audio-cfg-row">
+        <label>Frequenz</label>
+        <input type="number" id="sdr-freq" value="14110000" min="1000" step="1000"
+               style="flex:1;min-width:140px;background:var(--bg3);border:1px solid var(--border);
+                      color:var(--text);padding:6px 10px;border-radius:4px;
+                      font-family:inherit;font-size:var(--fs-sm);">
+        <span class="unit" style="color:var(--text2);font-size:var(--fs-xs);">Hz (USB-Dial)</span>
+      </div>
+      <div class="audio-cfg-row">
+        <label>Sample-Rate</label>
+        <select id="sdr-sr"><option value="2000000">2 000 000 Hz</option></select>
+      </div>
+      <div class="audio-cfg-row">
+        <label>Antenne</label>
+        <select id="sdr-antenna"><option value="">– Default –</option></select>
+      </div>
+      <div class="audio-cfg-row">
+        <label>Gain (normalisiert)</label>
+        <input type="range" id="sdr-gain" min="0" max="1" step="0.01" value="0.5"
+               style="flex:1;accent-color:var(--accent);">
+        <span class="unit" id="sdr-gain-val"
+              style="width:90px;text-align:right;color:var(--text);font-size:var(--fs-xs);">0.50</span>
+      </div>
+      <div id="sdr-gain-elements" style="display:none;font-size:var(--fs-xs);
+           color:var(--text2);margin:4px 0 8px;padding:6px 10px;background:var(--bg3);
+           border-radius:3px;"></div>
+      <div class="audio-cfg-note" id="sdr-note">
+        <b>Discovery-only</b> (ADR-16) — Geräte kommen aus
+        <code>SoapySDR.Device.enumerate()</code>. RX-only-Geräte (z.B. RTL-SDR)
+        sind ausgegraut. Gespeichert werden Treiber + Seriennummer, nicht der
+        Listenindex.
+      </div>
+      <div class="audio-cfg-actions">
+        <button class="btn" onclick="saveSdrConfig()">💾 Speichern</button>
+        <button class="btn secondary" onclick="loadSdrConfig()">↻ Neu laden</button>
+      </div>
+      <div id="sdr-cfg-status"></div>
+      <details id="sdr-modules-details" style="margin-top:10px;font-size:var(--fs-xs);">
+        <summary style="cursor:pointer;color:var(--text2);">
+          Geladene SoapySDR-Module (Diagnose)
+        </summary>
+        <pre id="sdr-modules-list" style="margin-top:6px;padding:6px 10px;
+          background:var(--bg3);border-radius:3px;color:var(--text2);
+          font-family:var(--ui-font);white-space:pre-wrap;
+          max-height:160px;overflow-y:auto;">–</pre>
+      </details>
+    </div>
+  </div>
+
+  <!-- ── Unterseite: Darstellung ── -->
+  <div id="cfg-display" class="cfg-subpanel">
+    <h3 style="margin-top:0;margin-bottom:8px;font-size:var(--fs-sm);
+               text-transform:uppercase;letter-spacing:1px;color:var(--text2);">
+      Darstellung
+    </h3>
+    <div class="status-cfg-row">
+      <label class="cfg-label">Theme</label>
+      <select id="cfg-theme" onchange="applyTheme(this.value)">
+        <option value="dark">Dark Amber</option>
+        <option value="light">Light Clean</option>
       </select>
     </div>
-    <div class="audio-cfg-note">
-      <b>TX-Wechsel</b> wirkt sofort beim nächsten Sendevorgang.
-      <b>RX-Wechsel</b> erfordert einen Neustart des Daemons —
-      der RX-Loop hält das Gerät beim Start fest.
+    <div class="status-cfg-row">
+      <label class="cfg-label">Schriftart</label>
+      <select id="cfg-font" onchange="applyFont(this.value)">
+        <option value="mono">Monospace (Standard)</option>
+        <option value="system">System UI (Segoe / Helvetica)</option>
+        <option value="sans">Sans-serif (Calibri / Helvetica Neue)</option>
+        <option value="serif">Serif (Georgia)</option>
+      </select>
     </div>
-    <div class="audio-cfg-actions">
-      <button class="btn" onclick="saveAudioConfig()">💾 Speichern</button>
-      <button class="btn secondary" onclick="loadAudioConfig()">↻ Neu laden</button>
+    <div class="status-cfg-row">
+      <label class="cfg-label">Schriftgröße</label>
+      <select id="cfg-fontsize" onchange="applyFontSize(this.value)">
+        <option value="12">12 px</option>
+        <option value="13">13 px (Standard)</option>
+        <option value="14">14 px</option>
+        <option value="15">15 px</option>
+        <option value="16">16 px</option>
+        <option value="18">18 px</option>
+        <option value="20">20 px</option>
+      </select>
     </div>
-    <div id="cfg-audio-status"></div>
-  </div>
 
-  <div style="margin-top:16px;background:var(--bg2);border:1px solid var(--border);
-       border-radius:6px;padding:14px;width:fit-content;max-width:100%;">
-    <h2 style="margin-top:0;margin-bottom:10px;">Konfiguration</h2>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <label style="color:var(--text2);font-size:var(--fs-sm);width:140px;flex-shrink:0;"
-             title="Lead (vor Audio) = Tail (nach Audio) — symmetrisch">
-        PTT Lead/Tail
-      </label>
-      <input type="number" id="cfg-ptt-delay" value="250" min="0" max="2000" step="10"
-             style="background:var(--bg3);border:1px solid var(--border);color:var(--text);
-                    padding:5px 8px;border-radius:4px;font-family:inherit;font-size:var(--fs-sm);
-                    width:80px;flex-shrink:0;"
-             title="PTT Lead- und Tail-Verzögerung in Millisekunden (Lead = vor Audio, Tail = nach Audio)">
-      <span style="color:var(--text2);font-size:var(--fs-xs);white-space:nowrap;flex-shrink:0;">ms</span>
-      <button class="btn secondary" style="margin-top:0;padding:5px 12px;flex-shrink:0;"
-              onclick="savePttDelay()">Speichern</button>
+    <div style="margin-top:16px;">
+      <button class="btn secondary" onclick="loadStatus()">↻ Aktualisieren</button>
     </div>
-    <div id="cfg-save-result" style="font-size:var(--fs-xs);margin-top:6px;display:none;"></div>
-  </div>
-
-  <h3 style="margin-top:20px;margin-bottom:8px;font-size:var(--fs-sm);
-             text-transform:uppercase;letter-spacing:1px;color:var(--text2);">
-    Darstellung
-  </h3>
-  <div class="status-cfg-row">
-    <label class="cfg-label">Theme</label>
-    <select id="cfg-theme" onchange="applyTheme(this.value)">
-      <option value="dark">Dark Amber</option>
-      <option value="light">Light Clean</option>
-    </select>
-  </div>
-  <div class="status-cfg-row">
-    <label class="cfg-label">Schriftart</label>
-    <select id="cfg-font" onchange="applyFont(this.value)">
-      <option value="mono">Monospace (Standard)</option>
-      <option value="system">System UI</option>
-      <option value="inter">Inter</option>
-      <option value="roboto">Roboto</option>
-    </select>
-  </div>
-  <div class="status-cfg-row">
-    <label class="cfg-label">Schriftgröße</label>
-    <select id="cfg-fontsize" onchange="applyFontSize(this.value)">
-      <option value="12">12 px</option>
-      <option value="13">13 px (Standard)</option>
-      <option value="14">14 px</option>
-      <option value="15">15 px</option>
-    </select>
-  </div>
-
-  <div style="margin-top:16px;">
-    <button class="btn secondary" onclick="loadStatus()">↻ Aktualisieren</button>
   </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════ TAB: LOG -->
 <div id="tab-log" class="tab-panel">
-  <div id="log-controls">
-    <span style="color:var(--text2);font-size:var(--fs-sm);">Ebene:</span>
-    <select id="log-level-filter" onchange="filterLogLevel()">
-      <option value="ALL">Alle</option>
-      <option value="INFO">INFO+</option>
-      <option value="WARNING">WARNING+</option>
-      <option value="ERROR">ERROR</option>
-    </select>
-    <label id="autoscroll-toggle">
-      <input type="checkbox" id="log-autoscroll" checked> Auto-Scroll
-    </label>
-    <button class="btn secondary" onclick="clearLog()">Leeren</button>
+
+  <!-- ── Aktivitätslog ── -->
+  <div style="margin-bottom:18px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+      <h3 style="margin:0;font-size:var(--fs-sm);text-transform:uppercase;
+                 letter-spacing:1px;color:var(--text2);">📡 Aktivitätslog</h3>
+      <button class="btn secondary" style="padding:3px 10px;font-size:var(--fs-xs);"
+              onclick="clearActivityLog()">Leeren</button>
+    </div>
+    <div id="activity-feed"
+         style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;
+                padding:8px;max-height:200px;overflow-y:auto;font-size:var(--fs-sm);">
+      <div style="color:var(--text2);">Noch keine Aktivität.</div>
+    </div>
   </div>
-  <div id="log-feed"></div>
+
+  <!-- ── Systemlog ── -->
+  <div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+      <h3 style="margin:0;font-size:var(--fs-sm);text-transform:uppercase;
+                 letter-spacing:1px;color:var(--text2);">🗒 Systemlog</h3>
+      <span style="color:var(--text2);font-size:var(--fs-sm);">Ebene:</span>
+      <select id="log-level-filter" onchange="filterLogLevel()">
+        <option value="ALL">Alle</option>
+        <option value="INFO">INFO+</option>
+        <option value="WARNING">WARNING+</option>
+        <option value="ERROR">ERROR</option>
+      </select>
+      <label id="autoscroll-toggle">
+        <input type="checkbox" id="log-autoscroll" checked> Auto-Scroll
+      </label>
+      <button class="btn secondary" style="padding:3px 10px;font-size:var(--fs-xs);"
+              onclick="clearLog()">Leeren</button>
+    </div>
+    <div id="log-feed"></div>
+  </div>
+
 </div>
 
 </main><!-- /main -->
@@ -875,11 +1196,25 @@ const state = {
   _txDoneResolve: null,// Resolver-Callback für _waitForTxDone()
   inbox:       [],    // Empfangene Freitext-Nachrichten (an mich adressiert)
   inboxUnread: 0,     // Anzahl ungelesener Nachrichten
+  sent:        [],    // Gesendete Frames (aus tx_done-Events)
+  sentFragCache: {},  // TX-Reassembly: 'seq_nr' → {total, frags, ts, to, t0}
   uptimeBase:  null,  // uptime_s vom letzten loadStatus()
   uptimeBaseTs: 0,    // Date.now() beim Setzen von uptimeBase
+  lastHeartbeat:  null,   // Date.now() beim letzten Heartbeat-Empfang
+  daemonAlive:    false,  // true nach erstem Heartbeat
 };
 
 // Freitext-Frame-Typ (0x40 — siehe gust_frame.py FrameType.TEXT)
+function _setOnAir(active) {
+  const b = document.getElementById('onair-banner');
+  if (!b) return;
+  if (active) {
+    b.classList.add('visible');
+  } else {
+    b.classList.remove('visible');
+  }
+}
+
 const TEXT_FRAME_TYPE = 0x40;
 
 // ═══════════════════════════ THEME ════════════════════════════
@@ -915,14 +1250,14 @@ function applyTheme(name) {
 // Wirken über CSS Custom Properties auf :root, damit auch Regeln mit
 // expliziter font-size (var(--fs-*)) zuverlässig mitskalieren.
 const FONTS = {
-  mono:   "'Courier New', monospace",
-  system: "system-ui, -apple-system, sans-serif",
-  inter:  "'Inter', system-ui, sans-serif",
-  roboto: "'Roboto', system-ui, sans-serif",
+  mono:   "'Courier New', 'Lucida Console', monospace",
+  system: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+  sans:   "'Calibri', 'Helvetica Neue', 'DejaVu Sans', Arial, sans-serif",
+  serif:  "Georgia, 'Times New Roman', serif",
 };
 
 // Basisgrößen-Stufen in px (korrespondierend zu --fs-base)
-const FONT_SIZES = { '12': 12, '13': 13, '14': 14, '15': 15 };
+const FONT_SIZES = { '12': 12, '13': 13, '14': 14, '15': 15, '16': 16, '18': 18, '20': 20 };
 
 function applyFont(key) {
   const family = FONTS[key] || FONTS.mono;
@@ -970,7 +1305,13 @@ function switchTab(name, btn) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
-  if (name === 'status') { loadStatus(); loadAudioConfig(); }
+  if (name === 'status') {
+    loadStatus(); loadAudioConfig(); loadSdrConfig();
+    // Sub-Tab-Zustand wiederherstellen wenn Config-Tab geöffnet wird
+    const savedSub = localStorage.getItem('gust_cfg_subtab') || 'cfg-audio';
+    const subBtn = document.querySelector(`.cfg-subnav button[onclick*="'${savedSub}'"]`);
+    switchCfgTab(savedSub, subBtn || document.querySelector('.cfg-subnav button'));
+  }
   if (name === 'tx')     fetchTxQueue();
   if (name === 'inbox') {
     // Tab geöffnet → alles als gelesen markieren, Badge zurücksetzen
@@ -1115,7 +1456,7 @@ async function sendTx(type) {
   }
 
   const el = document.getElementById('tx-result');
-  state.isSending = true;
+  state.isSending = true; _setOnAir(true);
   el.style.display = 'none';
   try {
     const r = await apiFetch('/api/tx/' + type, { method: 'POST',
@@ -1195,7 +1536,8 @@ async function _startTxQueue() {
         el.className = 'ok'; el.style.display = 'block';
         el.textContent = `⏳ Sende Fragment ${frag.frag_index + 1}/${frag.frag_total} …`;
       }
-      state.isSending = true;
+      fetchTxQueue();   // Warteschlange nach jedem Fragment aktualisieren
+      state.isSending = true; _setOnAir(true);
       try {
         await apiFetch('/api/tx/text_fragment', {
           method: 'POST',
@@ -1209,7 +1551,7 @@ async function _startTxQueue() {
         state.txFragQueue = [];       // bei Fehler: Rest verwerfen
         break;
       } finally {
-        state.isSending = false;
+        state.isSending = false; _setOnAir(false);
       }
 
       if (state.txFragQueue.length > 0) {
@@ -1357,6 +1699,531 @@ async function saveAudioConfig() {
   }
 }
 
+// ═══════════════════════════ SDR-TX (SoapySDR) ════════════════
+// Discovery-only (ADR-16): Geräte kommen ausschließlich aus
+// /api/sdr/devices (= SoapySDR.Device.enumerate()). Es gibt KEIN
+// manuelles Args-/Plugin-Pfad-Feld. Recovery = Rescan-Button.
+const sdrState = {
+  devices: [],   // [{args, label, driver, serial, tx_capable, ...}]
+  current: null, // ausgewählter Eintrag aus sdrState.devices
+  caps:    null, // {gain_overall, sample_rates, antennas, …}
+  saved:   null, // gespeicherter sdr_tx-Block (vom Server)
+};
+
+function _sdrArgsKey(args) {
+  // Stabiler Schlüssel für ein <option value>: driver + identity-Feld.
+  // Wir sortieren die Keys, damit dieselben Args denselben Key ergeben,
+  // egal wie die GUI sie aufschreibt.
+  if (!args || typeof args !== 'object') return '';
+  const keys = Object.keys(args).sort();
+  return keys.map(k => `${k}=${args[k]}`).join('|');
+}
+
+async function loadSdrDevices() {
+  const sel    = document.getElementById('sdr-device');
+  const modBox = document.getElementById('sdr-modules-list');
+  if (!sel) return;
+  try {
+    const r = await apiFetch('/api/sdr/devices');
+    sdrState.devices = r.devices || [];
+    // Modul-Diagnose ausgeben
+    if (modBox) {
+      if (!r.available) {
+        modBox.textContent = 'SoapySDR-Bindings nicht installiert.';
+      } else if ((r.modules || []).length === 0) {
+        modBox.textContent = 'Keine Module geladen.';
+      } else {
+        modBox.textContent = r.modules.map(m =>
+          (m.version ? `[${m.version}] ` : '') + m.path).join('\n');
+      }
+    }
+    // Dropdown befüllen — RX-only ausgrauen
+    const opts = ['<option value="">– (kein Gerät) –</option>'];
+    sdrState.devices.forEach(d => {
+      const k = _sdrArgsKey(d.args);
+      const lbl = `${d.label || d.driver}` +
+                  (d.serial ? `  ·  ${d.serial.slice(-8)}` : '') +
+                  (d.tx_capable ? '' : '  · RX-only');
+      opts.push(
+        `<option value="${k}"${d.tx_capable ? '' : ' disabled'}>${lbl}</option>`
+      );
+    });
+    sel.innerHTML = opts.join('');
+    // Aktuell konfigurierte Auswahl re-selektieren
+    const want = _sdrArgsKey(r.selected || (sdrState.saved && sdrState.saved.device_args));
+    if (want) {
+      sel.value = want;
+      await onSdrDeviceChange();
+    }
+  } catch (e) {
+    sel.innerHTML = `<option>Fehler: ${e.message}</option>`;
+  }
+}
+
+async function rescanSdrDevices() {
+  const sel = document.getElementById('sdr-device');
+  if (sel) sel.innerHTML = '<option>Suche Geräte …</option>';
+  await loadSdrDevices();
+}
+
+async function onSdrDeviceChange() {
+  const sel = document.getElementById('sdr-device');
+  if (!sel) return;
+  const k = sel.value;
+  sdrState.current = sdrState.devices.find(d => _sdrArgsKey(d.args) === k) || null;
+  if (!sdrState.current) { sdrState.caps = null; return; }
+
+  // Caps frisch vom Server holen (Gain/SR/Antenne sind treiberabhängig)
+  const qs = new URLSearchParams(sdrState.current.args).toString();
+  try {
+    const r = await apiFetch('/api/sdr/caps?' + qs);
+    sdrState.caps = r.caps || null;
+  } catch (e) {
+    sdrState.caps = null;
+    // Selbst ohne Caps soll die UI nicht hängen — wir behalten Default-Felder
+  }
+  _renderSdrCaps();
+}
+
+function _renderSdrCaps() {
+  const caps = sdrState.caps || {};
+  // Antennen
+  const aSel = document.getElementById('sdr-antenna');
+  if (aSel) {
+    const ants = caps.antennas || [];
+    const opts = ['<option value="">– Default –</option>']
+      .concat(ants.map(a => `<option value="${a}">${a}</option>`));
+    aSel.innerHTML = opts.join('');
+    const want = (sdrState.saved && sdrState.saved.antenna) || '';
+    if (want && ants.includes(want)) aSel.value = want;
+  }
+  // Sample-Rates — diskrete Liste hat Vorrang, sonst Range als Hinweis
+  const sSel = document.getElementById('sdr-sr');
+  if (sSel) {
+    const list = caps.sample_rates || [];
+    let opts;
+    if (list.length > 0) {
+      opts = list.map(r =>
+        `<option value="${r}">${Math.round(r).toLocaleString('de-AT')} Hz</option>`);
+    } else if ((caps.sample_rate_ranges || []).length) {
+      const r0 = caps.sample_rate_ranges[0];
+      opts = [`<option value="${r0.min}">${Math.round(r0.min).toLocaleString('de-AT')} Hz (min)</option>`];
+      // Übliche HackRF-Stufe als zweite Wahl
+      if (r0.max >= 2_000_000) opts.push('<option value="2000000">2 000 000 Hz</option>');
+    } else {
+      opts = ['<option value="2000000">2 000 000 Hz</option>'];
+    }
+    sSel.innerHTML = opts.join('');
+    const want = String((sdrState.saved && sdrState.saved.sample_rate) || '');
+    if (want) {
+      // Wenn der gespeicherte Wert nicht in der Liste ist, als Option ergänzen
+      if (!Array.from(sSel.options).some(o => o.value === want)) {
+        const o = document.createElement('option');
+        o.value = want; o.textContent = `${Math.round(want).toLocaleString('de-AT')} Hz (gespeichert)`;
+        sSel.insertBefore(o, sSel.firstChild);
+      }
+      sSel.value = want;
+    }
+  }
+  // Gain-Elemente diagnostisch zeigen (treiberabhängig — z.B. HackRF AMP/VGA)
+  const gBox = document.getElementById('sdr-gain-elements');
+  if (gBox) {
+    const el = caps.gain_elements || [];
+    if (el.length) {
+      gBox.style.display = '';
+      gBox.textContent = 'Gain-Elemente: ' +
+        el.map(e => `${e.name} (${e.min}…${e.max} dB)`).join(', ');
+    } else {
+      gBox.style.display = 'none';
+    }
+  }
+}
+
+async function loadSdrConfig() {
+  const statusEl = document.getElementById('sdr-cfg-status');
+  try {
+    const r = await apiFetch('/api/sdr/config');
+    const sdr = r.sdr_tx || {};
+    sdrState.saved = sdr;
+
+    document.getElementById('sdr-enabled').checked = !!sdr.enabled;
+    document.getElementById('sdr-freq').value     = sdr.freq_hz     || 14110000;
+    const gainVal = (sdr.gain && sdr.gain.normalized != null)
+      ? Number(sdr.gain.normalized) : 0.5;
+    document.getElementById('sdr-gain').value     = gainVal;
+    document.getElementById('sdr-gain-val').textContent = gainVal.toFixed(2);
+
+    // Devices laden — _select_ erfolgt darin anhand sdrState.saved
+    await loadSdrDevices();
+
+    if (statusEl) { statusEl.style.display = 'none'; statusEl.textContent = ''; }
+  } catch (e) {
+    if (statusEl) {
+      statusEl.style.display = '';
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = '✗ Konfig konnte nicht geladen werden: ' + e.message;
+    }
+  }
+}
+
+async function saveSdrConfig() {
+  const enabled = document.getElementById('sdr-enabled').checked;
+  const sel     = document.getElementById('sdr-device');
+  const dev     = sdrState.devices.find(d => _sdrArgsKey(d.args) === sel.value);
+  const sr      = parseFloat(document.getElementById('sdr-sr').value || '0');
+  const freq    = parseFloat(document.getElementById('sdr-freq').value || '0');
+  const ant     = document.getElementById('sdr-antenna').value || '';
+  const gain    = parseFloat(document.getElementById('sdr-gain').value || '0');
+
+  const body = {
+    enabled:     enabled,
+    device_args: dev ? dev.args : {},
+    label:       dev ? (dev.label || '') : '',
+    sample_rate: sr,
+    freq_hz:     freq,
+    antenna:     ant,
+    gain:        { normalized: gain },
+    tx_channel:  0,
+  };
+
+  const statusEl = document.getElementById('sdr-cfg-status');
+  if (statusEl) statusEl.style.display = 'none';
+  try {
+    const r = await apiFetch('/api/sdr/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    sdrState.saved = r.sdr_tx;
+    if (statusEl) {
+      statusEl.className = 'ok'; statusEl.style.display = 'block';
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = '✓ ' + (r.message || 'SDR-TX-Konfiguration gespeichert');
+    }
+  } catch (e) {
+    if (statusEl) {
+      statusEl.className = 'err'; statusEl.style.display = 'block';
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = '✗ ' + e.message;
+    }
+  }
+}
+
+// Range-Slider live anzeigen
+document.addEventListener('DOMContentLoaded', () => {
+  const gEl = document.getElementById('sdr-gain');
+  const gV  = document.getElementById('sdr-gain-val');
+  if (gEl && gV) {
+    gEl.addEventListener('input', () => { gV.textContent = parseFloat(gEl.value).toFixed(2); });
+  }
+  const dSel = document.getElementById('sdr-device');
+  if (dSel) dSel.addEventListener('change', onSdrDeviceChange);
+});
+
+// ═══════════════════════════ Config Sub-Tab-Navigation ════════════════
+
+function switchCfgTab(id, btn) {
+  // Alle Sub-Panels deaktivieren
+  document.querySelectorAll('.cfg-subpanel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.cfg-subnav button').forEach(b => b.classList.remove('active'));
+  // Gewähltes Panel + Button aktivieren
+  document.getElementById(id)?.classList.add('active');
+  btn?.classList.add('active');
+  // Aktiven Sub-Tab in localStorage merken
+  localStorage.setItem('gust_cfg_subtab', id);
+}
+
+// Beim Laden: gespeicherten Sub-Tab wiederherstellen + Hamlib-Felder befüllen
+document.addEventListener('DOMContentLoaded', function restoreCfgSubTab() {
+  const saved = localStorage.getItem('gust_cfg_subtab') || 'cfg-audio';
+  const panel = document.getElementById(saved);
+  if (!panel) return;
+  const btn = document.querySelector(`.cfg-subnav button[onclick*="'${saved}'"]`);
+  // Immer explizit aufrufen — setzt active-Klasse auf Button + Panel
+  switchCfgTab(saved, btn || document.querySelector('.cfg-subnav button'));
+  // Hamlib-Felder immer beim Seitenladen befüllen (nicht nur bei Tab-Klick)
+  rescanHamlibPorts().then(() => loadHamlibConfig());
+  // rigctld-Status beim Seitenladen automatisch prüfen und anzeigen
+  testHamlibConnection();
+});
+
+// ═══════════════════════════ Hamlib / rigctld ════════════════════════
+
+async function rescanHamlibPorts() {
+  const sel = document.getElementById('hamlib-port');
+  sel.innerHTML = '<option value="">Scanne …</option>';
+  try {
+    const r = await apiFetch('/api/hamlib/ports');
+    sel.innerHTML = '<option value="">– Port wählen –</option>';
+    (r.ports || []).forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.device;
+      opt.textContent = `${p.device}  ${p.description ? '— ' + p.description : ''}`.trim();
+      sel.appendChild(opt);
+    });
+    if ((r.ports || []).length === 0)
+      sel.innerHTML = '<option value="">Keine seriellen Ports gefunden</option>';
+  } catch(e) {
+    sel.innerHTML = `<option value="">Fehler: ${e.message}</option>`;
+  }
+}
+
+let _hamlibModelTimer = null;
+function searchHamlibModels(q) {
+  clearTimeout(_hamlibModelTimer);
+  _hamlibModelTimer = setTimeout(async () => {
+    const list = document.getElementById('hamlib-model-list');
+    list.innerHTML = '<option value="">Suche …</option>';
+    try {
+      const r = await apiFetch('/api/hamlib/models?q=' + encodeURIComponent(q));
+      list.innerHTML = '';
+      if (!r.models || r.models.length === 0) {
+        list.innerHTML = '<option value="">Keine Treffer</option>';
+        return;
+      }
+      r.models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = `[${m.id}]  ${m.label}`;
+        list.appendChild(opt);
+      });
+    } catch(e) {
+      list.innerHTML = `<option value="">Fehler: ${e.message}</option>`;
+    }
+  }, 300);  // 300 ms Debounce
+}
+
+function onHamlibModelSelect(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+  document.getElementById('hamlib-model-id').value = opt.value;
+  document.getElementById('hamlib-model-selected').textContent = opt.textContent.trim();
+}
+
+async function loadHamlibConfig() {
+  // Liest aktuellen rigctld-Block aus gateway.json via /api/config
+  try {
+    const cfg = await apiFetch('/api/config');
+    const rig = cfg.rigctld || {};
+    // Port vorbelegen
+    const portSel = document.getElementById('hamlib-port');
+    if (rig.device) {
+      // Existierenden Wert als Option eintragen falls noch nicht vorhanden
+      if (![...portSel.options].some(o => o.value === rig.device)) {
+        const opt = document.createElement('option');
+        opt.value = rig.device;
+        opt.textContent = rig.device + '  (aus Konfiguration)';
+        portSel.appendChild(opt);
+      }
+      portSel.value = rig.device;
+    }
+    // Modell — ID setzen und Label via Suche auflösen
+    if (rig.rig_model) {
+      document.getElementById('hamlib-model-id').value = rig.rig_model;
+      // Label via ID-Suche auflösen und ersten passenden Eintrag selektieren
+      searchHamlibModels(String(rig.rig_model));
+      document.getElementById('hamlib-model-selected').textContent =
+        `Modell ${rig.rig_model}  (wird aufgelöst …)`;
+      // Nach Debounce (350ms) + Netzwerk: passenden Eintrag in Listbox selektieren
+      setTimeout(() => {
+        const list = document.getElementById('hamlib-model-list');
+        if (!list) return;
+        // Eintrag mit exakt dieser ID suchen
+        const match = [...list.options].find(o => parseInt(o.value, 10) === rig.rig_model);
+        if (match) {
+          match.selected = true;
+          onHamlibModelSelect(list);
+        }
+      }, 800);
+    }
+    // Baudrate
+    if (rig.baud) document.getElementById('hamlib-baud').value = String(rig.baud);
+    // Auto-Start
+    document.getElementById('hamlib-autostart').checked = rig.auto_start !== false;
+  } catch(e) {
+    document.getElementById('cfg-hamlib-status').textContent = '✗ ' + e.message;
+  }
+}
+
+async function saveHamlibConfig() {
+  const statusEl = document.getElementById('cfg-hamlib-status');
+  const modelId = parseInt(document.getElementById('hamlib-model-id').value, 10);
+  const device  = document.getElementById('hamlib-port').value;
+  const baud    = parseInt(document.getElementById('hamlib-baud').value, 10);
+  const autoStart = document.getElementById('hamlib-autostart').checked;
+
+  if (!modelId) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '✗ Bitte ein Rig-Modell aus der Suche wählen.';
+    return;
+  }
+  if (!device) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '✗ Bitte einen seriellen Port wählen.';
+    return;
+  }
+  try {
+    const r = await apiFetch('/api/hamlib/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ rig_model: modelId, device, baud, auto_start: autoStart }),
+    });
+    statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
+    statusEl.textContent = (r.ok ? '✓ ' : '✗ ') + (r.message || r.error || '');
+    if (r.ok) loadStatus();
+  } catch(e) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '✗ ' + e.message;
+  }
+}
+
+async function testHamlibConnection() {
+  const dotEl  = document.getElementById('hamlib-status-dot');
+  const txtEl  = document.getElementById('hamlib-status-text');
+  const rowEl  = document.getElementById('hamlib-status-row');
+  rowEl.style.display = 'flex';
+  dotEl.className = 'hamlib-status-dot';
+  txtEl.textContent = 'Prüfe rigctld …';
+  try {
+    // 1) Status prüfen — läuft rigctld bereits?
+    let status = await apiFetch('/api/hamlib/status');
+    if (!status.running) {
+      // 2) Nicht erreichbar → starten
+      txtEl.textContent = 'Starte rigctld …';
+      const startResult = await apiFetch('/api/hamlib/start', { method: 'POST' });
+      if (!startResult.ok) {
+        dotEl.classList.add('err');
+        txtEl.textContent = '✗ Start fehlgeschlagen: ' + (startResult.error || '');
+        return;
+      }
+      // 3) Nach Start erneut Status abfragen
+      status = await apiFetch('/api/hamlib/status');
+    }
+    if (status.running) {
+      dotEl.classList.add('ok');
+      const freq = status.freq_hz
+        ? (status.freq_hz / 1e6).toFixed(6) + ' MHz'
+        : '(Frequenz unbekannt)';
+      txtEl.textContent = 'rigctld läuft — gelesene Frequenz vom TRx: ' + freq;
+      startHamlibPolling();
+    } else {
+      dotEl.classList.add('err');
+      txtEl.textContent = 'rigctld nicht erreichbar' + (status.error ? ': ' + status.error : '');
+    }
+  } catch(e) {
+    dotEl.classList.add('err');
+    txtEl.textContent = 'Fehler: ' + e.message;
+  }
+}
+
+// ── Hamlib Frequenz-Polling (alle 5 s) ──────────────────────
+let _hamlibPollTimer = null;
+
+function startHamlibPolling() {
+  stopHamlibPolling();
+  _hamlibPollTimer = setInterval(async () => {
+    const dotEl = document.getElementById('hamlib-status-dot');
+    const txtEl = document.getElementById('hamlib-status-text');
+    const rowEl = document.getElementById('hamlib-status-row');
+    if (!dotEl || !txtEl || !rowEl) return;
+    // Nicht pollen während GUST sendet — verhindert Kollision mit HamlibPTT._cmd()
+    if (state.isSending) return;
+    try {
+      const status = await apiFetch('/api/hamlib/status');
+      rowEl.style.display = 'flex';
+      if (status.running) {
+        dotEl.className = 'hamlib-status-dot ok';
+        const freq = status.freq_hz
+          ? (status.freq_hz / 1e6).toFixed(6) + ' MHz  (Update alle 5 s)'
+          : '(Frequenz unbekannt)';
+        txtEl.textContent = 'rigctld läuft — gelesene Frequenz vom TRx: ' + freq;
+      } else {
+        dotEl.className = 'hamlib-status-dot err';
+        txtEl.textContent = 'rigctld nicht erreichbar' + (status.error ? ': ' + status.error : '');
+        stopHamlibPolling();
+      }
+    } catch(e) {
+      // Netzwerkfehler — Polling nicht stoppen, nächster Versuch in 5 s
+    }
+  }, 5000);
+}
+
+function stopHamlibPolling() {
+  if (_hamlibPollTimer !== null) {
+    clearInterval(_hamlibPollTimer);
+    _hamlibPollTimer = null;
+  }
+}
+
+// ── Tune Toggle ───────────────────────────────────────────────
+let _tuneTimer = null;
+
+async function toggleTune() {
+  const btn = document.getElementById('tune-btn');
+  if (!btn) return;
+  if (btn.dataset.tuning === '1') {
+    // Zweiter Klick → stoppen
+    await _tuneStop();
+  } else {
+    // Erster Klick → starten
+    try {
+      const r = await apiFetch('/api/tx/tune', { method: 'POST' });
+      if (!r.ok) {
+        document.getElementById('cfg-hamlib-status').textContent =
+          '✗ Tune fehlgeschlagen: ' + (r.error || '');
+        return;
+      }
+    } catch(e) {
+      document.getElementById('cfg-hamlib-status').textContent =
+        '✗ Tune Fehler: ' + e.message;
+      return;
+    }
+    // Button auf aktiv schalten
+    btn.dataset.tuning    = '1';
+    btn.style.borderColor = 'var(--red)';
+    btn.style.color       = 'var(--red)';
+    stopHamlibPolling();   // kein Frequenz-Polling während TX
+    _setOnAir(true);
+    let remaining = 15;
+    btn.textContent = '⏹ Tune (' + remaining + ' s)';
+    _tuneTimer = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        _tuneReset();
+        startHamlibPolling();
+      } else {
+        btn.textContent = '⏹ Tune (' + remaining + ' s)';
+      }
+    }, 1000);
+  }
+}
+
+async function _tuneStop() {
+  try { await apiFetch('/api/tx/tune_stop', { method: 'POST' }); }
+  catch(e) { /* ignorieren */ }
+  _tuneReset();
+  startHamlibPolling();
+}
+
+function _tuneReset() {
+  _setOnAir(false);   // ON-AIR-Banner löschen (beide Tune-Enden: Stop + 15 s-Ablauf)
+  if (_tuneTimer) { clearInterval(_tuneTimer); _tuneTimer = null; }
+  const btn = document.getElementById('tune-btn');
+  if (!btn) return;
+  btn.dataset.tuning    = '0';
+  btn.style.borderColor = 'var(--orange)';
+  btn.style.color       = 'var(--orange)';
+  btn.textContent       = '📡 Tune';
+}
+
+// Hamlib-Unterseite beim Öffnen automatisch befüllen (lazy):
+// Beim Aktivieren der Hamlib-Sektion Ports + gespeicherte Konfiguration laden.
+document.querySelector('.cfg-subnav button[onclick*="cfg-hamlib"]')
+  ?.addEventListener('click', () => {
+    rescanHamlibPorts().then(() => loadHamlibConfig());
+    testHamlibConnection();
+  });
+
 // ═══════════════════════════ CHANNEL GRID ═════════════════════
 function buildChannelGrid(homeChannel) {
   const grid = document.getElementById('channel-grid');
@@ -1430,6 +2297,12 @@ function appendRxFrame(frame) {
                || frame.type_name === 'EMERG_RSRC');
 
   const snr  = frame.snr_db  ?? frame._snr_db  ?? null;
+  // Aktivitätslog-Eintrag für jeden empfangenen Frame
+  const _actExtra = [
+    ch !== '?' ? 'Kanal ' + ch : null,
+    snr != null ? 'SNR ' + snr.toFixed(1) + ' dB' : null,
+  ].filter(Boolean).join(' · ');
+  activityLog('rx', typ, frm, _actExtra);
   const off  = frame.freq_offset_hz ?? frame.offset_hz ?? null;
   const offStr  = off  != null ? (off > 0 ? '+' : '') + off.toFixed(0) + ' Hz' : '';
   const snrCls  = snrClass(snr);
@@ -1577,6 +2450,127 @@ function inboxAddFrame(frame) {
 
   renderInbox();
   updateInboxBadge();
+}
+
+// ═══════════════════════════ KOMMUNIKATION ════════════════════
+
+function switchCommTab(which) {
+  const isRx = which === 'rx';
+  document.getElementById('comm-panel-rx').style.display = isRx ? '' : 'none';
+  document.getElementById('comm-panel-tx').style.display = isRx ? 'none' : '';
+  document.getElementById('comm-tab-rx').className = isRx ? 'btn active' : 'btn secondary';
+  document.getElementById('comm-tab-tx').className = isRx ? 'btn secondary' : 'btn active';
+}
+
+// Gesendeten Frame aus tx_done-Event aufnehmen
+function appendTxDone(data) {
+  const ts       = Date.now() / 1000;
+  const typeName = data.type_name || '?';
+  const to       = data.to || '*';
+  const frameData = data.data || {};
+
+  // Text-Fragmente reassemblieren
+  if (typeName === 'TEXT_FRAGMENT' || (data.frame_type === 0x40 || data.frame_type === 64)) {
+    const seqNr  = frameData.seq_nr ?? 0;
+    const idx    = frameData.frag_index ?? 0;
+    const total  = frameData.frag_total ?? 1;
+    const chunk  = frameData.text_chunk || frameData.text || '';
+    const key    = String(seqNr);
+
+    if (!state.sentFragCache[key])
+      state.sentFragCache[key] = { total, frags: {}, ts, to, t0: Date.now() };
+    state.sentFragCache[key].frags[idx] = chunk;
+
+    const cached   = state.sentFragCache[key];
+    const received = Object.keys(cached.frags).length;
+
+    if (received >= total) {
+      const assembled = Object.keys(cached.frags)
+        .sort((a, b) => Number(a) - Number(b))
+        .map(k => cached.frags[k]).join('');
+      delete state.sentFragCache[key];
+      // Vollständige Nachricht als sent-Eintrag speichern
+      const entry = {
+        ts:       cached.ts,
+        type:     'text',
+        typeName: 'TEXT',
+        to:       cached.to,
+        text:     assembled,
+        total,
+        channel:  data.channel,
+        frames:   total,
+      };
+      state.sent.unshift(entry);
+      renderSent();
+      activityLog('tx', 'TEXT', cached.to,
+        cached.total + ' Fr. · Kanal ' + (data.channel ?? '?'));
+    }
+    // Einzelfragmente nicht separat anzeigen
+    return;
+  }
+
+  // Alle anderen Frame-Typen direkt aufnehmen
+  const entry = {
+    ts:       ts,
+    type:     typeName.toLowerCase(),
+    typeName: typeName,
+    to:       to,
+    data:     frameData,
+    channel:  data.channel,
+    frames:   1,
+  };
+  state.sent.unshift(entry);
+  if (state.sent.length > 100) state.sent.pop();
+  renderSent();
+  activityLog('tx', entry.typeName, entry.to,
+    entry.channel != null ? 'Kanal ' + entry.channel : '');
+}
+
+function renderSent() {
+  const list  = document.getElementById('sent-list');
+  const empty = document.getElementById('sent-empty');
+  if (!list) return;
+  if (!state.sent.length) {
+    list.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  list.innerHTML = '';
+  state.sent.forEach(m => {
+    const row  = document.createElement('div');
+    row.className = 'inbox-item';
+    const ts   = new Date(m.ts * 1000).toLocaleTimeString('de-AT');
+    const icons = { text:'💬', weather:'🌤', position:'📍', emergency:'🆘' };
+    const icon  = icons[m.type] || '📦';
+    const ch    = m.channel != null ? ` · Kanal ${m.channel}` : '';
+
+    let preview = '';
+    if (m.type === 'text') {
+      preview = m.text ? ('"' + m.text.slice(0, 80) + (m.text.length > 80 ? '…' : '') + '"') : '(kein Text)';
+    } else if (m.type === 'weather') {
+      const d = m.data || {};
+      preview = [
+        d.temp_c    != null ? d.temp_c + '°C'       : null,
+        d.humidity_pct != null ? d.humidity_pct + '%' : null,
+        d.pressure_hpa != null ? d.pressure_hpa + ' hPa' : null,
+      ].filter(Boolean).join('  ');
+    } else if (m.type === 'position') {
+      const d = m.data || {};
+      preview = d.lat != null ? d.lat.toFixed(4) + ', ' + d.lon.toFixed(4) : '';
+    } else if (m.type === 'emergency') {
+      preview = '🆘 NOTFALL';
+    } else {
+      preview = JSON.stringify(m.data || {}).slice(0, 60);
+    }
+
+    row.innerHTML =
+      '<span class="ib-ts">' + ts + '</span>' +
+      '<span class="ib-from" style="color:var(--accent);">' + icon + ' → ' + _esc(m.to) + '</span>' +
+      '<span class="ib-type">' + m.typeName + (m.frames > 1 ? ' (' + m.frames + ' Fr.)' : '') + ch + '</span>' +
+      '<span class="ib-preview">' + _esc(preview) + '</span>';
+    list.appendChild(row);
+  });
 }
 
 function updateInboxBadge() {
@@ -1914,12 +2908,15 @@ function connectWsRx() {
       if (msg.type === 'rx_frame')       appendRxFrame(msg.data);
       if (msg.type === 'status')         applyStatusPush(msg.data);
       if (msg.type === 'rx_audio_level') updateAudioMeter(msg.data);
-      if (msg.type === 'tx_done')      { state.isSending = false; if (state._txDoneResolve) { const _r = state._txDoneResolve; state._txDoneResolve = null; _r(); } log2ui('INFO', 'TX abgeschlossen: ' + (msg.data?.type_name||'?')); fetchTxQueue(); }
+      if (msg.type === 'tx_done')      { state.isSending = false; _setOnAir(false); if (state._txDoneResolve) { const _r = state._txDoneResolve; state._txDoneResolve = null; _r(); } log2ui('INFO', 'TX abgeschlossen: ' + (msg.data?.type_name||'?')); fetchTxQueue(); appendTxDone(msg.data || {}); }
       if (msg.type === 'ping')           state.wsRx.send(JSON.stringify({type:'pong'}));
+      if (msg.type === 'heartbeat')      updateDaemonHeartbeat(msg);
     } catch(e) { /* ignore malformed */ }
   };
   state.wsRx.onerror = () => { ind.className = 'error'; };
   state.wsRx.onclose = () => {
+    // Daemon-Status auf WARN sobald WS abbricht — Watchdog übernimmt nach 22s
+    if (state.daemonAlive) _setDaemonWarn();
     ind.className = '';
     log2ui('WARNING', 'WS /ws/rx getrennt — reconnect in 5 s');
     clearTimeout(state.wsRetryTimer);
@@ -1939,6 +2936,45 @@ function connectWsLog() {
 }
 
 // ═══════════════════════════ LOG FEED ═════════════════════════
+// ═══════════════════════════ AKTIVITÄTSLOG ════════════════════
+
+function activityLog(direction, typeName, peer, extra) {
+  // direction: 'rx' oder 'tx'
+  // typeName:  z.B. 'WEATHER', 'TEXT', 'POSITION'
+  // peer:      Rufzeichen (von/an)
+  // extra:     optionaler Zusatztext (Kanal, SNR, etc.)
+  const feed = document.getElementById('activity-feed');
+  if (!feed) return;
+  // Platzhalter entfernen
+  const ph = feed.querySelector('[style*="color:var(--text2)"]');
+  if (ph && feed.children.length === 1) ph.remove();
+
+  const ts   = new Date().toLocaleTimeString('de-AT');
+  const arrow = direction === 'rx' ? '←' : '→';
+  const color = direction === 'rx' ? 'var(--green)' : 'var(--accent)';
+  const icons = { WEATHER:'🌤', POSITION:'📍', TEXT:'💬', TEXT_FRAGMENT:'💬',
+                  EMERGENCY:'🆘', EMERG_BEACON:'🆘', EMERG_RSRC:'🆘' };
+  const icon  = icons[typeName] || '📦';
+
+  const line = document.createElement('div');
+  line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border);font-size:var(--fs-sm);';
+  line.innerHTML =
+    '<span style="color:var(--text2);margin-right:8px;">' + ts + '</span>' +
+    '<span style="color:' + color + ';font-weight:bold;margin-right:6px;">' + arrow + '</span>' +
+    '<span style="margin-right:6px;">' + icon + '</span>' +
+    '<span style="color:' + color + ';margin-right:8px;">' + _esc(peer) + '</span>' +
+    '<span style="color:var(--text2);margin-right:8px;">' + _esc(typeName) + '</span>' +
+    (extra ? '<span style="color:var(--text2);font-size:var(--fs-xs);">' + _esc(extra) + '</span>' : '');
+  feed.appendChild(line);
+  while (feed.children.length > 200) feed.removeChild(feed.firstChild);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function clearActivityLog() {
+  const feed = document.getElementById('activity-feed');
+  if (feed) feed.innerHTML = '<div style="color:var(--text2);">Noch keine Aktivität.</div>';
+}
+
 function log2ui(level, msg) {
   const feed = document.getElementById('log-feed');
   const ts   = new Date().toLocaleTimeString('de-AT');
@@ -2030,16 +3066,108 @@ function _tickTxCountdown() {
 
 setInterval(_tickTxCountdown, 1000);
 
+// ══════════════════════ DAEMON HEARTBEAT ══════════════════════
+
+function updateDaemonHeartbeat(msg) {
+  state.lastHeartbeat = Date.now();
+  state.daemonAlive   = true;
+
+  const el  = document.getElementById('daemon-hb');
+  const lbl = el.querySelector('.hb-label');
+
+  const uptime = msg.uptime_s || 0;
+  const h = Math.floor(uptime / 3600);
+  const m = Math.floor((uptime % 3600) / 60);
+  const uptimeStr = h > 0 ? `${h}h${m}m` : `${m}m`;
+
+  const mode = msg.daemon_mode ? 'DAEMON' : 'MONITOR';
+  lbl.textContent = `${mode}  ↑${uptimeStr}`;
+  el.className = 'hb-alive';
+
+  let titleParts = [`GUST ${mode} — läuft seit ${uptimeStr}`];
+  if (msg.last_rx_ago_s != null) {
+    const rxAgo = msg.last_rx_ago_s;
+    const rxStr = rxAgo < 60 ? `${rxAgo}s` : `${Math.floor(rxAgo/60)}m${rxAgo%60}s`;
+    titleParts.push(`Letzter RX: vor ${rxStr}`);
+  } else {
+    titleParts.push('Noch kein Frame empfangen');
+  }
+  el.title = titleParts.join('  ·  ');
+
+  hideDaemonBanner();
+}
+
+function _setDaemonDead() {
+  const el  = document.getElementById('daemon-hb');
+  const lbl = el.querySelector('.hb-label');
+  const ago = state.lastHeartbeat
+    ? Math.floor((Date.now() - state.lastHeartbeat) / 1000)
+    : null;
+  el.className = 'hb-dead';
+  lbl.textContent = 'OFFLINE';
+  el.title = ago != null
+    ? `Kein Heartbeat seit ${ago}s — Daemon ausgefallen?`
+    : 'Daemon nicht erreichbar';
+  showDaemonBanner(ago);
+}
+
+function _setDaemonWarn() {
+  const el  = document.getElementById('daemon-hb');
+  const lbl = el.querySelector('.hb-label');
+  el.className = 'hb-warn';
+  lbl.textContent = 'WARN';
+  el.title = 'Heartbeat überfällig — Daemon reagiert nicht?';
+}
+
+function showDaemonBanner(agoSec) {
+  const b  = document.getElementById('daemon-offline-banner');
+  const ts = state.lastHeartbeat
+    ? new Date(state.lastHeartbeat).toLocaleTimeString('de-AT')
+    : '—';
+  const agoStr = agoSec != null ? `  ·  vor ${agoSec}s` : '';
+  b.textContent = `⚠  GUST Daemon nicht erreichbar  ·  Letzter Kontakt: ${ts}${agoStr}`;
+  b.classList.add('visible');
+}
+
+function hideDaemonBanner() {
+  document.getElementById('daemon-offline-banner').classList.remove('visible');
+}
+
+function startHeartbeatWatchdog() {
+  // Prüft alle 5 s ob ein Heartbeat rechtzeitig ankam.
+  // Zeitfenster:  > 12 s → WARN (1 HB überfällig)
+  //               > 22 s → DEAD (2 HB verpasst, Daemon ausgefallen)
+  setInterval(() => {
+    if (state.lastHeartbeat === null) return;  // noch keinen HB empfangen
+    const age = (Date.now() - state.lastHeartbeat) / 1000;
+    if (age > 22) {
+      _setDaemonDead();
+    } else if (age > 12) {
+      _setDaemonWarn();
+    }
+    // else: alive → updateDaemonHeartbeat() hält es grün
+  }, 5000);
+}
+
 // ═══════════════════════════ TX-WARTESCHLANGE ═════════════════
 // Holt die ausstehenden Frames samt geschätztem Sendezeitpunkt (eta_ts) vom
 // Gateway und zeigt je Frame einen lokal tickenden Countdown. Die Liste wird
 // periodisch und bei Ereignissen (Senden, TX fertig) neu geladen; der
 // Countdown läuft dazwischen rein im Browser aus eta_ts weiter.
 const TXQ_META = {
-  weather:   {icon:'🌤', label:'Wetter',   prio:4},
-  position:  {icon:'📍', label:'Position',  prio:3},
-  text:      {icon:'💬', label:'Freitext',  prio:2},
-  emergency: {icon:'🆘', label:'Notfall',   prio:1},
+  // String keys (from enqueue frame_type field)
+  weather:          {icon:'🌤', label:'Wetter',        prio:4},
+  position:         {icon:'📍', label:'Position',       prio:3},
+  text:             {icon:'💬', label:'Freitext',       prio:2},
+  text_fragment:    {icon:'💬', label:'Text-Fragment',  prio:2},
+  emergency:        {icon:'🆘', label:'Notfall',        prio:1},
+  // Integer keys (from get_queue() backend — frame_type as int)
+  1:  {icon:'🌤', label:'Wetter',        prio:4},
+  2:  {icon:'📍', label:'Position',      prio:3},
+  4:  {icon:'💬', label:'Freitext',      prio:2},
+  0x40: {icon:'💬', label:'Text-Fragment', prio:2},
+  64:   {icon:'💬', label:'Text-Fragment', prio:2},
+  3:  {icon:'🆘', label:'Notfall',       prio:1},
 };
 
 async function fetchTxQueue() {
@@ -2054,20 +3182,31 @@ function renderTxQueue() {
   const box = document.getElementById('tx-queue');
   if (!box) return;
   const q = state.txQueue || [];
-  if (!q.length) {
+  // Browser-seitige Fragment-Queue (noch nicht zum Backend gesendet) einblenden
+  const fragQ = (state.txFragQueue || []).map((f, i) => ({
+    frame_type: 'text_fragment',
+    from:       '–',
+    priority:   2,
+    eta_ts:     null,
+    _local:     true,
+    _label:     `Fragment ${f.frag_index + 1}/${f.frag_total} (wartet auf Slot)`,
+  }));
+  const combined = [...q, ...fragQ];
+  if (!combined.length) {
     box.innerHTML = '<div class="txq-empty">Warteschlange leer — keine ausstehenden Frames</div>';
     return;
   }
-  box.innerHTML = q.map((it, i) => {
-    const m = TXQ_META[it.frame_type] || {icon:'📦', label:it.frame_type, prio:it.priority};
+  box.innerHTML = combined.map((it, i) => {
+    const m = TXQ_META[it.frame_type] ?? TXQ_META[String(it.frame_type)] ?? {icon:'📦', label:String(it.frame_type), prio:it.priority};
     const p = it.priority || m.prio;
     const at = it.eta_ts ? new Date(it.eta_ts*1000).toLocaleTimeString('de-AT') : '–';
+    const lbl = it._label || `${m.icon} ${m.label}`;
     return `<div class="txq-row${i===0?' next':''}" data-eta="${it.eta_ts||0}">
       <span class="tx-prio-dot p${p}-dot"></span>
-      <span class="txq-type">${m.icon} ${m.label}</span>
+      <span class="txq-type">${lbl}</span>
       <span class="txq-prio p${p}-col">P${p}</span>
-      <span class="txq-cd" id="txq-cd-${i}">–</span>
-      <span class="txq-at">≈ ${at}</span>
+      <span class="txq-cd" id="txq-cd-${i}">${it._local ? 'wartet' : '–'}</span>
+      <span class="txq-at">${it.eta_ts ? '≈ ' + at : ''}</span>
     </div>`;
   }).join('');
   _tickTxQueue();
@@ -2080,6 +3219,8 @@ function _tickTxQueue() {
     const rem = Math.max(0, Math.round(eta - now));
     const cd  = row.querySelector('.txq-cd');
     if (!cd) return;
+    const isLocal = row.dataset.eta === '0' && row.querySelector('.txq-cd')?.textContent === 'wartet';
+    if (isLocal) return;   // lokale Fragment-Platzhalter — kein Countdown
     if (rem <= 0) { cd.textContent = 'sendet …'; cd.classList.add('now'); }
     else          { cd.textContent = 'in ' + _fmtCountdown(rem); cd.classList.remove('now'); }
   });
@@ -2147,6 +3288,7 @@ function fmtTs(ts) {
     log2ui('WARNING', 'Status-API nicht erreichbar: ' + e.message);
   }
   connectWsRx();
+  startHeartbeatWatchdog();
   connectWsLog();
   fetchTxQueue();
   setInterval(loadStatus, 30000);
@@ -2230,6 +3372,12 @@ class WebServer:
         self._event_bus = event_bus
         self._gateway   = gateway
 
+        # rigctld-Prozess-Handle (Popen) — nur gesetzt, wenn GUST rigctld
+        # selbst gestartet hat. Nur dann darf /api/hamlib/stop ihn beenden;
+        # extern gestartete Instanzen werden nicht angetastet.
+        self._rigctld_proc = None
+        self._tune_task = None   # asyncio.Task — aktiv während Tune läuft
+
         self._start_time: Optional[float] = None
 
         # RX-Frame-History (letzte 50 Frames für /api/log)
@@ -2270,6 +3418,10 @@ class WebServer:
                 self._event_bus_reader(), name="web_eb_reader"
             )
 
+        # Heartbeat-Task starten — sendet alle 10 s einen "heartbeat"-Event
+        # an alle /ws/rx-Clients, damit das UI Daemon-Aussetzer erkennt.
+        asyncio.create_task(self._heartbeat_loop(), name="hb_loop")
+
     async def stop(self) -> None:
         """Server geordnet beenden."""
         if self._eb_task:
@@ -2297,6 +3449,7 @@ class WebServer:
 
         app = web.Application(middlewares=middlewares)
         app.router.add_get("/",              self._handle_index)
+        app.router.add_get("/api/health",    self._handle_health)
         app.router.add_get("/api/status",    self._handle_status)
         app.router.add_get("/api/config",    self._handle_config)
         app.router.add_patch("/api/config",  self._handle_config_patch)
@@ -2311,6 +3464,18 @@ class WebServer:
         app.router.add_get ("/api/audio/devices", self._handle_audio_devices)
         app.router.add_get ("/api/audio/config",  self._handle_audio_config_get)
         app.router.add_post("/api/audio/config",  self._handle_audio_config_post)
+        app.router.add_get ("/api/sdr/devices",      self._handle_sdr_devices)
+        app.router.add_get ("/api/sdr/caps",         self._handle_sdr_caps)
+        app.router.add_get ("/api/sdr/config",       self._handle_sdr_config_get)
+        app.router.add_post("/api/sdr/config",       self._handle_sdr_config_post)
+        app.router.add_get ("/api/hamlib/ports",     self._handle_hamlib_ports)
+        app.router.add_get ("/api/hamlib/models",    self._handle_hamlib_models)
+        app.router.add_get ("/api/hamlib/status",    self._handle_hamlib_status)
+        app.router.add_post("/api/hamlib/start",     self._handle_hamlib_start)
+        app.router.add_post("/api/hamlib/stop",      self._handle_hamlib_stop)
+        app.router.add_post("/api/hamlib/config",    self._handle_hamlib_config)
+        app.router.add_post("/api/tx/tune",          self._handle_tx_tune)
+        app.router.add_post("/api/tx/tune_stop",     self._handle_tx_tune_stop)
         app.router.add_get("/ws/rx",  self._handle_ws_rx)
         app.router.add_get("/ws/log", self._handle_ws_log)
         return app
@@ -2319,7 +3484,10 @@ class WebServer:
     async def _auth_middleware(self, request: web.Request, handler):
         """Bearer-Token / X-API-Key Prüfung für API- und WS-Endpunkte."""
         path = request.path
-        is_protected = path.startswith("/api/") or path.startswith("/ws/")
+        is_protected = (
+            (path.startswith("/api/") or path.startswith("/ws/"))
+            and path != "/api/health"   # Health-Endpoint ist öffentlich
+        )
         if is_protected:
             key = (
                 request.headers.get("X-API-Key")
@@ -2758,6 +3926,501 @@ class WebServer:
             "rx_restart_required": rx_changed,
         })
 
+    # ── SDR-TX (SoapySDR) ─────────────────────────────────────────────
+
+    async def _handle_sdr_devices(self, _request: web.Request) -> web.Response:
+        """
+        GET /api/sdr/devices — Discovery (ADR-16) + Modul-Diagnose.
+
+        Liefert immer 200, auch ohne installiertes SoapySDR oder ohne Gerät
+        (leere Listen). Jeder Aufruf re-enumeriert (dient zugleich als „Rescan").
+        Die Enumeration kann je nach Treiber mehrere Sekunden brauchen — wir
+        führen sie deshalb in einem Thread-Executor aus, damit der Event-Loop
+        reaktiv bleibt.
+        """
+        import gust_soapy_tx as sx
+        loop = asyncio.get_running_loop()
+        devices = await loop.run_in_executor(None, sx.enumerate_tx_devices)
+        modules = await loop.run_in_executor(None, sx.list_modules)
+        # Aktuelle Auswahl mitliefern, damit die GUI direkt selektieren kann.
+        selected = (self._config.get("sdr_tx") or {}).get("device_args") or {}
+        return web.json_response({
+            "available":  sx.soapy_available(),
+            "devices":    devices,
+            "modules":    modules,
+            "selected":   selected,
+        })
+
+    async def _handle_sdr_caps(self, request: web.Request) -> web.Response:
+        """
+        GET /api/sdr/caps?driver=…&serial=… — Geräteparameter dynamisch lesen.
+
+        Alle Query-Parameter (außer 'channel') werden 1:1 als Device-Args
+        weitergereicht — also exakt das, was auch in `gateway.json.sdr_tx.device_args`
+        steht. Antwort enthält Gain-Elemente+Ranges, Sample-Rate-Bereich,
+        Antennen, Frequenzbereich.
+        """
+        import gust_soapy_tx as sx
+        if not sx.soapy_available():
+            return web.json_response(
+                {"error": "SoapySDR nicht installiert"}, status=503)
+
+        args = {k: v for k, v in request.rel_url.query.items() if k != "channel"}
+        if not args:
+            raise web.HTTPBadRequest(
+                text='{"error":"Mindestens ein Device-Arg (z.B. driver=…) nötig."}',
+                content_type="application/json")
+        try:
+            channel = int(request.rel_url.query.get("channel", 0))
+        except ValueError:
+            channel = 0
+
+        loop = asyncio.get_running_loop()
+        try:
+            caps = await loop.run_in_executor(
+                None, lambda: sx.device_capabilities(args, channel=channel))
+        except Exception as exc:
+            log.warning("device_capabilities(%s) Fehler: %s", args, exc)
+            return web.json_response(
+                {"error": f"Gerät konnte nicht abgefragt werden: {exc}",
+                 "args":  args},
+                status=502)
+        return web.json_response({"args": args, "channel": channel, "caps": caps})
+
+    async def _handle_sdr_config_get(self, _request: web.Request) -> web.Response:
+        """Aktueller `sdr_tx`-Block. Leerer Block wenn (noch) nicht konfiguriert."""
+        sdr = dict(self._config.get("sdr_tx") or {})
+        # Defaults defensiv, damit das UI immer Werte hat zum Vorbelegen
+        sdr.setdefault("enabled",     False)
+        sdr.setdefault("device_args", {})
+        sdr.setdefault("label",       "")
+        sdr.setdefault("sample_rate", 2_000_000)
+        sdr.setdefault("freq_hz",     14_110_000)
+        sdr.setdefault("antenna",     "")
+        sdr.setdefault("gain",        {"normalized": 0.5})
+        sdr.setdefault("tx_channel",  0)
+        return web.json_response({
+            "sdr_tx":      sdr,
+            "writable":    self._config_path is not None,
+            "config_path": self._config_path,
+        })
+
+    async def _handle_sdr_config_post(self, request: web.Request) -> web.Response:
+        """
+        POST /api/sdr/config — `sdr_tx`-Block persistieren.
+
+        Body = vollständiger sdr_tx-Block (kein partial-merge — die GUI schickt
+        alle relevanten Felder, das vereinfacht die Validierung). Bei
+        `enabled=true` wird mindestens `device_args.driver` gefordert.
+        """
+        if self._config_path is None:
+            raise web.HTTPBadRequest(
+                text='{"error":"Schreiben nicht aktiviert (kein config_path)."}',
+                content_type="application/json")
+        try:
+            body = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text='{"error":"Ungültiger JSON-Body"}',
+                content_type="application/json")
+
+        new = dict(body or {})
+        if new.get("enabled"):
+            args = new.get("device_args") or {}
+            if not isinstance(args, dict) or "driver" not in args:
+                raise web.HTTPBadRequest(
+                    text='{"error":"enabled=true erfordert device_args.driver"}',
+                    content_type="application/json")
+
+        # Numerische Felder weich coercen — die GUI schickt Strings aus <input>.
+        def _num(v, default, cast):
+            try:
+                return cast(v) if v not in (None, "") else default
+            except (TypeError, ValueError):
+                return default
+
+        normalised = {
+            "enabled":     bool(new.get("enabled", False)),
+            "device_args": new.get("device_args") or {},
+            "label":       str(new.get("label", "")),
+            "sample_rate": _num(new.get("sample_rate"), 2_000_000, float),
+            "freq_hz":     _num(new.get("freq_hz"),    14_110_000, float),
+            "antenna":     str(new.get("antenna", "")),
+            "gain":        new.get("gain") or {},
+            "tx_channel":  _num(new.get("tx_channel"), 0, int),
+        }
+
+        async with self._config_write_lock:
+            old = dict(self._config.get("sdr_tx") or {})
+            self._config["sdr_tx"] = normalised
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None, self._save_config_atomic)
+            except Exception as exc:
+                self._config["sdr_tx"] = old
+                log.error("sdr_tx schreiben fehlgeschlagen: %s", exc)
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"Schreiben fehlgeschlagen: {exc}"}}',
+                    content_type="application/json")
+
+        log.info("sdr_tx aktualisiert: enabled=%s args=%s",
+                 normalised["enabled"], normalised["device_args"])
+        self._publish_log("INFO",
+            f"SDR-TX {'aktiviert' if normalised['enabled'] else 'deaktiviert'}"
+            + (f" — {normalised['label']}" if normalised['label'] else ""))
+        return web.json_response({
+            "ok":      True,
+            "sdr_tx":  normalised,
+            "message": "SDR-TX-Konfiguration gespeichert",
+            # TX-Pfad-Wechsel greift beim nächsten Sendevorgang.
+            "tx_restart_required": False,
+        })
+
+    # ── HAMLIB / rigctld (P5-14) ──────────────────────────────────────
+
+    def _hamlib_endpoint(self) -> tuple:
+        """rigctld-Host/Port aus self._config ermitteln (Defaults localhost:4532)."""
+        audio = self._config.get("audio", {}) if isinstance(self._config, dict) else {}
+        rig   = self._config.get("rigctld", {}) if isinstance(self._config, dict) else {}
+        host = (audio.get("hamlib_host")
+                or rig.get("host")
+                or "localhost")
+        try:
+            port = int(audio.get("hamlib_port")
+                       or rig.get("port")
+                       or 4532)
+        except (TypeError, ValueError):
+            port = 4532
+        return host, port
+
+    async def _handle_hamlib_ports(self, _request: web.Request) -> web.Response:
+        """
+        GET /api/hamlib/ports — verfügbare serielle Ports plattformübergreifend.
+
+        Nutzt pyserial (serial.tools.list_ports). Ist pyserial nicht installiert,
+        wird eine leere Liste zurückgegeben (kein Fehler) — die GUI bleibt
+        bedienbar, der User kann den Port-Wert manuell setzen.
+        """
+        ports = []
+        try:
+            from serial.tools import list_ports  # pyserial, optional
+            for p in list_ports.comports():
+                ports.append({
+                    "device":      p.device,
+                    "description": (p.description or "").strip(),
+                })
+        except ImportError:
+            log.debug("pyserial nicht installiert — /api/hamlib/ports liefert leere Liste")
+        except Exception as exc:
+            log.warning("Port-Enumeration fehlgeschlagen: %s", exc)
+        ports.sort(key=lambda x: x["device"])
+        return web.json_response({"ports": ports})
+
+    async def _handle_hamlib_models(self, request: web.Request) -> web.Response:
+        """
+        GET /api/hamlib/models?q=… — Hamlib-Rig-Liste via `rigctld --list`.
+
+        Parst die tabellarische Ausgabe (erste Spalte = Modell-ID = Integer,
+        Rest der Zeile = Label). Filtert case-insensitive nach `q`, gibt max.
+        50 Treffer zurück. Modell 1 (Hamlib Dummy) ist immer der erste Eintrag.
+        Ist rigctld nicht im PATH, kommt eine leere Liste + Fehlerfeld zurück.
+        """
+        q = (request.query.get("q") or "").strip().lower()
+
+        def _run_list() -> tuple:
+            import subprocess
+            try:
+                proc = subprocess.run(
+                    ["rigctld", "--list"],
+                    capture_output=True, text=True, timeout=10,
+                )
+            except FileNotFoundError:
+                return None, "rigctld nicht im PATH gefunden"
+            except subprocess.TimeoutExpired:
+                return None, "rigctld --list Timeout"
+            except Exception as exc:                       # pragma: no cover
+                return None, f"rigctld --list fehlgeschlagen: {exc}"
+            return (proc.stdout or "") + (proc.stderr or ""), None
+
+        loop = asyncio.get_running_loop()
+        raw, err = await loop.run_in_executor(None, _run_list)
+        if raw is None:
+            return web.json_response({"models": [], "error": err})
+
+        models = []
+        dummy = None
+        for line in raw.splitlines():
+            line = line.rstrip()
+            if not line:
+                continue
+            parts = line.split(None, 1)
+            if len(parts) < 2:
+                continue
+            try:
+                model_id = int(parts[0])
+            except ValueError:
+                # Kopfzeile / Trennzeile — überspringen
+                continue
+            label = parts[1].strip()
+            entry = {"id": model_id, "label": label}
+            if model_id == 1:
+                dummy = entry           # Hamlib Dummy gesondert vormerken
+                continue
+            if q and q not in label.lower() and q not in str(model_id):
+                continue
+            models.append(entry)
+            if len(models) >= 50:
+                break
+
+        # Modell 1 immer als ersten Eintrag (unabhängig von q)
+        if dummy is None:
+            dummy = {"id": 1, "label": "Hamlib Dummy"}
+        result = [dummy] + models
+        return web.json_response({"models": result, "error": None})
+
+    async def _handle_hamlib_status(self, _request: web.Request) -> web.Response:
+        """
+        GET /api/hamlib/status — rigctld TCP-Erreichbarkeit + aktuelle Frequenz.
+
+        Verbindet sich auf hamlib_host:hamlib_port (Defaults localhost:4532),
+        sendet 'f\\n' und liest die Frequenz (float). Timeout 1 s, keine
+        Exception nach außen — Fehler werden als running:false + error gemeldet.
+        """
+        host, port = self._hamlib_endpoint()
+
+        def _probe() -> tuple:
+            import socket
+            try:
+                with socket.create_connection((host, port), timeout=1.0) as sock:
+                    sock.settimeout(1.0)
+                    sock.sendall(b"f\n")
+                    data = sock.recv(256).decode("ascii", "replace").strip()
+                # Antwort ist üblicherweise die Frequenz in Hz als Ganzzahl.
+                freq = None
+                first = data.splitlines()[0].strip() if data else ""
+                try:
+                    freq = float(first)
+                except ValueError:
+                    freq = None
+                return True, freq, None
+            except Exception as exc:
+                return False, None, str(exc)
+
+        loop = asyncio.get_running_loop()
+        running, freq, err = await loop.run_in_executor(None, _probe)
+        return web.json_response({
+            "running": running,
+            "freq_hz": freq,
+            "error":   err,
+        })
+
+    async def _handle_hamlib_start(self, _request: web.Request) -> web.Response:
+        """
+        POST /api/hamlib/start — rigctld via ensure_rigctld_running() starten.
+
+        Bei Erfolg wird das Popen-Handle (falls GUST den Prozess gestartet hat)
+        in self._rigctld_proc gemerkt, damit /api/hamlib/stop ihn beenden kann.
+        Fehler werden mit HTTP 200 + ok:false im Body gemeldet (die GUI wertet
+        'ok' aus, kein HTTP-Fehler).
+        """
+        def _start():
+            from gust_audio import ensure_rigctld_running
+            return ensure_rigctld_running(self._config, verbose=False)
+
+        loop = asyncio.get_running_loop()
+        try:
+            proc = await loop.run_in_executor(None, _start)
+        except RuntimeError as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+        except Exception as exc:                            # pragma: no cover
+            return web.json_response({"ok": False, "error": str(exc)})
+
+        if proc is not None:
+            # GUST hat rigctld selbst gestartet → Handle für /stop merken.
+            self._rigctld_proc = proc
+            msg = "rigctld gestartet"
+        else:
+            # rigctld lief bereits — nicht von GUST gestartet.
+            msg = "rigctld war bereits erreichbar"
+        return web.json_response({"ok": True, "message": msg})
+
+    async def _handle_hamlib_stop(self, _request: web.Request) -> web.Response:
+        """
+        POST /api/hamlib/stop — rigctld beenden, NUR wenn GUST ihn gestartet hat.
+
+        Extern gestartete rigctld-Instanzen (self._rigctld_proc is None) werden
+        nicht angetastet.
+        """
+        proc = self._rigctld_proc
+        if proc is None:
+            return web.json_response({
+                "ok": False,
+                "error": "rigctld wurde nicht von GUST gestartet",
+            })
+        try:
+            proc.terminate()
+        except Exception as exc:
+            log.warning("rigctld terminate fehlgeschlagen: %s", exc)
+        self._rigctld_proc = None
+        return web.json_response({"ok": True, "message": "rigctld gestoppt"})
+
+    async def _handle_hamlib_config(self, request: web.Request) -> web.Response:
+        """
+        POST /api/hamlib/config — rigctld-Block + PTT-Backend in gateway.json.
+
+        Body: {"rig_model": 2034, "device": "COM5", "baud": 9600,
+               "auto_start": true}. Setzt zusätzlich audio.ptt_backend=hamlib
+               sowie hamlib_host/hamlib_port. Atomar via _save_config_atomic().
+        """
+        if self._config_path is None:
+            raise web.HTTPBadRequest(
+                text='{"error":"Schreiben nicht aktiviert (kein config_path)."}',
+                content_type="application/json")
+        try:
+            body = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text='{"error":"Ungültiger JSON-Body"}',
+                content_type="application/json")
+
+        def _int(v, default):
+            try:
+                return int(v) if v not in (None, "") else default
+            except (TypeError, ValueError):
+                return default
+
+        rig_model  = _int(body.get("rig_model"), None)
+        device     = str(body.get("device", "") or "")
+        baud       = _int(body.get("baud"), 9600)
+        auto_start = bool(body.get("auto_start", True))
+
+        if not rig_model:
+            raise web.HTTPBadRequest(
+                text='{"error":"rig_model erforderlich"}',
+                content_type="application/json")
+        if not device:
+            raise web.HTTPBadRequest(
+                text='{"error":"device (serieller Port) erforderlich"}',
+                content_type="application/json")
+
+        async with self._config_write_lock:
+            old_rig   = self._config.get("rigctld")
+            old_audio = dict(self._config.get("audio") or {})
+            self._config["rigctld"] = {
+                "auto_start": auto_start,
+                "rig_model":  rig_model,
+                "device":     device,
+                "baud":       baud,
+                "host":       "localhost",
+                "port":       4532,
+            }
+            audio = dict(self._config.get("audio") or {})
+            audio["ptt_backend"] = "hamlib"
+            audio["hamlib_host"] = "localhost"
+            audio["hamlib_port"] = 4532
+            self._config["audio"] = audio
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None, self._save_config_atomic)
+            except Exception as exc:
+                # Rollback bei Schreibfehler
+                if old_rig is None:
+                    self._config.pop("rigctld", None)
+                else:
+                    self._config["rigctld"] = old_rig
+                self._config["audio"] = old_audio
+                log.error("rigctld-Konfiguration schreiben fehlgeschlagen: %s", exc)
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"Schreiben fehlgeschlagen: {exc}"}}',
+                    content_type="application/json")
+
+        log.info("Hamlib-Konfiguration gespeichert: model=%s device=%s baud=%s auto_start=%s",
+                 rig_model, device, baud, auto_start)
+        self._publish_log("INFO",
+            f"Hamlib konfiguriert — Modell {rig_model}, {device} @ {baud} Bd")
+        return web.json_response({
+            "ok": True,
+            "message": "Hamlib-Konfiguration gespeichert",
+        })
+
+    async def _handle_tx_tune(self, _request: web.Request) -> web.Response:
+        """POST /api/tx/tune — 1000-Hz-Sinuston mit PTT, fix 15 Sekunden."""
+        if self._gateway is None:
+            return web.json_response(
+                {"ok": False, "error": "Kein TX-Gateway aktiv."})
+
+        await self._stop_tune()
+
+        async def _run():
+            import numpy as np
+            from gust_modulator import SAMPLE_RATE
+            from gust_audio import build_ptt
+
+            duration_s = 15.0
+            freq_hz    = 1000.0
+            t     = np.linspace(0, duration_s,
+                                int(SAMPLE_RATE * duration_s),
+                                endpoint=False, dtype=np.float32)
+            audio = (0.8 * np.sin(2 * np.pi * freq_hz * t)).astype(np.float32)
+
+            audio_cfg = self._config.get("audio", {}) if isinstance(self._config, dict) else {}
+            # rigctld sicherstellen bevor PTT-Verbindung aufgebaut wird
+            # (synchron + blockierend bis ~5 s → im Executor, nicht im Event-Loop)
+            from gust_audio import ensure_rigctld_running, HamlibPTT
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, ensure_rigctld_running, self._config)
+            # HamlibPTT direkt instanziieren — rigctld läuft bereits,
+            # build_ptt würde intern nochmals ensure_rigctld_running aufrufen
+            # was auf Windows zu ConnectionRefused führt (nur 1 TCP-Conn erlaubt)
+            host = audio_cfg.get('hamlib_host', 'localhost')
+            port = int(audio_cfg.get('hamlib_port', 4532))
+            ptt  = HamlibPTT(host=host, port=port)
+            try:
+                import sounddevice as sd
+                device = audio_cfg.get("device")
+
+                def _play():
+                    ptt.activate()
+                    try:
+                        sd.play(audio, samplerate=SAMPLE_RATE,
+                                device=device, blocking=True)
+                    finally:
+                        ptt.release()
+
+                await loop.run_in_executor(None, _play)
+            except asyncio.CancelledError:
+                try:
+                    ptt.release()
+                except Exception:
+                    pass
+            except Exception as exc:
+                log.warning("[Tune] Fehler: %s", exc)
+                try:
+                    ptt.release()
+                except Exception:
+                    pass
+            finally:
+                self._tune_task = None
+
+        self._tune_task = asyncio.create_task(_run())
+        return web.json_response({"ok": True, "message": "Tune gestartet (15 s, 1000 Hz)"})
+
+    async def _handle_tx_tune_stop(self, _request: web.Request) -> web.Response:
+        """POST /api/tx/tune_stop — Tune sofort abbrechen, PTT lösen."""
+        await self._stop_tune()
+        return web.json_response({"ok": True, "message": "Tune gestoppt"})
+
+    async def _stop_tune(self):
+        """Tune-Task canceln und auf Beendigung warten."""
+        if self._tune_task is not None and not self._tune_task.done():
+            self._tune_task.cancel()
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(self._tune_task), timeout=2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+        self._tune_task = None
+
     def _save_config_atomic(self) -> None:
         """
         gateway.json atomar speichern: tempfile → os.replace.
@@ -2973,6 +4636,61 @@ class WebServer:
                 self._event_bus.unsubscribe(queue)
             except Exception:
                 pass
+
+    # ── HEARTBEAT ─────────────────────────────────────────────────────
+
+    async def _heartbeat_loop(self) -> None:
+        """
+        Sendet alle 10 s einen Heartbeat-Event an alle verbundenen WS-Clients.
+
+        Läuft als eigener asyncio-Task (gestartet in start()).
+        Unabhängig vom Event-Bus — sendet direkt auf die WS-Sockets.
+        Fällt der Daemon aus, stoppt dieser Task und der Client erkennt
+        nach 20 s (2 verpasste HBs) den Ausfall.
+        """
+        while True:
+            await asyncio.sleep(10)
+            uptime = int(time.time() - self._start_time) if self._start_time else 0
+            last_rx_ago = None
+            if self._last_rx_ts is not None:
+                last_rx_ago = int(time.time() - self._last_rx_ts)
+
+            msg = json.dumps({
+                "type":          "heartbeat",
+                "ts":            time.time(),
+                "uptime_s":      uptime,
+                "last_rx_ago_s": last_rx_ago,
+                "daemon_mode":   self._gateway is not None,
+            })
+
+            dead = []
+            for ws in list(self._ws_rx_clients):
+                try:
+                    await ws.send_str(msg)
+                except Exception:
+                    dead.append(ws)
+            for ws in dead:
+                self._ws_rx_clients.discard(ws)
+
+    async def _handle_health(self, _request: web.Request) -> web.Response:
+        """
+        GET /api/health — Daemon-Erreichbarkeit (nicht Auth-geschützt).
+
+        Liefert immer HTTP 200, solange der Prozess läuft.
+        Geeignet für externe Monitoring-Checks (curl, Uptime-Kuma, etc.).
+        """
+        uptime = int(time.time() - self._start_time) if self._start_time else 0
+        last_rx_ago = None
+        if self._last_rx_ts is not None:
+            last_rx_ago = int(time.time() - self._last_rx_ts)
+        return web.json_response({
+            "alive":          True,
+            "uptime_s":       uptime,
+            "last_rx_ago_s": last_rx_ago,
+            "ws_clients":    len(self._ws_rx_clients),
+            "daemon_mode":   self._gateway is not None,
+            "callsign":      self._callsign,
+        })
 
 
 # ═══════════════════════════════════════════════════════════════════════

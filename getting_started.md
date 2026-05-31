@@ -291,7 +291,54 @@ python gust.py info
 
 ---
 
-## 7. Troubleshooting
+## 7. Transceiver via Hamlib / rigctld
+
+GUST controls PTT and reads frequency via **rigctld** (part of Hamlib). Configuration is done entirely through the Web UI under **Config → Transceiver (Hamlib)**.
+
+### Setup
+
+1. Install Hamlib: [hamlib.org](https://hamlib.org) (Windows installer available)
+2. Open the Web UI → **Config → Transceiver (Hamlib)**
+3. Select serial port, search for your rig model, set baud rate
+4. Enable **auto_start** and click **💾 Speichern**
+5. Click **🔌 Verbinden & Testen** — the green dot and current frequency confirm success
+
+GUST will start rigctld automatically on every daemon start.
+
+### Microham USB Interface III — Critical Setting
+
+If you use a **Microham USB Interface III** (or similar USB CAT interface), you must configure the **Microham USB Device Router** correctly:
+
+| Field | Setting |
+|-------|---------|
+| Radio | Your COM port + baud rate (e.g. COM10, 4800 Baud) |
+| CW | COM port + DTR (optional, for CW keying) |
+| **PTT** | **none** ← this is critical! |
+| SQL | none |
+
+> **Why?** If PTT is set to a COM port in the Microham router, the router controls PTT via RTS/DTR. rigctld simultaneously tries to control PTT via CAT protocol (`T 1`/`T 0`). This conflict causes PTT to get stuck — the transceiver stays in TX and does not return to RX.
+>
+> With PTT set to **none**, rigctld handles PTT exclusively via CAT. No hardware RTS/DTR is needed.
+
+**Tested configuration (TS-790E + Microham USB III):**
+```
+Microham USB Device Router:
+  Radio:  COM10, 4800 8N2
+  PTT:    none          ← PTT via CAT only
+
+gateway.json:
+  rig_model: 2007  (Kenwood TS-790)
+  device:    COM10
+  baud:      4800
+```
+
+### Tune Button
+
+The **📡 Tune** button (Config → Transceiver → bottom right) transmits a 1000 Hz sine tone for 15 seconds with PTT active — useful for checking output power and SWR. It works as a toggle: first click starts, second click stops early. Frequency polling is paused automatically during Tune to avoid CAT collisions.
+
+---
+
+## 8. Troubleshooting
 
 | Problem | Solution |
 |---------|---------|
@@ -304,10 +351,13 @@ python gust.py info
 | Web UI shows "Invalid Date" | Update `gust_web.py` to latest version; hard-refresh browser (Ctrl+Shift+R) |
 | No audio output | Check `"level"` in `gateway.json` (try 50–80); check device number |
 | SNR reads negative on channel 0 | Update `gust_rx.py` (adaptive noise band fix, v0.4+) |
+| PTT stuck / TRx stays in TX | Check Microham USB Device Router: set PTT to **none** (see Section 7) |
+| rigctld not starting | Verify `rigctld` is in PATH: `rigctld --version`; check COM port and baud rate |
+| Tune button has no effect | Ensure rigctld is running first (green dot in Transceiver tab) |
 
 ---
 
-## 8. Get Involved
+## 9. Get Involved
 
 GUST is an open amateur radio experiment. Every decoded frame, every report of
 successful reception, and every suggestion helps improve the protocol.

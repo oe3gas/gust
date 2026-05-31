@@ -438,6 +438,61 @@ schlechten Zustand.
 
 ---
 
+## 13a. Generischer SoapySDR-TX (`gust_soapy_tx.py`, P7-04 / ADR-16)
+
+`gust_hackrf.py` (HackRF) und `Soapy7610Transmitter` (IC-7610) sind beide nur
+Spezialfälle desselben Musters: SoapySDR-Device öffnen, `CF32`-Stream aufbauen,
+Block-weise schreiben, sauber schließen. ADR-16 zieht diese Schicht in
+`gust_soapy_tx.py` heraus — `SoapyTxBackend` ist eine dünne, treiberneutrale
+Klasse, „7610" ist kein Sonderfall mehr, sondern nur ein gespeicherter Args-Satz.
+
+### Discovery statt Hardcoding
+Geräte werden **ausschließlich** über `SoapySDR.Device.enumerate()` gefunden.
+Im Web-UI gibt es bewusst kein Args-Eingabefeld — Recovery bei fehlendem Gerät
+erfolgt über einen „Rescan"-Button (REST `GET /api/sdr/devices` re-enumeriert).
+
+### Persistenz nach Identität, nicht nach Index
+In `gateway.json.sdr_tx.device_args` werden die vollen Args (mindestens
+`driver` + `serial`/`label`) gespeichert. **Nicht** der Enumerations-Index —
+die Reihenfolge ist nach Reboot/USB-Replug instabil (dieselbe Lehre wie ADR-09
+bei Audiogeräten). Die Identitätswahl bevorzugt `serial`, fällt zurück auf
+`label`/`device_id`.
+
+### TX-Fähigkeit
+`enumerate_tx_devices()` öffnet jedes gefundene Gerät kurz und liest
+`getNumChannels(SOAPY_SDR_TX)`. RX-only-Geräte (typisch RTL-SDR) bekommen
+`tx_capable: false` — die Web-UI grayed sie aus.
+
+### Treiberabhängige Parameter dynamisch
+Nach Auswahl liest das UI über `GET /api/sdr/caps?driver=…&serial=…` die
+Gain-Elemente (`listGains` + `getGainRange` je Element), Sample-Rate-Liste/Range
+(`listSampleRates`/`getSampleRateRange`) und Antennen-Ports (`listAntennas`)
+vom Gerät — nicht hartcodiert. Gain wird **normalisiert (0..1)** gespeichert
+und beim Senden auf die Gesamt-Range gemappt; alternativ als benannte Elemente
+(`{"AMP": 0, "VGA": 14}`), was treiberspezifisch ist.
+
+### Write-Loop unverändert
+Die `transmit_iq()`-Schleife ist Zeile für Zeile dieselbe wie
+`gust_hackrf.HackRFTransmitter.transmit_iq()` (ADR-13): Default-Timeout,
+`BLOCK = 4096`, `pos += sr.ret if sr.ret > 0 else BLOCK`. Der Underrun-Hänger
+aus §13 ist eine harte Lektion, die generisch gilt.
+
+### Modul-Diagnose
+`SoapySDR.listModules()` (+ `getModuleVersion`) wird im UI als ausklappbare
+Anzeige unter dem Dropdown gezeigt — rein diagnostisch, damit erkennbar ist,
+ob das passende Treibermodul (`SoapyHackRF.dll`, `Soapy7610`, …) geladen ist.
+Bewusst kein Eingabefeld (siehe ADR-16).
+
+### Verdrahtung im TX-Pfad
+`gust.py:cmd_tx()` prüft `cfg["sdr_tx"]["enabled"]`: bei `true` wird über
+`_tx_via_sdr()` der SoapySDR-Pfad genutzt (NF→IQ via `nf_to_iq_usb()`, dann
+`SoapyTxBackend.transmit_iq()`). Bei `false` läuft alles wie bisher über
+`AudioTransmitter` + PTT. Frame-Layer, Modulator und Event-Bus bleiben
+unangetastet. Die alten Klassen `HackRFTransmitter` / `Soapy7610Transmitter`
+bleiben für Bestandscode (`gust_tx_test.py`) lauffähig.
+
+---
+
 ## 14. Parallelkanal-Diversity
 
 ### Prinzip
@@ -714,9 +769,10 @@ Home Assistant: Auto-Discovery via `homeassistant/sensor/gust_*/config`
 | `gust_modulator.py`    | MFSK-8 Mod/Demod, Breitband-RX + Refinement| 0.3.1   |
 | `gust_audio.py`        | Audio TX/RX, PTT-Backends, Auto-Mono/Stereo| 1.1.0   |
 | `gust_rx.py`           | Kontinuierlicher RX-Scan-Loop (asyncio)   | 1.0.0   |
-| `gust_hackrf.py`       | HackRF TX, Einzel- + Dual-Kanal (transmit_iq)| 0.2.0 |
+| `gust_hackrf.py`       | HackRF + Soapy7610 TX (Bestand). Neuer Code soll `gust_soapy_tx` verwenden | 1.0.0 |
+| `gust_soapy_tx.py`     | Generischer SoapySDR-TX-Backend (P7-04 / ADR-16) | 1.0.0   |
 | `gust_decode.py`       | Standalone Decoder, Breitband-Scan CLI    | 0.2.0   |
-| `tx_test.py`              | TX-Mess-Skript (--channels, --gain-sequence)| 1.1.0 |
+| `gust_tx_test.py`         | TX-Mess-Skript (--channels, --gain-sequence)| 1.1.0 |
 | `gust.py`              | CLI-Einstiegspunkt                        | 0.1.1   |
 | `requirements.txt`        | Python-Abhängigkeiten                     | —       |
 
@@ -767,7 +823,7 @@ Home Assistant: Auto-Discovery via `homeassistant/sensor/gust_*/config`
 | SNR-Vergleich GUST vs. Olivia (gleiche Bedingungen) | mittel | Phase 7/8 |
 | ~~SNR-Schätzer-Fehler Kanal 0/1~~ ✅ adaptives Rauschband (BUG-06) | — | erledigt Mai 2026 |
 | ~~Preamble-Länge~~ ✅ 256 ms, Costas-SYNC (P9-02) | — | erledigt Mai 2026 |
-| Soapy7610 TX-Pfad IC-7610 direktes IQ-TX | mittel | Phase 7 |
+| ~~Soapy7610 TX-Pfad~~ ✅ generisch in `gust_soapy_tx.py` (P7-04 / ADR-16) | — | erledigt Mai 2026 |
 | Bandplankonformität OE (§ 16 AFG) | hoch | vor regulärem Betrieb |
 | RS-FEC Optimierung für kurze Frames | niedrig | Phase 8 |
 | Rufzeichen > 6 Zeichen (Suffix /P) | niedrig | Phase 8 |
@@ -793,6 +849,62 @@ Home Assistant: Auto-Discovery via `homeassistant/sensor/gust_*/config`
 
 ---
 
+## 20. Hardware-Konfiguration — Microham USB Interface III + rigctld
+
+### Kontext
+
+Der Microham USB Interface III ist ein universelles CAT/PTT/CW-Interface für Transceiver. Es erstellt virtuelle serielle COM-Ports und routet CAT, PTT und CW getrennt. Bei Verwendung mit GUST und rigctld ist die korrekte Konfiguration im Microham USB Device Router entscheidend.
+
+### Kritische Einstellung: PTT auf „none"
+
+**Problem:** Wenn im Microham USB Device Router unter „PTT" ein COM-Port eingetragen ist (z.B. COM10), übernimmt der Router die PTT-Steuerung via RTS/DTR. rigctld versucht gleichzeitig PTT über das CAT-Protokoll (`T 1`/`T 0`) zu steuern — das führt zu Konflikten: PTT bleibt hängen, TRx schaltet nicht zurück auf RX.
+
+**Lösung:** Im Microham USB Device Router:
+
+| Feld | Einstellung |
+|------|-------------|
+| Radio | COM-Port + Baudrate (z.B. COM10, 4800 Baud) |
+| CW | COM-Port + DTR (für CW-Keying, optional) |
+| **PTT** | **none** ← kritisch! |
+| SQL | none |
+
+rigctld übernimmt PTT **vollständig** über das Kenwood-CAT-Protokoll (`T 1` = TX ein, `T 0` = TX aus). Kein Hardware-RTS/DTR nötig.
+
+### Getestete Konfiguration (TS-790E + Microham USB III)
+
+```
+Microham USB Device Router:
+  Radio:  COM10, 4800 8N2
+  CW:     COM10, DTR
+  PTT:    none          ← PTT via CAT (rigctld)
+  SQL:    none
+
+rigctld (gateway.json):
+  rig_model: 2007       (Kenwood TS-790)
+  device:    COM10
+  baud:      4800
+  auto_start: true
+
+GUST:
+  ptt_backend: hamlib
+  hamlib_host: localhost
+  hamlib_port: 4532
+```
+
+### Diagnose-Ablauf bei PTT-Problemen
+
+1. GUST stoppen
+2. rigctld stoppen (falls noch läuft)
+3. Direkttest: `rigctl -m 2007 -r COM10 -s 4800 T 1` → TRx auf TX?
+4. Falls nein: Microham USB Device Router prüfen (PTT = none?)
+5. Falls ja: `rigctl -m 2007 -r COM10 -s 4800 T 0` → zurück auf RX
+
+### Tune-Button
+
+GUST hat einen Tune-Button (analog WSJT-X) im Config-Tab → Transceiver (Hamlib). Er sendet 15 Sekunden lang einen 1000-Hz-Sinuston mit aktivierter PTT — nützlich um Ausgangsleistung und SWR zu prüfen. Der Button ist ein Toggle: erster Klick startet, zweiter Klick stoppt vorzeitig. Das Frequenz-Polling wird während Tune automatisch pausiert um CAT-Kollisionen zu vermeiden.
+
+---
+
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
-*Stand: Mai 2026 — Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Connector-Konzept*
+*Stand: Mai 2026 — Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Connector-Konzept · Microham-Konfiguration*

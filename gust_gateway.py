@@ -439,6 +439,7 @@ class TxGateway:
                 "frame_type": frame_type_int,
                 "type_name":  frame_type_str.upper(),
                 "from":       callsign,
+                "to":         data.get("to") or data.get("dest") or "*",
                 "priority":   priority,
                 "data":       data,
             }

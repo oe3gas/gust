@@ -420,10 +420,15 @@ def ensure_rigctld_running(cfg: dict,
     if verbose:
         print(f"[rigctld] Auto-Start als Hintergrundprozess: {' '.join(cmd)}")
 
+    import tempfile, io
+
+    # stderr in temporaere Datei umleiten um Fehlermeldung lesbar zu machen
+    stderr_fh = tempfile.TemporaryFile()
+
     popen_kwargs = {
         "stdin":  subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
+        "stderr": stderr_fh,
     }
     if os.name == "nt":
         # Windows: kein eigenes Fenster, ueberlebt Parent-Prozess
@@ -433,9 +438,17 @@ def ensure_rigctld_running(cfg: dict,
     else:
         popen_kwargs["start_new_session"] = True
 
+    def _read_stderr() -> str:
+        try:
+            stderr_fh.seek(0)
+            return stderr_fh.read(2000).decode(errors='replace').strip()
+        except Exception:
+            return ''
+
     try:
         proc = subprocess.Popen(cmd, **popen_kwargs)
     except FileNotFoundError:
+        stderr_fh.close()
         raise RuntimeError(
             f"rigctld-Programm nicht gefunden: '{exe}'\n"
             f"Bitte 'rigctld.path' in gateway.json setzen (absoluter Pfad) "
@@ -449,22 +462,29 @@ def ensure_rigctld_running(cfg: dict,
             if verbose:
                 print(f"[rigctld] gestartet (PID {proc.pid}), "
                       f"erreichbar @ {host}:{port}")
+            stderr_fh.close()
             return proc
         rc = proc.poll()
         if rc is not None:
+            detail = _read_stderr()
+            stderr_fh.close()
             raise RuntimeError(
                 f"rigctld beendete sofort (Exit-Code {rc}).\n"
-                f"Pruefen: COM-Port {device} frei? Baud {baud} korrekt? "
+                + (f"rigctld-Ausgabe: {detail}\n" if detail else "")
+                + f"Pruefen: COM-Port {device} frei? Baud {baud} korrekt? "
                 f"rig_model {rig_model} richtig? rigctld-Pfad '{exe}' korrekt?"
             )
 
+    detail = _read_stderr()
     try:
         proc.terminate()
     except Exception:
         pass
+    stderr_fh.close()
     raise RuntimeError(
-        f"rigctld gestartet, aber Port {port} nicht erreichbar nach 5 s. "
-        f"Konfiguration in gateway.json pruefen."
+        f"rigctld gestartet, aber Port {port} nicht erreichbar nach 5 s.\n"
+        + (f"rigctld-Ausgabe: {detail}\n" if detail else "")
+        + f"Konfiguration in gateway.json pruefen."
     )
 
 
