@@ -2047,9 +2047,9 @@ async function loadHamlibConfig() {
 
 async function saveHamlibConfig() {
   const statusEl = document.getElementById('cfg-hamlib-status');
-  const modelId = parseInt(document.getElementById('hamlib-model-id').value, 10);
-  const device  = document.getElementById('hamlib-port').value;
-  const baud    = parseInt(document.getElementById('hamlib-baud').value, 10);
+  const modelId  = parseInt(document.getElementById('hamlib-model-id').value, 10);
+  const device   = document.getElementById('hamlib-port').value;
+  const baud     = parseInt(document.getElementById('hamlib-baud').value, 10);
   const autoStart = document.getElementById('hamlib-autostart').checked;
 
   if (!modelId) {
@@ -2068,9 +2068,77 @@ async function saveHamlibConfig() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ rig_model: modelId, device, baud, auto_start: autoStart }),
     });
+
+    // Port-Konflikt — User fragen
+    if (!r.ok && r.conflict) {
+      statusEl.style.color = 'var(--orange)';
+      statusEl.textContent = '⚠ ' + r.message;
+      // Konflikt-Dialog anzeigen
+      _showHamlibConflictDialog(r.pid, r.proc_name, r.port);
+      return;
+    }
+
     statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
     statusEl.textContent = (r.ok ? '✓ ' : '✗ ') + (r.message || r.error || '');
-    if (r.ok) loadStatus();
+    if (r.ok) { loadStatus(); testHamlibConnection(); }
+  } catch(e) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '✗ ' + e.message;
+  }
+}
+
+function _showHamlibConflictDialog(pid, procName, port) {
+  // Bestehendes Dialog entfernen falls vorhanden
+  document.getElementById('hamlib-conflict-dlg')?.remove();
+
+  const dlg = document.createElement('div');
+  dlg.id = 'hamlib-conflict-dlg';
+  dlg.style.cssText = [
+    'position:fixed', 'inset:0', 'background:rgba(0,0,0,0.6)',
+    'display:flex', 'align-items:center', 'justify-content:center',
+    'z-index:9999', 'font-family:inherit'
+  ].join(';');
+
+  dlg.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+                padding:24px;max-width:480px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+      <h3 style="margin:0 0 12px;color:var(--orange);">⚠ Port-Konflikt</h3>
+      <p style="margin:0 0 16px;color:var(--text);line-height:1.5;">
+        Um den TRx über Hamlib zu steuern, muss rigctld auf Port
+        <strong>${port}</strong> gestartet werden.<br><br>
+        Dieser Port wird aktuell von
+        <strong style="color:var(--accent);">${_esc(procName)}</strong>
+        (PID ${pid}) belegt.<br><br>
+        Soll dieser Prozess beendet und rigctld gestartet werden?
+      </p>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn secondary" onclick="document.getElementById('hamlib-conflict-dlg').remove()">
+          ✗ Abbrechen
+        </button>
+        <button class="btn" style="background:var(--orange);border-color:var(--orange);"
+                onclick="_hamlibForceRestart(${pid})">
+          ✓ Beenden &amp; rigctld starten
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dlg);
+}
+
+async function _hamlibForceRestart(pid) {
+  document.getElementById('hamlib-conflict-dlg')?.remove();
+  const statusEl = document.getElementById('cfg-hamlib-status');
+  statusEl.style.color = 'var(--text2)';
+  statusEl.textContent = '⟳ Prozess wird beendet, rigctld startet …';
+  try {
+    const r = await apiFetch('/api/hamlib/force_restart', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ pid }),
+    });
+    statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
+    statusEl.textContent = (r.ok ? '✓ ' : '✗ ') + (r.message || r.error || '');
+    if (r.ok) { loadStatus(); testHamlibConnection(); }
   } catch(e) {
     statusEl.style.color = 'var(--red)';
     statusEl.textContent = '✗ ' + e.message;
@@ -3474,6 +3542,7 @@ class WebServer:
         app.router.add_post("/api/hamlib/start",     self._handle_hamlib_start)
         app.router.add_post("/api/hamlib/stop",      self._handle_hamlib_stop)
         app.router.add_post("/api/hamlib/config",    self._handle_hamlib_config)
+        app.router.add_post("/api/hamlib/force_restart", self._handle_hamlib_force_restart)
         app.router.add_post("/api/tx/tune",          self._handle_tx_tune)
         app.router.add_post("/api/tx/tune_stop",     self._handle_tx_tune_stop)
         app.router.add_get("/ws/rx",  self._handle_ws_rx)
@@ -4264,6 +4333,28 @@ class WebServer:
         self._rigctld_proc = None
         return web.json_response({"ok": True, "message": "rigctld gestoppt"})
 
+    def _find_port_owner(self, port: int) -> dict | None:
+        """
+        Prueft ob ein Prozess auf dem angegebenen TCP-Port lauscht.
+        Gibt {pid, name} zurueck oder None wenn der Port frei ist.
+        Benoetigt psutil — falls nicht installiert: None zurueckgeben.
+        """
+        try:
+            import psutil
+            for conn in psutil.net_connections(kind='tcp'):
+                if (conn.laddr.port == port
+                        and conn.status == psutil.CONN_LISTEN):
+                    try:
+                        proc = psutil.Process(conn.pid)
+                        return {"pid": conn.pid, "name": proc.name()}
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        return {"pid": conn.pid, "name": "(unbekannt)"}
+        except ImportError:
+            log.debug("psutil nicht installiert — Port-Konflikt-Pruefung uebersprungen")
+        except Exception as exc:
+            log.debug("_find_port_owner Fehler: %s", exc)
+        return None
+
     async def _handle_hamlib_config(self, request: web.Request) -> web.Response:
         """
         POST /api/hamlib/config — rigctld-Block + PTT-Backend in gateway.json.
@@ -4338,10 +4429,114 @@ class WebServer:
                  rig_model, device, baud, auto_start)
         self._publish_log("INFO",
             f"Hamlib konfiguriert — Modell {rig_model}, {device} @ {baud} Bd")
+
+        # ── Port-Konflikt pruefen wenn auto_start aktiv ────────────────
+        if auto_start:
+            _, target_port = self._hamlib_endpoint()
+            owner = self._find_port_owner(target_port)
+            if owner is not None:
+                # Prozess belegt den Port — User fragen
+                return web.json_response({
+                    "ok":      False,
+                    "conflict": True,
+                    "pid":      owner["pid"],
+                    "proc_name": owner["name"],
+                    "port":     target_port,
+                    "message":  (
+                        f"Port {target_port} wird von '{owner['name']}' "
+                        f"(PID {owner['pid']}) belegt. "
+                        f"Soll dieser Prozess beendet und rigctld neu gestartet werden?"
+                    ),
+                })
+            # Port frei — direkt starten
+            return await self._do_rigctld_restart(rig_model, device, baud)
+
         return web.json_response({
             "ok": True,
-            "message": "Hamlib-Konfiguration gespeichert",
+            "message": "Konfiguration gespeichert (auto_start deaktiviert — rigctld nicht gestartet).",
         })
+
+    async def _handle_hamlib_force_restart(self, request: web.Request) -> web.Response:
+        """
+        POST /api/hamlib/force_restart — beendet den Prozess auf dem konfigurierten
+        Port (nach expliziter User-Bestaetigung in der GUI) und startet rigctld neu.
+        Body: {pid: int}  — GUST beendet nur genau diesen PID.
+        """
+        try:
+            body = await request.json()
+            pid  = int(body.get("pid", 0))
+        except Exception:
+            return web.json_response({"ok": False, "error": "Ungueltiger Body"})
+
+        if pid <= 0:
+            return web.json_response({"ok": False, "error": "Kein gueltiger PID"})
+
+        # Genau diesen Prozess beenden
+        try:
+            import psutil
+            proc = psutil.Process(pid)
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except psutil.TimeoutExpired:
+                proc.kill()
+            log.info("[rigctld] Prozess PID %d beendet auf User-Anfrage", pid)
+        except ImportError:
+            return web.json_response({
+                "ok": False,
+                "error": "psutil nicht installiert — kann Prozess nicht beenden. Bitte manuell beenden."
+            })
+        except psutil.NoSuchProcess:
+            pass  # bereits beendet — trotzdem weitermachen
+        except Exception as exc:
+            return web.json_response({"ok": False, "error": f"Prozess beenden fehlgeschlagen: {exc}"})
+
+        # Kurz warten damit Port freigegeben wird
+        await asyncio.sleep(1.0)
+        self._rigctld_proc = None
+
+        rig  = self._config.get("rigctld", {})
+        return await self._do_rigctld_restart(
+            rig.get("rig_model"), rig.get("device"), rig.get("baud"))
+
+    async def _do_rigctld_restart(self, rig_model, device, baud) -> web.Response:
+        """Startet rigctld mit aktueller Konfiguration und liest Frequenz zur Bestaetigung."""
+        await self._stop_tune()
+        # Defensiv: einen von GUST gestarteten rigctld zuerst beenden, damit kein
+        # zweiter Prozess denselben Port belegt (zweite Instanz -> Bind-Fehler).
+        if self._rigctld_proc is not None and self._rigctld_proc.poll() is None:
+            try:
+                self._rigctld_proc.terminate()
+                await asyncio.sleep(0.5)
+            except Exception:
+                pass
+            self._rigctld_proc = None
+        try:
+            from gust_audio import ensure_rigctld_running
+            loop = asyncio.get_running_loop()
+            proc = await loop.run_in_executor(None, ensure_rigctld_running, self._config)
+            self._rigctld_proc = proc
+            freq_msg = ""
+            try:
+                import socket
+                host, port = self._hamlib_endpoint()
+                sock = socket.create_connection((host, port), timeout=1)
+                sock.sendall(b"f\n")
+                raw  = sock.recv(64).decode(errors="replace").strip()
+                sock.close()
+                freq_hz  = float(raw.split()[0])
+                freq_msg = f" — Frequenz: {freq_hz/1e6:.6f} MHz"
+            except Exception:
+                pass
+            msg = (f"Konfiguration gespeichert, rigctld neu gestartet "
+                   f"(Modell {rig_model}, {device}, {baud} Bd){freq_msg}.")
+            log.info("[rigctld] %s", msg)
+            self._publish_log("INFO", msg)
+            return web.json_response({"ok": True, "message": msg})
+        except RuntimeError as exc:
+            msg = f"Konfiguration gespeichert, rigctld-Start fehlgeschlagen: {exc}"
+            log.warning("[rigctld] %s", msg)
+            return web.json_response({"ok": False, "message": msg})
 
     async def _handle_tx_tune(self, _request: web.Request) -> web.Response:
         """POST /api/tx/tune — 1000-Hz-Sinuston mit PTT, fix 15 Sekunden."""

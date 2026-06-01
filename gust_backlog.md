@@ -362,6 +362,24 @@ Audiogeräten). Konsequenzen für die Implementierung:
 
 ---
 
+### Umsetzungsnotiz P5-15 / P5-16 / P5-17 (Mai 2026)
+
+Alle Änderungen ausschließlich in `gust_web.py`.
+
+- **P5-15 Tune-Button:** Toggle-Button im Hamlib-Tab. 15 s, 1000 Hz Sinuston, PTT via HamlibPTT direkt (kein build_ptt um doppelten ensure_rigctld_running zu vermeiden). Frequenz-Polling wird während Tune pausiert (`stopHamlibPolling()`). ON-AIR-Banner wird gesetzt. `asyncio.Task` + `_stop_tune()` für sauberes Cancel. Backend: `POST /api/tx/tune` + `POST /api/tx/tune_stop` + `async _stop_tune()`.
+- **P5-16 Kommunikations-Tab:** Tab „Empfangen" umbenannt zu „💬 Kommunikation" mit Sub-Tabs Empfangen/Gesendet. `state.sent[]` + `state.sentFragCache{}` für TX-Reassembly von Freitext-Fragmenten. `appendTxDone()` + `renderSent()`. Backend: `to`-Feld in `make_tx_done_event` ergänzt.
+- **P5-17 Aktivitätslog:** Log-Tab zweigeteilt: oben „📡 Aktivitätslog" (RX/TX-Events, benutzerfreundlich), unten „🗒 Systemlog" (technisch, wie bisher). `activityLog()` wird von `appendRxFrame()` und `appendTxDone()` aufgerufen.
+- **ON AIR Banner:** Globaler roter pulsierender Banner beim Senden (TX + Tune), sichtbar auf allen Tabs. `_setOnAir(true/false)` in allen TX-Pfaden eingehängt.
+- **Microham-Erkenntnis:** PTT im Microham USB Device Router muss auf „none" stehen — rigctld übernimmt PTT vollständig via CAT. Dokumentiert in `gust_knowledge.md` §20 und `GETTING_STARTED.md` §7.
+
+| ID | Prio | Typ | Titel | Beschreibung | Status |
+|---|---|---|---|---|---|
+| P5-15 | 🟡 | feature | Tune-Button | 15s/1000Hz Toggle-Button im Hamlib-Tab, PTT via HamlibPTT direkt, ON-AIR-Banner, Polling-Pause | ✅ |
+| P5-16 | 🟡 | feature | Kommunikations-Tab | TX/RX in einem Tab, Sub-Tabs, TX-Reassembly, renderSent() | ✅ |
+| P5-17 | 🟢 | feature | Aktivitätslog | Log-Tab zweigeteilt: Aktivitätslog + Systemlog | ✅ |
+
+---
+
 *Dokument: gust_backlog.md*
 *Autor: OE3GAS*
-*Stand: Mai 2026 — Phase 9 (Protokoll v0.5) abgeschlossen; P5-13 Config-Tab-Strukturierung erweitert; P5-14 Hamlib-GUI-Konfiguration neu*
+*Stand: Mai 2026 — P5-15 Tune · P5-16 Kommunikations-Tab · P5-17 Aktivitätslog · ON AIR Banner · Microham-Doku*

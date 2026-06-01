@@ -12,6 +12,9 @@ reedsolo
 # Audio I/O (Gateway-Betrieb, Phase 3)
 sounddevice
 
+# System-Prozess-Monitoring (Port-Konflikt-Erkennung fuer rigctld)
+psutil
+
 # Raspberry Pi GPIO / PTT-Steuerung (nur auf RPi aktiv)
 # RPi.GPIO         # auskommentiert — nicht installierbar auf PC
 
