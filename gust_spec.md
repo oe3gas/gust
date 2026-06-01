@@ -156,6 +156,26 @@ GUST unterstützt ab v0.5 zwei unabhängige Empfangspfade:
 0x41  QSO-CQ / Anruf
 0xF0  Protokoll-Management (Kanalzuweisung, Timing)
 0xFF  Erweiterungsreserviert
+
+#### QSO-Modus (Frame 0x40 — Designentscheidung)
+
+Der QSO-Modus verkürzt das Fragment-Intervall für `0x40`-Frames von
+`txInterval` (Standard 300 s) auf **60 s**. Er ist ausschließlich über
+den Web-Client aktivierbar (Toggle im Text-Formular) und bewusst **nicht**
+in `gateway.json`, REST-API oder CLI exponiert.
+
+**Begründung:** GUST ist primär ein Telemetrie-Protokoll. Automatische
+Stationen (Baken, Gateways) sollen den QSO-Modus nicht aktivieren können,
+um Kanalkapazität zu schonen (Duty Cycle ≤ 8 % bei 60 s). Der QSO-Modus
+dient ausschließlich der interaktiven Ham-Kommunikation über den Web-Client.
+
+| Modus | Intervall | 4-Fragment-Nachricht | Duty Cycle | Verwendung |
+|---|---|---|---|---|
+| Standard | 300 s (5 min) | ~20 min | < 2 % | Telemetrie, automatischer Betrieb |
+| **QSO-Modus** | **60 s** | **~4 min** | **~8 %** | **Interaktiver Ham-Betrieb (Web-UI)** |
+
+Der QSO-Modus bleibt bis zur manuellen Deaktivierung aktiv
+(kein automatisches Zurückschalten nach der Nachricht).
 ```
 
 ### 3.5 Payload-Definitionen
@@ -351,7 +371,8 @@ class EventBus:
 | POST | `/api/tx/text` | Text-Frame (langer Text → serverseitig fragmentiert, back-to-back) |
 | POST | `/api/tx/text_fragment` | Einzelnes vorberechnetes Text-Fragment (Schedule-getaktet vom Web-UI) |
 | POST | `/api/tx/emergency` | Notfall-Frame (sofort, Prio 1) |
-| GET | `/api/log` | Letzte N Einträge aus dem Logfile |
+| GET    | `/api/log`       | Letzte N Einträge aus dem Logfile |
+| DELETE | `/api/tx/queue`  | Alle ausstehenden TX-Frames löschen — gibt `{cleared: N}` zurück. Frames die gerade gesendet werden bleiben unberührt. |
 | GET | `/api/hamlib/ports` | Verfügbare serielle Ports (pyserial `list_ports`) |
 | GET | `/api/hamlib/models` | Hamlib-Rig-Liste (`?q=`Suchstring, max. 50 Treffer) |
 | GET | `/api/hamlib/status` | rigctld TCP-Erreichbarkeit + aktuelle Frequenz |
@@ -538,7 +559,8 @@ Notfall-Frames (Prio 1) überspringen den Kanal-Cooldown. Alle anderen warten mi
 | Notfunk-Beacon | 0x20 | 1 min | fix (Hash) |
 | Remote-Stationsmonitoring | 0x03 | 10 min | fix (Hash) |
 | Rotorsteuerung | 0x10 / 0x11 | auf Anfrage | fix (Hash) |
-| Freitext / QSO | 0x40 | auf Anfrage | fix (Hash) |
+| Freitext / QSO (Standard) | 0x40 | 300 s / auf Anfrage | fix (Hash) |
+| Freitext / QSO (QSO-Modus) | 0x40 | **60 s** (Web-UI only) | fix (Hash) |
 
 ---
 

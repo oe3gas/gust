@@ -175,10 +175,178 @@ py gust.py tx weather --temp 21.5 --device 9 --level 50        ✅
 
 ---
 
-## Modul 9 — MQTT-Bridge (`gust_mqtt.py`) 🔲
+## Modul 9 — Connector Layer / MQTT (`gust_connector.py`, `gust_mqtt.py`, `gust_transforms.py`)
 
-### T-9.1 RX-Frame → MQTT-Publish (IT) 🔲
-### T-9.2 MQTT-Subscribe → TX-Queue (IT) 🔲
+> **Teststrategie:** Drei Ebenen — (1) Transform-Unit-Tests ohne jede Infrastruktur,
+> (2) Integrationstests gegen öffentlichen Broker, (3) Vollständige Roundtrip-Tests
+> mit lokalem In-Process-Broker (`amqtt`). Ebene 1 ist die wichtigste — sie testet
+> die Semantik. Ebene 3 erfordert `pip install amqtt`.
+
+---
+
+### T-9.1 Transform-Offline: `weather_from_ecowitt` Feldzuordnung (UT) 🔲
+
+**Infrastruktur:** keine — reiner Python-Funktionsaufruf
+
+**Methode:** `weather_from_ecowitt("froggit/data", FROGGIT_SAMPLE)` mit realem
+Froggit HP2000 Pro JSON-Payload.
+
+**Erwartete Felder und Werte:**
+
+| Feld | Quelle | Erwarteter Wert |
+|---|---|---|
+| `temp_c` | `temp` | 12.5 |
+| `humidity_pct` | `humidity` | 88 |
+| `pressure_hpa` | `baromrel` | 1028.65 |
+| `wind_kmh` | `windspeed` | 0 |
+| `wind_deg` | `winddir` | 210 |
+| `rain_mm_h` | `rainrate` | 0.0 |
+| `uv_index` | `uv` | 0 |
+| `flags` | `batt==0` → gut | 0x03 |
+
+---
+
+### T-9.2 Transform-Offline: PASSKEY-Ausschluss (UT, Security) 🔲
+
+**Infrastruktur:** keine
+
+**Methode:** `weather_from_ecowitt()` mit vollständigem Froggit-JSON (inkl. PASSKEY).
+
+**Erwartung:** `"PASSKEY"` kommt in keinem Key oder Value des Ergebnis-Dicts vor.
+PASSKEY darf auch nicht in Log-Ausgaben erscheinen.
+
+```python
+result = weather_from_ecowitt(topic, raw_with_passkey)
+assert "PASSKEY" not in str(result)
+assert "08124B0F" not in str(result)   # Wert-Fragment
+```
+
+---
+
+### T-9.3 Transform-Offline: Ecowitt → `encode_weather()` Roundtrip (UT) 🔲
+
+**Infrastruktur:** keine
+
+**Methode:** Transform-Ergebnis direkt an `encode_weather(**result)` übergeben.
+
+**Erwartung:** Kein `TypeError`, kein `ValueError`, `len(encoded) == 14`.
+
+Dies ist der Nachweis dass Transform-Output und Frame-Layer-Input kompatibel sind.
+
+---
+
+### T-9.4 Transform-Offline: `field_map` YAML-Konfiguration (UT) 🔲
+
+**Infrastruktur:** keine
+
+**Methode:** `SemanticMapping` mit einer `field_map`-Regel laden, einen eigenen
+Sensor-JSON durchleiten.
+
+```python
+yaml_rule = {
+    "topic": "eigener/sensor",
+    "frame_type": "WEATHER",
+    "transform": "field_map",
+    "field_map": {
+        "temp_c": "temp_aussen",
+        "humidity_pct": "feuchte",
+        "pressure_hpa": {"key": "luftdruck_raw", "scale": 0.1}
+    }
+}
+raw = {"temp_aussen": 14.2, "feuchte": 75, "luftdruck_raw": 10186}
+# Erwartung: temp_c=14.2, humidity_pct=75, pressure_hpa=1018.6
+```
+
+---
+
+### T-9.5 Transform-Offline: `SemanticMapping.map_inbound()` Topic-Routing (UT) 🔲
+
+**Infrastruktur:** keine
+
+**Methode:** Verschiedene Topics gegen die Mapping-Tabelle matchen.
+
+| Topic | Erwarteter FrameType | Erwarteter Transform |
+|---|---|---|
+| `homeassistant/sensor/outdoor/state` | `WEATHER` | `weather_from_ha_json` |
+| `froggit/gateway/data` | `WEATHER` | `weather_from_ecowitt` |
+| `aprs/position/OE3GAS` | `POSITION` | `position_from_aprs_json` |
+| `unbekannt/topic` | — | `None` (kein Match) |
+
+---
+
+### T-9.6 Transform-Offline: `SemanticMapping.map_outbound()` Topic-Template (UT) 🔲
+
+**Infrastruktur:** keine
+
+**Methode:** Simuliertes `RX_FRAME`-Dict durch `map_outbound()` leiten.
+
+**Erwartung:** WEATHER-Frame von OE3GAS → Topic `gust/rx/weather/OE3GAS`,
+Payload enthält `temp_c`, `_from: "OE3GAS"`, `_crc_ok: true`.
+Kein POSITION-Mapping für einen TEXT-Frame wenn nicht konfiguriert → `None`.
+
+---
+
+### T-9.7 Integration: MQTTConnector Outbound — öffentlicher Broker (IT) 🔲
+
+**Infrastruktur:** `test.mosquitto.org:1883` (Internet erforderlich)
+
+**Hinweis:** Nur synthetische Testdaten — kein PASSKEY, keine Echtstation.
+
+**Methode:**
+1. MQTTConnector starten, Subscriber auf `gust/rx/weather/#` einrichten
+2. `RX_FRAME`-Event (simulierter WEATHER-Frame OE3GAS) auf Event-Bus publizieren
+3. Subscriber empfängt Payload
+
+**Erwartung:** Payload auf `gust/rx/weather/OE3GAS`, `temp_c` korrekt, Roundtrip < 3 s.
+
+---
+
+### T-9.8 Integration: MQTTConnector Inbound — öffentlicher Broker (IT) 🔲
+
+**Infrastruktur:** `test.mosquitto.org:1883` (Internet erforderlich)
+
+**Methode:**
+1. MQTTConnector subscribt auf `froggit/test/data`
+2. Froggit-JSON per `paho` publizieren
+3. Event-Bus prüfen: `CONNECTOR_RX`-Event erscheint
+
+**Erwartung:** `CONNECTOR_RX`-Event enthält `frame_type=WEATHER`,
+`payload_dict["temp_c"] == 12.5`, `from_call == "OE3GAS"`.
+
+---
+
+### T-9.9 Integration: Vollständiger Roundtrip — lokaler amqtt-Broker (IT) 🔲
+
+**Infrastruktur:** `pip install amqtt` — kein Netzwerk, kein Systemdienst
+
+**Setup:** amqtt als pytest-Fixture auf Port 18830.
+
+**Ablauf:**
+```
+MQTT publish (Froggit-JSON auf froggit/gateway/data)
+  → MQTTConnector Inbound
+  → SemanticMapping.map_inbound() → WEATHER, payload_dict
+  → CONNECTOR_RX Event auf Bus
+  → TX-Queue → build_frame(WEATHER, "OE3GAS", encode_weather(...))
+  → RX_FRAME Event auf Bus
+  → MQTTConnector Outbound
+  → MQTT publish auf gust/rx/weather/OE3GAS
+```
+
+**Erwartung:** Subscriber empfängt auf `gust/rx/weather/OE3GAS`
+mit `temp_c: 12.5`. Vollständiger Weg Frame-frei von externem JSON
+bis zu MQTT-Ausgabe ohne direkten Frame-Layer-Aufruf im Test.
+
+---
+
+### T-9.10 ConnectorRegistry Start / Stop (UT) 🔲
+
+**Infrastruktur:** keine (Mocked MQTT-Client)
+
+**Methode:** Registry mit einem gemockten Connector starten und stoppen.
+
+**Erwartung:** `start_all()` und `stop_all()` werfen keine Exception,
+kein hängender Task in asyncio, sauberes Shutdown auch bei schnellem Stop.
 
 ---
 
@@ -236,8 +404,74 @@ unteren Bandkante, siehe BUG-06. Decode selbst einwandfrei.
 **Frequenzoffset HackRF → IC-7610:** konsistent −14 bis −20 Hz über alle Decodes,
 vom Refinement zuverlässig erfasst und kompensiert.
 
-### T-10.3 Kollisionstest mit OE1XTU (OA) 🔲
-Zwei Stationen, gleicher Kanal, Frameverlustrate messen.
+### T-10.3 Kollisionstest mit OE1XTU / OE3GAT (OA) 🔲
+
+**Ziel:** Empirisch messen wie sich GUST verhält wenn zwei Stationen gleichzeitig
+auf demselben Kanal senden — Frameverlustrate und Verhalten des deterministischen
+Hash-Schedulings unter realen Bedingungen.
+
+**Hintergrund:** GUST hat kein CSMA (kein Horchen vor dem Senden). Kollisionen
+entstehen wenn zwei Stationen zufällig im selben Zeitfenster senden. Der Hash-Schedule
+verteilt Stationen deterministisch — aber nur bei gleichem `interval_s`. Bei
+unterschiedlichen Intervallen oder manuell ausgelösten Frames ist Kollision jederzeit
+möglich.
+
+| Szenario | Beschreibung | Erwartung |
+|---|---|---|
+| A — Verschiedene Kanäle | Kontrollfall, kein Konflikt | 100 % Dekodierrate |
+| B — Gleicher Kanal, Versatz > 10 s | Hash-Schedule schützt | ≥ 80 % Dekodierrate |
+| C — Gleicher Kanal, erzwungen (≤ 2 s) | Absichtliche Überlappung | Dokumentation ohne Zielwert |
+
+**Aufbau:**
+```
+Station OE3GAS (Wien)               Station OE1XTU / OE3GAT (remote)
+  IC-7610                               beliebiger TRX
+  gust.py daemon --sim                  gust.py daemon --sim
+  14.110,000 MHz USB                    14.110,000 MHz USB
+  Kanal per Hash (OE3GAS → Kanal 2)    Kanal per Hash der Gegenstation
+  SDRplay RSPdx2 als RX-Monitor         eigener RX-Monitor
+```
+
+Beide Stationen benötigen: laufenden `gust.py daemon` mit aktivem RX-Loop,
+gleiche Dial-Frequenz (14.110,000 MHz USB), Web-GUI offen, Logging aktiv.
+
+**Phase 1 — Kontrollmessung, verschiedene Kanäle (15 min)**
+Beide Stationen senden auf ihren Hash-Kanälen — kein Eingriff.
+Baseline: Dekodierrate Frames gesendet vs. beim Gegenüber dekodiert.
+Erwartung: ≥ 95 %.
+
+**Phase 2 — Zufällige Kollision, gleicher Kanal (30 min)**
+Gegenstation wechselt manuell auf Kanal 2 (`gateway.json: channel: 2`),
+behält eigenen `time_offset`. Beide `interval_s = 300`. Kollisionen entstehen
+nur wenn Versatz zufällig < 5 s. Beobachtung über ~6 Zyklen.
+Erwartung: bei Versatz > 10 s keine Kollision, Dekodierrate ≥ 80 %.
+
+**Phase 3 — Erzwungene Kollision, One-Shot (~10 Versuche)**
+Koordiniert per Telefon/Chat: beide senden gleichzeitig (±2 s) per Web-GUI
+One-Shot Wetter-Frame auf Kanal 2. Pro Versuch dokumentieren:
+- Keiner dekodiert (beide Frames zerstört)
+- Einer dekodiert (stärkeres Signal gewinnt)
+- Beide dekodieren (Frames in verschiedenen Scan-Fenstern)
+
+**Messprotokoll (pro Versuch):**
+
+| Zeitstempel | Kanal | Station TX | Station RX | Ergebnis | SNR dB | Anmerkung |
+|---|---|---|---|---|---|---|
+| HH:MM:SS | 2 | OE3GAS | OE1XTU | ✓/✗ | — | |
+
+**Erfolgskriterien:**
+
+| Kriterium | Ziel |
+|---|---|
+| Dekodierrate Phase 1 (kein Konflikt) | ≥ 95 % |
+| Dekodierrate Phase 2 (Versatz > 10 s) | ≥ 80 % |
+| Dekodierrate Phase 3 (erzwungen ≤ 2 s) | Messung — kein Zielwert |
+| RS-FEC bei Kollision | Entweder sauber dekodiert oder CRC-Fail — kein falsches Ergebnis |
+
+**Erwartetes Ergebnis:** Das deterministische Hash-Scheduling reicht bei
+Telemetrie-Intervallen von 5 min und 8 Kanälen für den Praxisbetrieb aus.
+Das Ergebnis entscheidet, ob ein CSMA-Mechanismus für eine spätere Version
+nötig wäre.
 
 ### T-10.4 MeshCom End-to-End (OA) 🔲
 LoRa → GUST-Gateway → HF → Remote-Empfänger → MQTT-Echo.
@@ -300,6 +534,9 @@ LoRa → GUST-Gateway → HF → Remote-Empfänger → MQTT-Echo.
 # Alle automatisierten Tests Phase 5 (51 Tests)
 py test_phase5.py -v
 
+# Connector-Layer Transform-Tests (offline, kein Broker)
+py test_transforms.py -v
+
 # Frame-Layer Selbsttest (v0.3)
 py gust_frame.py
 
@@ -355,7 +592,9 @@ HackRF-TX-Offset: konstant, vom Decoder automatisch kompensiert.
 | Audacity | Spektrum-Verifikation WAV | ✅ |
 | inspectrum | MFSK-Muster CF32 | ✅ |
 | aiohttp (Python) | Web-Server + Test-Client | ✅ |
-| mosquitto | MQTT-Broker für T-9.x | 🔲 |
+| amqtt (Python, pip) | Lokaler In-Process-Broker für T-9.9 / pytest-Fixture | 🔲 |
+| test.mosquitto.org | Öffentlicher Testbroker für T-9.7/T-9.8 (kein Install) | ✅ |
+| mosquitto (System) | Optional: lokaler Systembroker (Produktionsbetrieb) | 🔲 |
 | rigctld (hamlib) | PTT IC-7610 | ✅ |
 | SDRplay RSPdx2 | RX-Referenz On-Air | ✅ |
 
@@ -363,5 +602,5 @@ HackRF-TX-Offset: konstant, vom Decoder automatisch kompensiert.
 
 *Dokument: gust_testplan.md*
 *Autor: OE3GAS*
-*Stand: Mai 2026 — Phase 7 Empfänger-Robustheit + SNR-Baseline (T-10.2) abgeschlossen*
+*Stand: Mai 2026 — Phase 7 Empfänger-Robustheit + SNR-Baseline (T-10.2) abgeschlossen; Modul 9 auf Connector Layer / MQTT (T-9.1–T-9.10) erweitert: 3-Ebenen-Teststrategie (offline / öffentlicher Broker / amqtt lokal)*
 *Gilt für: Phase 1–10*

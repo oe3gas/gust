@@ -62,6 +62,136 @@ try:
 except ImportError:
     from gust_weather import SimAdapter, create_adapter   # type: ignore
 
+# ── ANSI-Farben ────────────────────────────────────────────────────────
+_ANSI_RESET  = "\033[0m"
+_ANSI_GREY   = "\033[38;5;242m"
+_ANSI_GREEN  = "\033[32m"
+_ANSI_YELLOW = "\033[33m"
+_ANSI_BLUE   = "\033[34m"
+_ANSI_CYAN   = "\033[36m"
+_ANSI_RED    = "\033[31m"
+_ANSI_ORANGE = "\033[38;5;208m"
+_ANSI_BOLD   = "\033[1m"
+
+# ── Überschreibende Statuszeile ────────────────────────────────────────
+class _StatusLine:
+    """
+    Verwaltet eine einzelne überschreibbare Zeile am Ende der Terminal-Ausgabe.
+    Wird für periodische RX-Scan-Meldungen verwendet (\r ohne \n).
+    """
+    _active: str = ""
+    _enabled: bool = True
+
+    @classmethod
+    def write(cls, text: str) -> None:
+        """Statuszeile überschreibend ausgeben (kein Newline)."""
+        if not cls._enabled or not sys.stderr.isatty():
+            return
+        padded = ("  " + text).ljust(78)
+        sys.stderr.write("\r" + padded)
+        sys.stderr.flush()
+        cls._active = text
+
+    @classmethod
+    def clear(cls) -> None:
+        """Statuszeile löschen bevor eine normale Log-Zeile ausgegeben wird."""
+        if not cls._enabled or not sys.stderr.isatty():
+            return
+        if cls._active:
+            sys.stderr.write("\r" + " " * 80 + "\r")
+            sys.stderr.flush()
+            cls._active = ""
+
+
+# ── Farbiger Formatter ─────────────────────────────────────────────────
+class GustFormatter(logging.Formatter):
+    """
+    Farbiger CLI-Formatter für GUST.
+    - INFO-Meldungen: grün
+    - WARNING: orange, ERROR/CRITICAL: rot
+    - TX-Gateway-Meldungen: gelb mit TX ▶ Label
+    - RX-Frame-Meldungen:   blau  mit RX ◀ Label
+    - aiohttp.access: vollständig unterdrückt (WARNING gesetzt in setup_logging)
+    - Periodische RX-Scan-Heartbeats: überschreibende Statuszeile
+    """
+
+    _LEVEL_COLORS = {
+        logging.DEBUG:    _ANSI_GREY,
+        logging.INFO:     _ANSI_GREEN,
+        logging.WARNING:  _ANSI_ORANGE,
+        logging.ERROR:    _ANSI_RED,
+        logging.CRITICAL: _ANSI_RED + _ANSI_BOLD,
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        ts    = self.formatTime(record, "%H:%M:%S")
+        msg   = record.getMessage()
+        name  = record.name
+
+        # TX-Gateway-Ereignisse → gelb, kompaktes Label
+        if name == "gust.gateway" and "gesendet auf Kanal" in msg:
+            _StatusLine.clear()
+            label = f"{_ANSI_YELLOW}TX ▶   {_ANSI_RESET}"
+            # Komprimieren: 'TX-Gateway: WEATHER gesendet auf Kanal 2  (4.9s, Prio 4)'
+            compact = msg.replace("TX-Gateway: ", "").replace(" gesendet auf Kanal ", "  Kanal ")
+            return f"{_ANSI_GREY}{ts}{_ANSI_RESET}  {label}{_ANSI_YELLOW}{compact}{_ANSI_RESET}"
+
+        # RX-Frame-Ereignisse → blau, kompaktes Label
+        if "[RX] ✓ Frame" in msg:
+            _StatusLine.clear()
+            label = f"{_ANSI_BLUE}RX ◀   {_ANSI_RESET}"
+            # '[RX] ✓ Frame #3  von OE3GAT    [WEATHER   ]  Kanal 0  ...' → kürzen
+            compact = msg.replace("[RX] ✓ ", "")
+            return f"{_ANSI_GREY}{ts}{_ANSI_RESET}  {label}{_ANSI_BLUE}{compact}{_ANSI_RESET}"
+
+        # Periodischer RX-Heartbeat → Statuszeile (überschreibend, kein Newline)
+        if "[RX]" in msg and "Scans ohne Frame" in msg:
+            _StatusLine.write(f"{_ANSI_GREY}{ts}  ▸ {msg}{_ANSI_RESET}")
+            return ""   # leerer String → kein normaler Log-Output
+
+        # DRY-RUN TX → cyan
+        if "DRY-RUN" in msg:
+            _StatusLine.clear()
+            return (f"{_ANSI_GREY}{ts}{_ANSI_RESET}  "
+                    f"{_ANSI_CYAN}DRY    {_ANSI_RESET}{_ANSI_CYAN}{msg}{_ANSI_RESET}")
+
+        # Standard: INFO grün, WARNING orange, ERROR rot
+        _StatusLine.clear()
+        color = self._LEVEL_COLORS.get(record.levelno, "")
+        level = f"{color}{record.levelname:<7}{_ANSI_RESET}"
+        # Logger-Name: nur letzten Teil ('gust.web' → 'web', 'gust' → 'gust')
+        short_name = name.split(".")[-1] if "." in name else name
+        return (f"{_ANSI_GREY}{ts}{_ANSI_RESET}  {level} "
+                f"{_ANSI_GREY}{short_name:<12}{_ANSI_RESET} {msg}")
+
+
+# ── Gefilterte Handler-Klasse ──────────────────────────────────────────
+class _SkipEmptyFilter(logging.Filter):
+    """Unterdrückt Log-Records mit leerem source-Message-String (belt-and-suspenders)."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        return bool(record.getMessage())
+
+
+class _GustStreamHandler(logging.StreamHandler):
+    """
+    StreamHandler der nichts ausgibt wenn der Formatter einen leeren String
+    zurückgibt. Notwendig für den RX-Heartbeat: GustFormatter.format() gibt
+    dort "" zurück (Seiteneffekt: _StatusLine.write() malt die \r-Zeile),
+    aber StreamHandler.emit() würde sonst "" + "\n" schreiben — eine
+    Leerzeile nach dem \r, die die überschreibende Statuszeile zerstört.
+    """
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            if not msg:
+                return
+            stream = self.stream
+            stream.write(msg + self.terminator)
+            self.flush()
+        except Exception:
+            self.handleError(record)
+
+
 log = logging.getLogger("gust")
 
 VERSION = "0.1.0"
@@ -154,18 +284,44 @@ def _deep_merge(base: dict, override: dict) -> dict:
 # ═══════════════════════════════════════════════════════════════════════
 
 def setup_logging(verbose: bool, bus: Optional[EventBus] = None) -> None:
-    """Python-Logging konfigurieren, optional in EventBus einspeisen."""
+    """
+    Python-Logging konfigurieren.
+    - Farbiger GustFormatter für Terminal-Ausgabe
+    - aiohttp.access auf WARNING → kein HTTP-Poll-Spam
+    - aiohttp.server auf WARNING → kein Connection-Spam
+    - Optionaler EventBus-Handler für Web-GUI /ws/log
+    """
     level = logging.DEBUG if verbose else logging.INFO
-    fmt   = "%(asctime)s  %(levelname)-7s %(name)s — %(message)s"
-    logging.basicConfig(level=level, format=fmt, datefmt="%H:%M:%S")
+
+    # Root-Logger: GustFormatter auf stderr
+    root = logging.getLogger()
+    root.setLevel(level)
+
+    if not root.handlers:
+        handler = _GustStreamHandler(sys.stderr)
+        handler.setFormatter(GustFormatter())
+        handler.addFilter(_SkipEmptyFilter())
+        root.addHandler(handler)
+    else:
+        # basicConfig wurde bereits aufgerufen — Handler ersetzen
+        root.handlers.clear()
+        handler = _GustStreamHandler(sys.stderr)
+        handler.setFormatter(GustFormatter())
+        handler.addFilter(_SkipEmptyFilter())
+        root.addHandler(handler)
+
+    # aiohttp-Spam unterdrücken
+    logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
+    logging.getLogger("aiohttp.server").setLevel(logging.WARNING)
+    logging.getLogger("aiohttp.web").setLevel(logging.WARNING)
 
     if bus is not None:
         loop    = asyncio.get_event_loop()
-        handler = EventBusLogHandler(bus)
-        handler.set_loop(loop)
-        handler.setLevel(logging.INFO)
-        logging.getLogger("gust").addHandler(handler)
-        logging.getLogger("demo").addHandler(handler)
+        eb_handler = EventBusLogHandler(bus)
+        eb_handler.set_loop(loop)
+        eb_handler.setLevel(logging.INFO)
+        logging.getLogger("gust").addHandler(eb_handler)
+        logging.getLogger("demo").addHandler(eb_handler)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -191,27 +347,57 @@ def _channel_info(callsign: str, n_channels: int = 10,
 
 
 def _print_banner(cfg: dict, mode: str) -> None:
-    cs  = cfg["callsign"]
-    ci  = _channel_info(cs, interval=cfg["gateway"]["interval_s"])
-    om, os_ = divmod(ci["offset_s"], 60)
-    im  = ci["interval_s"] // 60
-    port = cfg["web"]["port"]
-    _mode_pad  = max(0, 32 - len(mode))
-    _freq_str  = f"{ci['nf_lo']}\u2013{ci['nf_hi']} Hz NF"
-    _freq_pad  = max(0, 20 - len(_freq_str))
-    _off_str   = f"+{om}m {os_:02d}s  (Schedule: {im} min)"
-    _off_pad   = max(0, 16 - len(_off_str))
-    _port_pad  = max(0, 21 - len(str(port)))
+    cs       = cfg["callsign"]
+    ci       = _channel_info(cs, interval=cfg["gateway"]["interval_s"])
+    om, os_  = divmod(ci["offset_s"], 60)
+    im       = ci["interval_s"] // 60
+    port     = cfg["web"]["port"]
+    freq_str = f"{ci['nf_lo']}–{ci['nf_hi']} Hz NF"
+    off_str  = f"+{om}m {os_:02d}s  (Schedule: {im} min)"
+    url_str  = f"http://localhost:{port}"
+
+    W  = 76   # Textfeld-Breite: 80 gesamt − 2×║ − 2 Leerzeichen Einzug = 76 (Box-Rand bündig)
+    HR = '╠' + '═' * 78 + '╣'
+    def row(text): return f'║  {text:<{W}}║'
+
     print(f"""
-╔══════════════════════════════════════════════════════╗
-║  GUST  v{VERSION}   [{mode}]{"" :>{_mode_pad}}║
-╠══════════════════════════════════════════════════════╣
-║  Rufzeichen : {cs:<38}║
-║  Kanal      : {ci['channel']}  ({_freq_str}){"":<{_freq_pad}}║
-║  TX-Offset  : {_off_str}{"":<{_off_pad}}║
-║  Web-UI     : http://localhost:{port}{"":<{_port_pad}}║
-║  Stoppen    : Strg+C{"":<32}║
-╚══════════════════════════════════════════════════════╝
+╔{'═'*78}╗
+{row(f'GUST  v{VERSION}   [{mode}]')}
+{HR}
+{row(f'Rufzeichen : {cs}')}
+{row(f'Kanal      : {ci["channel"]}  ({freq_str})')}
+{row(f'TX-Offset  : {off_str}')}
+{row(f'Web-UI     : {url_str}')}
+{row('Stoppen    : Strg+C')}
+{HR}
+{row('Aufrufe:')}
+{row('')}
+{row('  gust.py daemon')}
+{row('    TX + RX Vollbetrieb mit echter Hardware (Transceiver + Audio)')}
+{row('')}
+{row('  gust.py daemon --sim')}
+{row('    Wie daemon, aber SimAdapter speist synthetische Frames ein —')}
+{row('    kein echtes HF-Signal nötig, ideal zum Testen der Web-GUI')}
+{row('')}
+{row('  gust.py daemon --dry-run')}
+{row('    TX-Pipeline vollständig aktiv, aber kein Audio/PTT-Ausgang —')}
+{row('    Frame-Erzeugung und Scheduling testbar ohne Sender')}
+{row('')}
+{row('  gust.py daemon --sim --dry-run')}
+{row('    Kombination: SimAdapter + kein TX — reine Software-Simulation')}
+{row('')}
+{row('  gust.py rx')}
+{row('    Nur Empfang + Web-UI, kein TX-Gateway gestartet')}
+{row('')}
+{row('  gust.py tx weather / position / text / emergency')}
+{row('    Einmaliger One-Shot TX, danach beenden')}
+{row('')}
+{row('  gust.py info [RUFZEICHEN]')}
+{row('    Kanal + TX-Offset für ein Rufzeichen anzeigen')}
+{row('')}
+{row('  gust.py devices')}
+{row('    Verfügbare Audiogeräte mit IDs auflisten')}
+╚{'═'*78}╝
 """)
 
 
@@ -263,8 +449,11 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
     await gateway.start()
     await asyncio.sleep(0.1)   # EventBus-Reader Zeit zum Subscriben geben
 
-    _print_banner(cfg, f"DAEMON {'DRY-RUN' if dry_run else source_label}")
-    log.info("Daemon gestartet. Quelle: %s", source_label)
+    _mode_badges = ["DAEMON"]
+    if use_sim:  _mode_badges.append("SIM")
+    if dry_run:  _mode_badges.append("DRY-RUN")
+    _print_banner(cfg, " · ".join(_mode_badges))
+    log.info("Daemon gestartet. Modus: %s", " · ".join(_mode_badges))
 
     # ── Haupt-Loop ────────────────────────────────────────────────────
     start_time  = time.time()
@@ -563,7 +752,12 @@ async def cmd_tx(cfg: dict, frame_type: str,
         print(f"\n  ✗  Payload-Fehler: {e}", file=sys.stderr)
         return
 
-    # ── PTT-Backend + AudioTransmitter ────────────────────────────────
+    # ── TX-Pfad wählen: SDR (SoapySDR) oder NF-Audio ─────────────────
+    sdr_cfg = cfg.get("sdr_tx") or {}
+    if sdr_cfg.get("enabled"):
+        await _tx_via_sdr(cs, frame_type_int, payload, sdr_cfg)
+        return
+
     try:
         from gust_audio import AudioTransmitter, AUDIO_LEVEL
         from gust_frame  import channel_frequency, CHANNEL_BW_HZ
@@ -612,6 +806,80 @@ async def cmd_tx(cfg: dict, frame_type: str,
         print(f"\n  ✗  TX-Fehler: {e}", file=sys.stderr)
     except Exception as e:
         print(f"\n  ✗  Unerwarteter Fehler beim TX: {e}", file=sys.stderr)
+
+
+async def _tx_via_sdr(callsign: str, frame_type_int: int, payload: bytes,
+                       sdr_cfg: dict) -> None:
+    """
+    TX via generischen SoapySDR-Pfad (P7-04 / ADR-16). Wird aus cmd_tx()
+    aufgerufen, wenn `sdr_tx.enabled` in gateway.json gesetzt ist.
+
+    Frame-Layer + Modulator bleiben unverändert — `transmit()` liefert das
+    fertige NF-Audio, das wir hier in IQ konvertieren und über
+    `SoapyTxBackend.transmit_iq()` ausgeben.
+    """
+    try:
+        from gust_modulator import transmit, SAMPLE_RATE
+        from gust_frame      import channel_frequency, CHANNEL_BW_HZ
+        from gust_hackrf     import nf_to_iq_usb
+        from gust_soapy_tx   import SoapyTxBackend, soapy_available
+
+        if not soapy_available():
+            print("\n  ✗  SDR-TX aktiv, aber SoapySDR-Bindings fehlen.\n"
+                  "      Entweder Python 3.9 + PothosSDR verwenden oder "
+                  "`sdr_tx.enabled: false` in gateway.json setzen.",
+                  file=sys.stderr)
+            return
+
+        device_args = sdr_cfg.get("device_args") or {}
+        if not device_args.get("driver"):
+            print("\n  ✗  sdr_tx.device_args.driver fehlt — bitte im Web-UI "
+                  "ein Gerät auswählen oder Konfig anpassen.", file=sys.stderr)
+            return
+
+        sample_rate = int(sdr_cfg.get("sample_rate", 2_000_000))
+        freq_hz     = float(sdr_cfg.get("freq_hz",     14_110_000))
+        antenna     = sdr_cfg.get("antenna")    or None
+        gain        = sdr_cfg.get("gain")       or {"normalized": 0.5}
+        tx_channel  = int(sdr_cfg.get("tx_channel", 0))
+
+        # NF-Audio + Kanal genau wie im Audio-Pfad erzeugen
+        audio, used_ch, frame_body = transmit(
+            frame_type_int, callsign, payload,
+            channel=None, use_fec=True, window=True, add_silence_ms=100,
+        )
+
+        print(f"\n  TX startet (SDR via SoapySDR) …")
+        print(f"  Gerät:       {sdr_cfg.get('label') or device_args}")
+        print(f"  Sample-Rate: {sample_rate/1e6:.3f} MSps")
+        print(f"  Frequenz:    {freq_hz/1e6:.6f} MHz (USB-Dial)")
+        print(f"  Antenne:     {antenna or '(Default)'}")
+        print(f"  Gain:        {gain}")
+        print(f"  Kanal:       {used_ch}  ({channel_frequency(used_ch):.0f} Hz NF)")
+
+        loop = asyncio.get_event_loop()
+        # NF→IQ und das blockierende setupStream/writeStream im Executor
+        def _do_tx():
+            iq = nf_to_iq_usb(audio, sample_rate)
+            with SoapyTxBackend(
+                device_args=device_args,
+                freq_hz=freq_hz,
+                sample_rate=sample_rate,
+                channel=tx_channel,
+                antenna=antenna,
+                gain=gain,
+            ) as tx:
+                tx.transmit_iq(iq)
+        await loop.run_in_executor(None, _do_tx)
+
+        f_lo = channel_frequency(used_ch)
+        print(f"\n  ✓  Gesendet via SDR auf Kanal {used_ch}  "
+              f"({f_lo:.0f}–{f_lo + CHANNEL_BW_HZ:.0f} Hz NF)\n")
+
+    except RuntimeError as e:
+        print(f"\n  ✗  SDR-TX-Fehler: {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"\n  ✗  Unerwarteter SDR-TX-Fehler: {e}", file=sys.stderr)
 
 
 # ═══════════════════════════════════════════════════════════════════════

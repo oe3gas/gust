@@ -355,6 +355,7 @@ h2:first-child { margin-top: 0; }
   border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; color: var(--orange);
   font-size: var(--fs-sm); }
 .tx-unavailable.hidden { display: none; }
+.hidden { display: none; }
 .tx-unavailable code { background: var(--bg3); color: var(--text); padding: 1px 6px;
   border-radius: 3px; font-family: var(--ui-font); }
 /* Senden-Tab im Monitor-Modus: Bedienelemente sichtbar deaktiviert */
@@ -792,6 +793,21 @@ h2:first-child { margin-top: 0; }
       <span id="text-frame-count">1 Frame</span>
       <span id="text-remaining"></span>
     </div>
+    <div id="qso-mode-row" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;
+         padding:7px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg2);
+         font-size:var(--fs-sm);">
+      <label class="toggle-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
+        <input type="checkbox" id="qso-mode-toggle" onchange="toggleQsoMode(this.checked)">
+        <span>⚡ QSO-Modus (60 s / Fragment)</span>
+      </label>
+      <span id="qso-mode-hint" style="color:var(--text2);font-size:var(--fs-xs);">
+        Schedule-Intervall: <span id="qso-interval-display">300 s</span>
+      </span>
+    </div>
+    <div id="qso-mode-warning" class="hidden" style="font-size:var(--fs-xs);color:var(--orange,#d97706);
+         margin-bottom:8px;padding:4px 8px;border-radius:3px;border:1px solid var(--orange,#d97706);">
+      ⚠ QSO-Modus aktiv — nur bei interaktivem Betrieb verwenden. Für automatischen Betrieb deaktivieren.
+    </div>
     <div style="display:flex;gap:8px;align-items:center;">
       <button class="btn" onclick="sendTx('text')">Text senden</button>
       <button class="btn secondary" type="button" onclick="clearForm('text')">Löschen</button>
@@ -830,7 +846,13 @@ h2:first-child { margin-top: 0; }
 
   <div id="tx-result"></div>
 
-  <h2 style="margin-top:20px;">TX-Warteschlange</h2>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;margin-bottom:6px;">
+    <h2 style="margin:0;">TX-Warteschlange</h2>
+    <button id="btn-clear-queue" class="btn secondary" style="font-size:var(--fs-xs);padding:4px 10px;"
+            onclick="clearTxQueue()" title="Alle ausstehenden Frames löschen">
+      ✕ Warteschlange löschen
+    </button>
+  </div>
   <div id="tx-queue">
     <div class="txq-empty">Warteschlange leer — keine ausstehenden Frames</div>
   </div>
@@ -957,6 +979,18 @@ h2:first-child { margin-top: 0; }
   <!-- ── Unterseite: Transceiver (Hamlib) ── -->
   <div id="cfg-hamlib" class="cfg-subpanel">
     <div class="audio-cfg-card">
+      <!-- TRX-Profil-Auswahl — nur sichtbar wenn trx_profiles vorhanden -->
+      <div id="trx-profile-row" class="audio-cfg-row hidden" style="margin-bottom:12px;">
+        <label>TRX-Profil</label>
+        <select id="trx-profile-select" onchange="onTrxProfileChange(this.value)"
+                style="flex:1;">
+        </select>
+        <button class="btn" style="flex-shrink:0;padding:5px 12px;"
+                onclick="activateTrxProfile()">✓ Aktivieren</button>
+      </div>
+      <div id="trx-profile-active" style="font-size:var(--fs-xs);color:var(--text2);
+           margin-bottom:10px;display:none;">
+      </div>
       <div class="hamlib-status-row" id="hamlib-status-row" style="display:none;margin-bottom:12px;">
         <div class="hamlib-status-dot" id="hamlib-status-dot"></div>
         <span id="hamlib-status-text"></span>
@@ -1187,6 +1221,7 @@ const state = {
   wsLog:      null,
   wsRetryTimer: null,
   txInterval: 300,    // TX-Schedule-Intervall in Sekunden (aus /api/status)
+  qsoMode:    false,  // QSO-Modus: 60 s Fragment-Intervall statt txInterval
   txOffset:   0,      // Zeitversatz dieses Rufzeichens innerhalb des TX-Schedules
   txQueue:    [],     // ausstehende TX-Frames (aus /api/tx/queue) — wird alle 5s überschrieben!
   isSending:  false,  // true während eines laufenden TX (TRX-Monitor-Schutz)
@@ -1425,11 +1460,12 @@ async function sendTx(type) {
     const seqNr   = Math.floor(Math.random() * 256);   // gemeinsame Sequenznummer
 
     if (nFrames > 1) {
-      const ivSec = state.txInterval || 300;
+      const ivSec = state.qsoMode ? 60 : (state.txInterval || 300);
       const mins  = Math.round((nFrames * ivSec) / 60);
+      const modeStr = state.qsoMode ? ' (QSO-Modus, 60 s/Fragment)' : ' (Standard-Schedule)';
       const ok = confirm(
         'Diese Nachricht wird mit ' + nFrames + ' Frames gesendet.\n' +
-        'Nach deinem Schedule dauert das ca. ' + mins + ' Minuten.\n\n' +
+        'Intervall' + modeStr + ': ca. ' + mins + ' Minuten.\n\n' +
         'Die Frames werden einzeln je Schedule-Slot gesendet.\nTrotzdem senden?'
       );
       if (!ok) return;
@@ -1520,6 +1556,22 @@ async function savePttDelay() {
     res.textContent   = '✗ Fehler: ' + e.message;
   }
   setTimeout(() => { if(res) res.style.display='none'; }, 4000);
+}
+
+// ═══════════════════════════ QSO-MODUS ════════════════════════
+// QSO-Modus verkürzt das Fragment-Intervall auf 60 s (statt txInterval).
+// DESIGNENTSCHEIDUNG (gust_spec.md §3.4 / §6.2):
+//   Nur über das Web-UI aktivierbar — bewusst nicht in gateway.json oder API.
+//   Für automatischen Betrieb (Baken, Telemetrie) ist dieser Modus nicht
+//   vorgesehen; er dient ausschließlich der interaktiven Ham-Kommunikation.
+function toggleQsoMode(enabled) {
+  state.qsoMode = enabled;
+  const warning  = document.getElementById('qso-mode-warning');
+  const display  = document.getElementById('qso-interval-display');
+  const ivActive = enabled ? 60 : state.txInterval;
+  if (warning) warning.classList.toggle('hidden', !enabled);
+  if (display) display.textContent = enabled ? '60 s ⚡' : (state.txInterval + ' s');
+  _tickTxCountdown();
 }
 
 // ═══════════════════════ TX-FRAGMENT-SCHEDULING ═══════════════
@@ -2043,6 +2095,7 @@ async function loadHamlibConfig() {
   } catch(e) {
     document.getElementById('cfg-hamlib-status').textContent = '✗ ' + e.message;
   }
+  loadTrxProfiles();
 }
 
 async function saveHamlibConfig() {
@@ -2080,10 +2133,78 @@ async function saveHamlibConfig() {
 
     statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
     statusEl.textContent = (r.ok ? '✓ ' : '✗ ') + (r.message || r.error || '');
-    if (r.ok) { loadStatus(); testHamlibConnection(); }
+    if (r.ok) { loadStatus(); testHamlibConnection(); loadTrxProfiles(); }
   } catch(e) {
     statusEl.style.color = 'var(--red)';
     statusEl.textContent = '✗ ' + e.message;
+  }
+}
+
+// ═══════════════════════ TRX-PROFILE ══════════════════════
+// Lädt trx_profiles aus /api/config und befüllt das Dropdown.
+// Wird beim Laden des Hamlib-Tabs aufgerufen.
+function loadTrxProfiles() {
+  apiFetch('/api/config').then(cfg => {
+    const profiles = cfg.trx_profiles || [];
+    const active   = cfg.active_trx_profile || '';
+    const row      = document.getElementById('trx-profile-row');
+    const sel      = document.getElementById('trx-profile-select');
+    const info     = document.getElementById('trx-profile-active');
+    if (!profiles.length) {
+      if (row)  row.classList.add('hidden');
+      if (info) info.style.display = 'none';
+      return;
+    }
+    if (row) row.classList.remove('hidden');
+    if (sel) {
+      sel.innerHTML = profiles.map(p =>
+        `<option value="${_esc(p.name)}" ${p.name === active ? 'selected' : ''}>
+           ${_esc(p.name)}
+         </option>`
+      ).join('');
+    }
+    if (info && active) {
+      info.style.display = 'block';
+      info.textContent   = `Aktives Profil: ${active}`;
+    }
+  }).catch(() => {});
+}
+
+function onTrxProfileChange(name) {
+  const info = document.getElementById('trx-profile-active');
+  if (info) info.textContent = `Auswahl: ${name} — noch nicht aktiviert`;
+}
+
+async function activateTrxProfile() {
+  const sel      = document.getElementById('trx-profile-select');
+  const statusEl = document.getElementById('cfg-hamlib-status');
+  const name     = sel?.value;
+  if (!name) return;
+  try {
+    const r = await apiFetch('/api/trx/activate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name }),
+    });
+
+    // Port-Konflikt — gleiche Behandlung wie saveHamlibConfig (Kill-Dialog)
+    if (!r.ok && r.conflict) {
+      if (statusEl) { statusEl.style.color = 'var(--orange)'; statusEl.textContent = '⚠ ' + r.message; }
+      _showHamlibConflictDialog(r.pid, r.proc_name, r.port);
+      return;
+    }
+
+    if (statusEl) {
+      statusEl.style.color   = r.ok ? 'var(--green)' : 'var(--red)';
+      statusEl.textContent   = (r.ok ? '✓ ' : '✗ ') + (r.message || r.error || '');
+    }
+    if (r.ok) {
+      const info = document.getElementById('trx-profile-active');
+      if (info) { info.style.display = 'block'; info.textContent = `Aktives Profil: ${name}`; }
+      loadHamlibConfig();   // Formularfelder mit neuem Profil befüllen
+    }
+  } catch(e) {
+    if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = '✗ ' + e.message; }
   }
 }
 
@@ -3086,6 +3207,9 @@ function applyStatusPush(data) {
     const mins = Math.round(state.txInterval / 60);
     const el = document.getElementById('p4-interval');
     if (el) el.textContent = mins > 1 ? `${mins} min` : `${state.txInterval} s`;
+    // QSO-Modus-Anzeige synchronisieren (Intervall kann sich durch Status-Push ändern)
+    const qsoDisp = document.getElementById('qso-interval-display');
+    if (qsoDisp && !state.qsoMode) qsoDisp.textContent = state.txInterval + ' s';
     _tickTxCountdown();
   }
   if (data.ptt_delay_ms != null) {
@@ -3111,6 +3235,12 @@ function applyTxAvailability(avail) {
 // Der Schedule ist deterministisch: offset = SHA256(rufzeichen) % interval.
 // Beide Gruppen P4 und P3 teilen denselben TX-Schedule.
 function _nextCycleSecs() {
+  // Im QSO-Modus: festes 60-s-Raster (kein Offset-Phasenversatz nötig)
+  if (state.qsoMode) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const delta  = 60 - (nowSec % 60);
+    return delta <= 2 ? delta + 60 : delta;   // < 2 s bis Slot → nächsten nehmen
+  }
   const iv  = state.txInterval || 300;
   const off = state.txOffset   || 0;
   const nowInCycle = Math.floor(Date.now() / 1000) % iv;
@@ -3237,6 +3367,30 @@ const TXQ_META = {
   64:   {icon:'💬', label:'Text-Fragment', prio:2},
   3:  {icon:'🆘', label:'Notfall',       prio:1},
 };
+
+async function clearTxQueue() {
+  const btn = document.getElementById('btn-clear-queue');
+  if (!confirm('Alle ausstehenden TX-Frames löschen?')) return;
+  try {
+    if (btn) btn.disabled = true;
+    const r = await apiFetch('/api/tx/queue', { method: 'DELETE' });
+    const el = document.getElementById('tx-result');
+    if (el) {
+      el.className = 'ok'; el.style.display = 'block';
+      el.textContent = '✓ ' + (r.message || 'Warteschlange gelöscht.');
+      setTimeout(() => el.style.display = 'none', 3000);
+    }
+    fetchTxQueue();
+  } catch(e) {
+    const el = document.getElementById('tx-result');
+    if (el) {
+      el.className = 'err'; el.style.display = 'block';
+      el.textContent = '✗ Fehler: ' + e.message;
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
 
 async function fetchTxQueue() {
   try {
@@ -3528,7 +3682,9 @@ class WebServer:
         app.router.add_post("/api/tx/text",      self._handle_tx_text)
         app.router.add_post("/api/tx/text_fragment", self._handle_tx_text_fragment)
         app.router.add_post("/api/tx/emergency", self._handle_tx_emergency)
-        app.router.add_get ("/api/tx/queue",     self._handle_tx_queue)
+        app.router.add_get   ("/api/tx/queue",       self._handle_tx_queue)
+        app.router.add_delete("/api/tx/queue",       self._handle_tx_queue_clear)
+        app.router.add_post  ("/api/trx/activate",    self._handle_trx_activate)
         app.router.add_get ("/api/audio/devices", self._handle_audio_devices)
         app.router.add_get ("/api/audio/config",  self._handle_audio_config_get)
         app.router.add_post("/api/audio/config",  self._handle_audio_config_post)
@@ -3595,6 +3751,8 @@ class WebServer:
             "ptt_delay_ms":      self._config.get("audio", {}).get("ptt_delay_ms", 250),
             "tx_interval_s":     tx_interval,
             "tx_time_offset_s":  tx_offset,
+            "active_trx_profile": self._config.get("active_trx_profile", ""),
+            "trx_profile_count":  len(self._config.get("trx_profiles", [])),
             "version":           "0.1.0",
         }
         # Gateway-Status einmischen wenn verfügbar
@@ -3792,6 +3950,91 @@ class WebServer:
             except Exception as exc:
                 log.debug("Gateway.get_queue() Fehler: %s", exc)
         return web.json_response({"queue": queue, "now": time.time()})
+
+    async def _handle_tx_queue_clear(self, request: web.Request) -> web.Response:
+        """DELETE /api/tx/queue — alle ausstehenden TX-Frames löschen."""
+        if self._gateway is None:
+            return web.json_response(
+                {"error": "Kein TX-Gateway aktiv (Monitor-Modus?)."},
+                status=503,
+            )
+        n = self._gateway.clear_queue()
+        log.info("TX-Queue via Web-UI gelöscht (%d Frame(s)).", n)
+        return web.json_response({"cleared": n, "message": f"{n} Frame(s) gelöscht."})
+
+    async def _handle_trx_activate(self, request: web.Request) -> web.Response:
+        """
+        POST /api/trx/activate — TRX-Profil aktivieren.
+        Body: {"name": "IC-7610"}
+        Übernimmt Profilwerte in rigctld- und audio-Block, speichert gateway.json.
+        """
+        if self._config_path is None:
+            raise web.HTTPBadRequest(
+                text='{"error":"Schreiben nicht aktiviert."}',
+                content_type="application/json")
+        try:
+            body = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text='{"error":"Ungültiger JSON-Body"}',
+                content_type="application/json")
+
+        name = str(body.get("name", "")).strip()
+        if not name:
+            raise web.HTTPBadRequest(
+                text='{"error":"name erforderlich"}',
+                content_type="application/json")
+
+        profiles = self._config.get("trx_profiles", [])
+        profile  = next((p for p in profiles if p.get("name") == name), None)
+        if profile is None:
+            return web.json_response(
+                {"ok": False, "error": f"Profil '{name}' nicht gefunden."},
+                status=404)
+
+        async with self._config_write_lock:
+            # Profilwerte in aktive Konfiguration übernehmen
+            self._config["active_trx_profile"] = name
+            if profile.get("ptt_backend") == "hamlib":
+                self._config.setdefault("rigctld", {})
+                self._config["rigctld"].update({
+                    "auto_start": profile.get("auto_start", True),
+                    "rig_model":  profile.get("rig_model"),
+                    "device":     profile.get("device"),
+                    "baud":       profile.get("baud", 19200),
+                    "host":       "localhost",
+                    "port":       4532,
+                })
+            audio = dict(self._config.get("audio") or {})
+            audio["ptt_backend"] = profile.get("ptt_backend", "null")
+            if profile.get("audio_device") is not None:
+                audio["device"] = profile["audio_device"]
+            self._config["audio"] = audio
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None, self._save_config_atomic)
+            except Exception as exc:
+                log.error("TRX-Profil speichern fehlgeschlagen: %s", exc)
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"Schreiben fehlgeschlagen: {exc}"}}',
+                    content_type="application/json")
+
+        log.info("TRX-Profil aktiviert: %s", name)
+
+        # Conflict-aware rigctld-Restart über den gemeinsamen Flow, wenn das
+        # aktivierte Profil Hamlib + auto_start nutzt (sonst nur Config-Wechsel).
+        if (profile.get("ptt_backend") == "hamlib"
+                and profile.get("auto_start", True)):
+            return await self._restart_or_report_conflict(
+                profile.get("rig_model"),
+                profile.get("device"),
+                profile.get("baud", 19200))
+
+        return web.json_response({
+            "ok": True,
+            "message": f"Profil '{name}' aktiviert.",
+            "profile": profile,
+        })
 
     async def _enqueue_tx(self, request: web.Request,
                           frame_type: str, priority: int) -> web.Response:
@@ -4355,6 +4598,54 @@ class WebServer:
             log.debug("_find_port_owner Fehler: %s", exc)
         return None
 
+    def _managed_rigctld_pid(self) -> "int | None":
+        """PID des von GUST gestarteten rigctld, sofern noch laufend.
+
+        Quellen in dieser Reihenfolge: der Web-Server selbst (Start/Tune/Restart
+        via GUI) und das TX-Gateway (build_ptt im TX-Pfad startet rigctld bei der
+        ersten Sendung, ohne dass die GUI direkt beteiligt ist). Gibt None zurück,
+        wenn GUST keinen lebenden eigenen rigctld kennt.
+        """
+        for proc in (self._rigctld_proc,
+                     getattr(self._gateway, "_rigctld_proc", None)):
+            if proc is not None and proc.poll() is None:
+                return proc.pid
+        return None
+
+    async def _restart_or_report_conflict(self, rig_model, device, baud) -> web.Response:
+        """Port-Konflikt prüfen, dann rigctld (neu) starten — gemeinsamer Flow.
+
+        Genutzt von _handle_hamlib_config und _handle_trx_activate:
+        - Fremdprozess belegt den Port → conflict-Response (GUI fragt User).
+        - Eigener rigctld (GUI/Tune/Gateway) oder Port frei → _do_rigctld_restart.
+        """
+        _, target_port = self._hamlib_endpoint()
+        owner = self._find_port_owner(target_port)
+        if owner is not None:
+            # Prüfen ob der belegende Prozess unser eigener rigctld ist
+            # (GUI-Start/Tune/Restart ODER vom TX-Gateway gestartet).
+            own_pid = self._managed_rigctld_pid()
+            if own_pid is not None and owner["pid"] == own_pid:
+                # Eigener rigctld — still neu starten, kein Konflikt-Dialog
+                log.info("rigctld (PID %d) ist GUST-eigener Prozess — "
+                         "wird still neu gestartet.", own_pid)
+                return await self._do_rigctld_restart(rig_model, device, baud)
+            # Fremdprozess belegt den Port — User fragen
+            return web.json_response({
+                "ok":      False,
+                "conflict": True,
+                "pid":      owner["pid"],
+                "proc_name": owner["name"],
+                "port":     target_port,
+                "message":  (
+                    f"Port {target_port} wird von '{owner['name']}' "
+                    f"(PID {owner['pid']}) belegt. "
+                    f"Soll dieser Prozess beendet und rigctld neu gestartet werden?"
+                ),
+            })
+        # Port frei — direkt starten
+        return await self._do_rigctld_restart(rig_model, device, baud)
+
     async def _handle_hamlib_config(self, request: web.Request) -> web.Response:
         """
         POST /api/hamlib/config — rigctld-Block + PTT-Backend in gateway.json.
@@ -4394,9 +4685,12 @@ class WebServer:
                 text='{"error":"device (serieller Port) erforderlich"}',
                 content_type="application/json")
 
+        profile_created = None
         async with self._config_write_lock:
-            old_rig   = self._config.get("rigctld")
-            old_audio = dict(self._config.get("audio") or {})
+            old_rig      = self._config.get("rigctld")
+            old_audio    = dict(self._config.get("audio") or {})
+            old_profiles = self._config.get("trx_profiles")
+            old_active   = self._config.get("active_trx_profile")
             self._config["rigctld"] = {
                 "auto_start": auto_start,
                 "rig_model":  rig_model,
@@ -4410,6 +4704,24 @@ class WebServer:
             audio["hamlib_host"] = "localhost"
             audio["hamlib_port"] = 4532
             self._config["audio"] = audio
+
+            # Erstes Speichern: automatisch als Profil anlegen falls noch kein
+            # trx_profiles-Array existiert (Rückwärtskompatibilität / Onboarding).
+            # In derselben gesperrten, atomaren Schreiboperation wie oben.
+            if not self._config.get("trx_profiles"):
+                first_profile = {
+                    "name":         device or "TRX-1",
+                    "rig_model":    rig_model,
+                    "device":       device,
+                    "baud":         baud,
+                    "audio_device": audio.get("device"),
+                    "ptt_backend":  "hamlib",
+                    "auto_start":   auto_start,
+                }
+                self._config["trx_profiles"]      = [first_profile]
+                self._config["active_trx_profile"] = first_profile["name"]
+                profile_created = first_profile["name"]
+
             try:
                 await asyncio.get_running_loop().run_in_executor(
                     None, self._save_config_atomic)
@@ -4420,6 +4732,15 @@ class WebServer:
                 else:
                     self._config["rigctld"] = old_rig
                 self._config["audio"] = old_audio
+                # Profil-Rollback (nur falls in diesem Aufruf neu angelegt)
+                if old_profiles is None:
+                    self._config.pop("trx_profiles", None)
+                else:
+                    self._config["trx_profiles"] = old_profiles
+                if old_active is None:
+                    self._config.pop("active_trx_profile", None)
+                else:
+                    self._config["active_trx_profile"] = old_active
                 log.error("rigctld-Konfiguration schreiben fehlgeschlagen: %s", exc)
                 raise web.HTTPInternalServerError(
                     text=f'{{"error":"Schreiben fehlgeschlagen: {exc}"}}',
@@ -4429,27 +4750,12 @@ class WebServer:
                  rig_model, device, baud, auto_start)
         self._publish_log("INFO",
             f"Hamlib konfiguriert — Modell {rig_model}, {device} @ {baud} Bd")
+        if profile_created:
+            log.info("Erstes TRX-Profil automatisch angelegt: %s", profile_created)
 
-        # ── Port-Konflikt pruefen wenn auto_start aktiv ────────────────
+        # ── Port-Konflikt prüfen + rigctld (neu) starten ───────────────
         if auto_start:
-            _, target_port = self._hamlib_endpoint()
-            owner = self._find_port_owner(target_port)
-            if owner is not None:
-                # Prozess belegt den Port — User fragen
-                return web.json_response({
-                    "ok":      False,
-                    "conflict": True,
-                    "pid":      owner["pid"],
-                    "proc_name": owner["name"],
-                    "port":     target_port,
-                    "message":  (
-                        f"Port {target_port} wird von '{owner['name']}' "
-                        f"(PID {owner['pid']}) belegt. "
-                        f"Soll dieser Prozess beendet und rigctld neu gestartet werden?"
-                    ),
-                })
-            # Port frei — direkt starten
-            return await self._do_rigctld_restart(rig_model, device, baud)
+            return await self._restart_or_report_conflict(rig_model, device, baud)
 
         return web.json_response({
             "ok": True,
@@ -4563,7 +4869,11 @@ class WebServer:
             # (synchron + blockierend bis ~5 s → im Executor, nicht im Event-Loop)
             from gust_audio import ensure_rigctld_running, HamlibPTT
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, ensure_rigctld_running, self._config)
+            _proc = await loop.run_in_executor(None, ensure_rigctld_running, self._config)
+            if _proc is not None:
+                # rigctld von GUST (Tune) gestartet → Handle merken, damit
+                # _handle_hamlib_config den eigenen Prozess erkennt.
+                self._rigctld_proc = _proc
             # HamlibPTT direkt instanziieren — rigctld läuft bereits,
             # build_ptt würde intern nochmals ensure_rigctld_running aufrufen
             # was auf Windows zu ConnectionRefused führt (nur 1 TCP-Conn erlaubt)

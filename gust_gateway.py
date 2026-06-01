@@ -223,6 +223,11 @@ class TxGateway:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._worker_task: Optional[asyncio.Task] = None
 
+        # Popen-Handle eines von GUST (über build_ptt im TX-Pfad) gestarteten
+        # rigctld. Wird der Web-GUI über self._gateway zugänglich gemacht, damit
+        # sie ihren eigenen rigctld als solchen erkennt (Port-Konflikt-Dialog).
+        self._rigctld_proc = None
+
     # ── ÖFFENTLICHE SCHNITTSTELLE (für WebServer) ─────────────────────
 
     def enqueue(self, frame_dict: dict, priority: int = 4) -> None:
@@ -298,6 +303,16 @@ class TxGateway:
             })
             sim_done = send_at + APPROX_TX_S
         return result
+
+    def clear_queue(self) -> int:
+        """Alle ausstehenden Frames aus der Warteschlange entfernen.
+        Gibt die Anzahl der gelöschten Frames zurück.
+        Frames die gerade gesendet werden (_busy=True) sind nicht betroffen.
+        """
+        n = len(self._pending)
+        self._pending.clear()
+        log.info("TX-Queue gelöscht (%d Frame(s) entfernt).", n)
+        return n
 
     def _next_slot_delay(self) -> float:
         """Sekunden bis zum nächsten Stations-Slot ((unixzeit mod interval) == offset)."""
@@ -477,6 +492,11 @@ class TxGateway:
         from gust_audio import AudioTransmitter, build_ptt
 
         ptt = build_ptt(self._audio_cfg, self._cfg)
+        # Hat build_ptt rigctld gestartet, Handle merken (None = lief bereits;
+        # dann vorhandenes Handle nicht überschreiben).
+        _proc = getattr(ptt, "_rigctld_proc", None)
+        if _proc is not None:
+            self._rigctld_proc = _proc
         used = None
         with AudioTransmitter(
             ptt    = ptt,

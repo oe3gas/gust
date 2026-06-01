@@ -777,7 +777,30 @@ def main():
     parser = argparse.ArgumentParser(
         prog="gust_tx_test.py",
         description="GUST Phase 7 — TX-Test  (Defaults aus gateway.json)",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Beispiel-Aufrufe:
+  Endlos-TX via IC-7610 (Audio + hamlib PTT):
+    py gust_tx_test.py --device 7610 --ptt hamlib
+
+  Einzelner Wetter-Frame, kein TX (Dry-Run):
+    py gust_tx_test.py --dry-run --count 1
+
+  SNR-Baseline: HackRF Gain-Stepping 28→1 dB, CSV-Log:
+    py gust_tx_test.py --device hackrf --gain-sequence 28,26,24,22,20,18,16,14,12,10,8,6,4,2,1
+
+  HackRF Dual-Kanal auf Kanal 2+7, 5 Sendungen:
+    py gust_tx_test.py --device hackrf --channels 0,7 --dual-only --count 5
+
+  Nur Freitext-Fragmente (0x40), 3 Teile, Ziel OE1XTU:
+    py gust_tx_test.py --text-only --text-parts 3 --text-dest OE1XTU
+
+  Einzelner Frame auf festem Kanal 2, lange Pause:
+    py gust_tx_test.py --channels 2 --count 1 --pause 10
+
+  Andere gateway.json verwenden:
+    py gust_tx_test.py --config pfad/zu/gateway.json --device 7610
+""",
     )
     parser.add_argument("--config",     default=GATEWAY_JSON,
                         help="Pfad zu gateway.json")

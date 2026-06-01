@@ -526,9 +526,15 @@ def build_ptt(audio_cfg: dict, full_cfg: Optional[dict] = None) -> PTTBackend:
         host = audio_cfg.get("hamlib_host", "localhost")
         port = int(audio_cfg.get("hamlib_port", 4532))
         # rigctld ggf. starten (oder klare Fehlermeldung werfen)
-        ensure_rigctld_running(full_cfg or {}, host=host, port=port)
+        _proc = ensure_rigctld_running(full_cfg or {}, host=host, port=port)
         log.info("PTT-Backend: HamlibPTT @ %s:%d", host, port)
-        return HamlibPTT(host=host, port=port)
+        ptt = HamlibPTT(host=host, port=port)
+        # Handle des ggf. von GUST gestarteten rigctld an den Aufrufer
+        # weiterreichen (None, falls rigctld bereits lief). Das TX-Gateway
+        # meldet ihn der Web-GUI, damit _handle_hamlib_config den eigenen
+        # Prozess nicht als Fremd-Port-Konflikt behandelt.
+        ptt._rigctld_proc = _proc
+        return ptt
 
     elif backend == "gpio":
         pin = int(audio_cfg.get("gpio_pin", 17))
