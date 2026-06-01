@@ -2133,7 +2133,7 @@ async function saveHamlibConfig() {
 
     statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
     statusEl.textContent = (r.ok ? '✓ ' : '✗ ') + (r.message || r.error || '');
-    if (r.ok) { loadStatus(); testHamlibConnection(); loadTrxProfiles(); }
+    if (r.ok) { loadStatus(); _testHamlibDelayed(2000); loadTrxProfiles(); }
   } catch(e) {
     statusEl.style.color = 'var(--red)';
     statusEl.textContent = '✗ ' + e.message;
@@ -2201,7 +2201,8 @@ async function activateTrxProfile() {
     if (r.ok) {
       const info = document.getElementById('trx-profile-active');
       if (info) { info.style.display = 'block'; info.textContent = `Aktives Profil: ${name}`; }
-      loadHamlibConfig();   // Formularfelder mit neuem Profil befüllen
+      loadHamlibConfig();        // Formularfelder mit neuem Profil befüllen
+      _testHamlibDelayed(2000);  // Status nach rigctld-Hochfahren prüfen
     }
   } catch(e) {
     if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = '✗ ' + e.message; }
@@ -2259,7 +2260,7 @@ async function _hamlibForceRestart(pid) {
     });
     statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
     statusEl.textContent = (r.ok ? '✓ ' : '✗ ') + (r.message || r.error || '');
-    if (r.ok) { loadStatus(); testHamlibConnection(); }
+    if (r.ok) { loadStatus(); _testHamlibDelayed(2000); }
   } catch(e) {
     statusEl.style.color = 'var(--red)';
     statusEl.textContent = '✗ ' + e.message;
@@ -2303,6 +2304,13 @@ async function testHamlibConnection() {
     dotEl.classList.add('err');
     txtEl.textContent = 'Fehler: ' + e.message;
   }
+}
+
+function _testHamlibDelayed(delayMs) {
+  // Wartet delayMs Millisekunden bevor testHamlibConnection() aufgerufen
+  // wird — gibt rigctld nach einem Neustart Zeit zum Hochfahren.
+  // Standard-Delay: 2000 ms (rigctld braucht ~1-2 s auf Windows/RPi).
+  setTimeout(testHamlibConnection, delayMs || 2000);
 }
 
 // ── Hamlib Frequenz-Polling (alle 5 s) ──────────────────────
@@ -4007,9 +4015,14 @@ class WebServer:
                 })
             audio = dict(self._config.get("audio") or {})
             audio["ptt_backend"] = profile.get("ptt_backend", "null")
-            if profile.get("audio_device") is not None:
-                audio["device"] = profile["audio_device"]
+            # TX-Audiogerät: audio_device_tx (Legacy-Fallback: audio_device) → audio.device
+            tx_dev = profile.get("audio_device_tx", profile.get("audio_device"))
+            if tx_dev is not None:
+                audio["device"] = tx_dev
             self._config["audio"] = audio
+            # RX-Audiogerät: audio_device_rx → rx.device (fehlend/None = "wie TX")
+            if profile.get("audio_device_rx") is not None:
+                self._config.setdefault("rx", {})["device"] = profile["audio_device_rx"]
             try:
                 await asyncio.get_running_loop().run_in_executor(
                     None, self._save_config_atomic)
