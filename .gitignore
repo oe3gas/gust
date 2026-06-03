@@ -44,3 +44,8 @@ oe3mode_projektspezifikation.md
 # ── Betriebssystem ─────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# ── Lokale Entwicklungshilfsmittel — nicht im Repo ─────────────────────
+watch_*.ps1
+*_watcher.ps1
+*_watcher.md
