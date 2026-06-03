@@ -252,7 +252,8 @@ class HamlibPTT(PTTBackend):
         except ConnectionRefusedError:
             raise RuntimeError(
                 f"rigctld nicht erreichbar auf {self.host}:{self.port}\n"
-                f"Starten mit: rigctld -m 3085 -r /dev/ttyUSB0 -s 19200"
+                f"Prüfe ob rigctld läuft (gateway.json: rigctld.auto_start=true)\n"
+                f"Oder manuell: rigctld -m <rig_model> -r <device> -s <baud>"
             )
 
     def _cmd(self, command: str) -> str:
@@ -320,13 +321,32 @@ class HamlibPTT(PTTBackend):
 # ──────────────────────────────────────────────────────────────────────
 
 def _is_rigctld_alive(host: str, port: int, timeout: float = 0.5) -> bool:
-    """TCP-Connect + kurzes 'f'-Kommando als Lebenszeichen."""
+    """TCP-Connect + kurzes 'f'-Kommando als Lebenszeichen.
+
+    SO_LINGER=0: Socket wird mit RST statt FIN geschlossen → kein TCP TIME_WAIT
+    unter Windows. Notwendig weil rigctld (Windows) nur eine gleichzeitige
+    Verbindung akzeptiert und TIME_WAIT nachfolgende HamlibPTT-Connects blockiert.
+    """
+    s = None
     try:
-        with socket.create_connection((host, port), timeout=timeout) as s:
-            s.sendall(b"f\n")
-            return len(s.recv(64)) > 0
+        s = socket.create_connection((host, port), timeout=timeout)
+        s.sendall(b"f\n")
+        result = len(s.recv(64)) > 0
+        return result
     except (OSError, socket.timeout):
         return False
+    finally:
+        if s is not None:
+            try:
+                import struct
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                             struct.pack("ii", 1, 0))
+            except Exception:
+                pass
+            try:
+                s.close()
+            except Exception:
+                pass
 
 
 def ensure_rigctld_running(cfg: dict,

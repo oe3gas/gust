@@ -146,6 +146,9 @@ def load_gateway_config(path: str = GATEWAY_JSON) -> dict:
     if audio.get("hamlib_port"):
         defaults["hamlib_port"] = int(audio["hamlib_port"])
 
+    # rigctld-Block als ganzes Dict weitergeben — für ensure_rigctld_running()
+    defaults["rigctld"] = cfg.get("rigctld") or {}
+
     return defaults
 
 
@@ -420,7 +423,42 @@ def run(args):
             try:
                 from gust_audio import AudioTransmitter, NullPTT, HamlibPTT
                 if args.ptt == "hamlib":
-                    ptt = HamlibPTT(host=args.hamlib_host, port=args.hamlib_port)
+                    from gust_audio import ensure_rigctld_running
+                    # Vollständige Config für ensure_rigctld_running() zusammenbauen.
+                    # (gw ist in run() nicht im Scope → gateway.json hier laden.)
+                    _gw = load_gateway_config(args.config)
+                    _rig_cfg = {
+                        "audio":   {
+                            "ptt_backend":  "hamlib",
+                            "hamlib_host":  args.hamlib_host,
+                            "hamlib_port":  args.hamlib_port,
+                        },
+                        "rigctld": _gw.get("rigctld") or {},
+                    }
+                    try:
+                        ensure_rigctld_running(_rig_cfg,
+                                               host=args.hamlib_host,
+                                               port=args.hamlib_port)
+                    except RuntimeError as e:
+                        print(f"{ts()}  FEHLER: {e}", flush=True)
+                        print(f"{ts()}  Tipp: --dry-run für Test ohne Hardware",
+                              flush=True)
+                        sys.exit(1)
+                    import time as _time
+                    ptt = None
+                    for _attempt in range(10):
+                        _time.sleep(0.3)
+                        try:
+                            ptt = HamlibPTT(host=args.hamlib_host,
+                                            port=args.hamlib_port)
+                            break
+                        except RuntimeError as _ptt_err:
+                            print(f"[DEBUG] Versuch {_attempt+1}/10: {_ptt_err!s:.60}", flush=True)
+                    if ptt is None:
+                        raise RuntimeError(
+                            f"rigctld nicht erreichbar nach 10 Versuchen "
+                            f"({args.hamlib_host}:{args.hamlib_port})"
+                        )
                 else:
                     ptt = NullPTT()
             except Exception as e:
@@ -800,6 +838,14 @@ Beispiel-Aufrufe:
 
   Andere gateway.json verwenden:
     py gust_tx_test.py --config pfad/zu/gateway.json --device 7610
+
+Hinweise:
+  gust.py daemon sollte NICHT gleichzeitig laufen — beide Programme
+  teilen denselben rigctld-Prozess und würden sich gegenseitig bei
+  PTT stören (TX bleibt hängen oder wird vorzeitig beendet).
+  Workflow: daemon stoppen → gust_tx_test.py starten → daemon neu starten.
+  rigctld bleibt nach dem daemon-Stop aktiv und wird von gust_tx_test.py
+  automatisch wiederverwendet (bzw. neu gestartet falls nötig).
 """,
     )
     parser.add_argument("--config",     default=GATEWAY_JSON,
