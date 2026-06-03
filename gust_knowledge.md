@@ -1,6 +1,6 @@
 # GUST — Knowledge Base
 **OE3GAS — GUST: Generic Universal Shortwave Telemetry**
-*Phase 1–9 — Mai 2026 (inkl. Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Connector-Layer)*
+*Phase 1–9 — Juni 2026 (inkl. Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Connector-Layer · TRX-Profil-Fixes · IPv4/IPv6-Fix)*
 
 ---
 

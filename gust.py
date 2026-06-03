@@ -316,7 +316,7 @@ def setup_logging(verbose: bool, bus: Optional[EventBus] = None) -> None:
     logging.getLogger("aiohttp.web").setLevel(logging.WARNING)
 
     if bus is not None:
-        loop    = asyncio.get_event_loop()
+        loop    = asyncio.get_running_loop()
         eb_handler = EventBusLogHandler(bus)
         eb_handler.set_loop(loop)
         eb_handler.setLevel(logging.INFO)
@@ -448,6 +448,28 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
     await server.start()
     await gateway.start()
     await asyncio.sleep(0.1)   # EventBus-Reader Zeit zum Subscriben geben
+
+    # ── rigctld Früh-Start ────────────────────────────────────────────
+    # Bei ptt_backend=hamlib + auto_start=true rigctld sofort starten,
+    # damit Frequenz-Polling, PTT und Profil-Wechsel ab dem ersten Moment
+    # funktionieren. Handle → server._rigctld_proc damit _managed_rigctld_pid()
+    # den Prozess kennt und kein Konflikt-Dialog erscheint.
+    _audio_cfg = cfg.get("audio", {})
+    if (_audio_cfg.get("ptt_backend") == "hamlib"
+            and cfg.get("rigctld", {}).get("auto_start", False)
+            and not dry_run):
+        try:
+            from gust_audio import ensure_rigctld_running
+            _loop = asyncio.get_running_loop()
+            _proc = await _loop.run_in_executor(
+                None, ensure_rigctld_running, cfg)
+            if _proc is not None:
+                server._rigctld_proc = _proc
+                log.info("rigctld beim Daemon-Start gestartet (PID %d).", _proc.pid)
+            else:
+                log.info("rigctld war bereits erreichbar beim Daemon-Start.")
+        except Exception as _exc:
+            log.warning("rigctld Früh-Start fehlgeschlagen: %s", _exc)
 
     _mode_badges = ["DAEMON"]
     if use_sim:  _mode_badges.append("SIM")
@@ -775,7 +797,7 @@ async def cmd_tx(cfg: dict, frame_type: str,
         print(f"  Kanal:     wird aus SHA-256({cs}) bestimmt")
         print(f"  RC-Fenster: aktiv (window=True)")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         _ptt_delay_s = cfg["audio"].get("ptt_delay_ms", 250) / 1000.0
         with AudioTransmitter(
@@ -857,7 +879,7 @@ async def _tx_via_sdr(callsign: str, frame_type_int: int, payload: bytes,
         print(f"  Gain:        {gain}")
         print(f"  Kanal:       {used_ch}  ({channel_frequency(used_ch):.0f} Hz NF)")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         # NF→IQ und das blockierende setupStream/writeStream im Executor
         def _do_tx():
             iq = nf_to_iq_usb(audio, sample_rate)

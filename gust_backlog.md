@@ -183,7 +183,7 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | BUG-02 | 🟢 | bug | inspectrum Frequenzachse verschoben | ~600 Hz Offset bei 8 kHz SR — Darstellungsartefakt, keine Auswirkung | ⏸ |
 | BUG-03 | 🟢 | bug | CF32-Export zeigt Rest-Spiegelbild | Randeffekt durch Stille-Abschnitte nach Hilbert-Transform | ⏸ |
 | BUG-04 | 🟡 | refactor | RS-FEC ineffizient für kurze Frames | RS(255,223): immer 32 Byte Overhead. RS(31,15) wäre effizienter | 🔲 Phase 8 |
-| BUG-05 | 🟢 | refactor | asyncio.get_event_loop() deprecated | Python 3.10+: auf get_running_loop() umstellen (Meshtastic-Adapter) | 🔲 |
+| BUG-05 | 🟢 | refactor | asyncio.get_event_loop() deprecated | Python 3.10+: auf get_running_loop() umstellen. **Fix (Juni 2026):** alle Vorkommen in `gust.py` (4 Stellen) ersetzt. | ✅ |
 | BUG-06 | 🟡 | bug | SNR-Schätzer falsch an unterer Bandkante | Fix: adaptives Rauschband beidseitig mit 80 Hz Guard. | ✅ |
 | BUG-07 | 🟢 | research | Simplex-Fenstertiming-Miss | Fix: Fixed-Cadence-Scheduling + Fenster 9 s. Simulation: 10,55% → 0% Miss. | ✅ |
 | BUG-08 | 🟢 | refactor | Frame-Contention bei dichter Folge | Zwei Frames im selben 8s-Fenster: Single-Pass-Auswahl — zweiter kann verloren gehen | 🔲 |
@@ -191,6 +191,11 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | BUG-10 | 🔴 | bug | rigctld nicht neu gestartet nach TRx-Wechsel | **Fix (Juni 2026, zweiteilig):** (1) `_handle_hamlib_config`: prüft via `_find_port_owner()` ob PID == `self._rigctld_proc.pid` → eigener Prozess → stiller Neustart, kein Konflikt-Dialog. (2) Root cause: `create_ptt()` in `gust_audio.py` merkt Popen-Handle an `ptt._rigctld_proc`; `cmd_daemon()` in `gust.py` übergibt Handle an `server._rigctld_proc` nach `gateway.start()`. | ✅ |
 | BUG-11 | 🟡 | bug | Hamlib-Status-Dot nach Profilwechsel rot | rigctld-Status-Poll sofort nach Neustart schlägt fehl (rigctld noch hochfahrend). **Fix:** `_testHamlibDelayed(2000)` — 2 s Delay vor Poll; Tune-Button während Delay deaktiviert. | ✅ |
 | BUG-12 | 🟡 | bug | gust_tx_test.py: ConnectionRefused nach rigctld-Test | Windows-rigctld schließt TCP nach jedem Kommando. `ensure_rigctld_running()` + `HamlibPTT._connect()` öffnen zwei Verbindungen in zu kurzem Abstand → ConnectionRefused. **Fix:** 300 ms sleep zwischen `ensure_rigctld_running()` und `HamlibPTT()`-Instanziierung. Außerdem: hardcodierter Fehlertext (`/dev/ttyUSB0`) durch generischen ersetzt; `load_gateway_config()` liest jetzt auch den `rigctld`-Block. | ✅ |
+| BUG-13 | 🔴 | bug | TRX-Profil: Felder werden nach Aktivieren nicht aktualisiert | `activateTrxProfile()` prüfte `if (r.ok)` — bei rigctld-Startfehler blieb das Formular auf altem Profil. **Fix:** `if (!r.conflict)` statt `if (r.ok)` — Formular wird immer aktualisiert wenn kein Port-Konflikt vorliegt. | ✅ |
+| BUG-14 | 🔴 | bug | TRX-Profil: Konflikt-Dialog beim Aktivieren | `_handle_trx_activate()` rief `_restart_or_report_conflict()` auf — beim Profil-Wechsel erschien Konflikt-Dialog statt stillem Neustart. **Fix:** direkter Aufruf von `_do_rigctld_restart()` in `_handle_trx_activate()`. | ✅ |
+| BUG-15 | 🔴 | bug | rigctld wird beim Daemon-Start nicht gestartet | rigctld startete erst lazy beim ersten TX (build_ptt im Worker). Frequenz-Polling und PTT nicht sofort verfügbar. **Fix:** Früh-Start-Block in `cmd_daemon()` nach `gateway.start()` — startet rigctld sofort bei `ptt_backend=hamlib` + `auto_start=true`. | ✅ |
+| BUG-16 | 🔴 | bug | Windows IPv4/IPv6-Konflikt: rigctld auf ::1, Python verbindet auf 127.0.0.1 | Windows löst `localhost` als `::1` (IPv6) auf. rigctld bindet auf `::1`, `HamlibPTT` verbindet auf `127.0.0.1` → ConnectionRefused obwohl rigctld läuft. **Fix:** `RIGCTLD_HOST_DEFAULT = "127.0.0.1"` in `gust_audio.py`; `ensure_rigctld_running()` ersetzt `localhost` → `127.0.0.1` beim rigctld-Start (`-T`-Flag). Diagnose: `netstat -ano | findstr ":4532"` zeigt `[::1]:4532` statt `0.0.0.0:4532`. | ✅ |
+| BUG-17 | 🟡 | bug | Tune: doppelter rigctld-Start | `_handle_tx_tune._run()` rief `ensure_rigctld_running()` auf — auf Windows (nur 1 TCP-Conn) entstand ein zweiter rigctld-Prozess wenn Polling-Loop gerade verbunden war. **Fix:** `ensure_rigctld_running()` aus Tune entfernt; Tune verlässt sich auf Früh-Start in `cmd_daemon()`. | ✅ |
 
 ---
 
@@ -231,6 +236,12 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | ✅ BUG-12 | — | bug | gust_tx_test.py Windows-TCP-Race + hardcodierter Fehlertext | Juni 2026 |
 | ✅ P5-21 | 5 | feature | Web-UI i18n DE/EN (194 Keys, /api/lang, localStorage) | Juni 2026 |
 | ✅ P5-22 | 5 | feature | Inbox-Kosmetik: fehlende Frames als […fehlt…]-Badge | Juni 2026 |
+| ✅ BUG-05 | — | refactor | asyncio.get_event_loop() → get_running_loop() in gust.py | Juni 2026 |
+| ✅ BUG-13 | — | bug | TRX-Profil: Formular-Aktualisierung nach Aktivieren | Juni 2026 |
+| ✅ BUG-14 | — | bug | TRX-Profil: Konflikt-Dialog beim Profil-Wechsel entfernt | Juni 2026 |
+| ✅ BUG-15 | — | bug | rigctld Früh-Start beim Daemon-Start | Juni 2026 |
+| ✅ BUG-16 | — | bug | Windows IPv4/IPv6-Konflikt rigctld/HamlibPTT | Juni 2026 |
+| ✅ BUG-17 | — | bug | Tune: doppelter rigctld-Prozess verhindert | Juni 2026 |
 
 ---
 
@@ -292,8 +303,26 @@ Server liefert `/api/lang/<code>` aus. JS lädt beim Start die passende Datei,
 `innerHTML` (formatierte Infotexte via `data-i18n-html`). Sprachauswahl in
 `localStorage` persistent. Neue Sprachen: nur JSON-Datei hinzufügen, kein Code ändern.
 
+### ADR-21: TRX-Profil-Wechsel — direkter _do_rigctld_restart, kein Konflikt-Dialog ✅ (Juni 2026)
+Beim Profil-Wechsel via `_handle_trx_activate()` wird rigctld immer still neu gestartet
+(`_do_rigctld_restart()` direkt), ohne Konflikt-Dialog. Der laufende rigctld (egal ob
+GUST-eigen oder extern) wird in `_do_rigctld_restart()` via psutil beendet.
+Konflikt-Dialog bleibt nur für manuelles Speichern (`_handle_hamlib_config()`).
+
+### ADR-22: rigctld Früh-Start in cmd_daemon ✅ (Juni 2026)
+rigctld wird beim Daemon-Start sofort gestartet (nicht lazy beim ersten TX).
+Bedingung: `ptt_backend=hamlib` + `rigctld.auto_start=true` + kein dry_run.
+Handle → `server._rigctld_proc` damit `_managed_rigctld_pid()` den Prozess kennt.
+
+### ADR-23: RIGCTLD_HOST_DEFAULT = "127.0.0.1" ✅ (Juni 2026)
+Windows löst `localhost` als `::1` (IPv6) auf; Python-Sockets verbinden auf
+`127.0.0.1` (IPv4) → Mismatch → ConnectionRefused obwohl rigctld läuft.
+Fix: `RIGCTLD_HOST_DEFAULT = "127.0.0.1"` in `gust_audio.py` als Modul-Konstante.
+Alle rigctld-Starts via `ensure_rigctld_running()` verwenden `127.0.0.1` statt `localhost`.
+Dokumentiert in `gust_knowledge.md` §20.
+
 ---
 
 *Dokument: gust_backlog.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — i18n DE/EN P5-21 (ADR-20) · Inbox-Kosmetik P5-22 · CLI-Verbesserungen · QSO-Modus · TX-Queue-Clear · TRX-Profile (P5-18) · BUG-10 root cause (ADR-19) · BUG-11 Status-Dot · BUG-12 Windows-TCP-Race*
+*Stand: Juni 2026 — BUG-13–17 TRX-Profil/Tune/rigctld-Fixes · ADR-21–23 · BUG-05 asyncio · IPv4/IPv6-Fix (ADR-23)*

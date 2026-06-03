@@ -89,7 +89,7 @@ PTT_LEAD_S       = 0.050     # 50 ms Vorlauf: Sender hochfahren, VFO stabilisier
 PTT_TAIL_S       = 0.020     # 20 ms Nachlauf: letztes Symbol ausklingen lassen
 AUDIO_LEVEL      = 0.80      # Normalisierungspegel (80% → Headroom für ALC)
 
-RIGCTLD_HOST_DEFAULT = "localhost"
+RIGCTLD_HOST_DEFAULT = "127.0.0.1"  # IPv4 explizit — Windows löst 'localhost' als ::1 auf
 RIGCTLD_PORT_DEFAULT = 4532
 
 
@@ -426,12 +426,15 @@ def ensure_rigctld_running(cfg: dict,
         )
 
     # 4) Auto-Start
+    # localhost → 127.0.0.1: Windows löst 'localhost' als ::1 (IPv6) auf,
+    # Python-Sockets verbinden aber auf 127.0.0.1 (IPv4) → ConnectionRefused.
+    _bind_host = "127.0.0.1" if host in ("localhost", "127.0.0.1") else host
     cmd = [
         exe,
         "-m", str(rig_model),
         "-r", str(device),
         "-s", str(baud),
-        "-T", str(host),
+        "-T", _bind_host,
         "-t", str(port),
     ]
     extra = rig_cfg.get("extra_args") or []

@@ -2194,9 +2194,11 @@ async function saveHamlibConfig() {
 // ═══════════════════════ TRX-PROFILE ══════════════════════
 // Lädt trx_profiles aus /api/config und befüllt das Dropdown.
 // Wird beim Laden des Hamlib-Tabs aufgerufen.
+let _trxProfiles = [];  // Cache für Profile — befüllt von loadTrxProfiles()
 function loadTrxProfiles() {
   apiFetch('/api/config').then(cfg => {
     const profiles = cfg.trx_profiles || [];
+    _trxProfiles = profiles;  // Cache aktualisieren
     const active   = cfg.active_trx_profile || '';
     const row      = document.getElementById('trx-profile-row');
     const sel      = document.getElementById('trx-profile-select');
@@ -2224,6 +2226,34 @@ function loadTrxProfiles() {
 function onTrxProfileChange(name) {
   const info = document.getElementById('trx-profile-active');
   if (info) info.textContent = `Auswahl: ${name} — noch nicht aktiviert`;
+  // Profilwerte sofort in Formular anzeigen (Vorschau vor Aktivieren)
+  const p = _trxProfiles.find(x => x.name === name);
+  if (!p) return;
+  // Serieller Port
+  const portSel = document.getElementById('hamlib-port');
+  if (portSel && p.device) {
+    if (![...portSel.options].some(o => o.value === p.device)) {
+      const opt = document.createElement('option');
+      opt.value = p.device;
+      opt.textContent = p.device + '  (aus Profil)';
+      portSel.appendChild(opt);
+    }
+    portSel.value = p.device;
+  }
+  // Rig-Modell
+  if (p.rig_model) {
+    document.getElementById('hamlib-model-id').value = p.rig_model;
+    document.getElementById('hamlib-model-selected').textContent = `Modell ${p.rig_model}  (wird aufgelöst …)`;
+    searchHamlibModels(String(p.rig_model));
+    setTimeout(() => {
+      const list = document.getElementById('hamlib-model-list');
+      if (!list) return;
+      const match = [...list.options].find(o => parseInt(o.value, 10) === p.rig_model);
+      if (match) { match.selected = true; onHamlibModelSelect(list); }
+    }, 800);
+  }
+  // Baudrate
+  if (p.baud) document.getElementById('hamlib-baud').value = String(p.baud);
 }
 
 async function activateTrxProfile() {
@@ -2249,11 +2279,13 @@ async function activateTrxProfile() {
       statusEl.style.color   = r.ok ? 'var(--green)' : 'var(--red)';
       statusEl.textContent   = (r.ok ? '✓ ' : '✗ ') + (r.message || r.error || '');
     }
-    if (r.ok) {
+    // Formular immer aktualisieren wenn kein Konflikt — Config wurde gespeichert,
+    // auch wenn rigctld-Start scheiterte (z.B. TRX nicht angeschlossen).
+    if (!r.conflict) {
       const info = document.getElementById('trx-profile-active');
       if (info) { info.style.display = 'block'; info.textContent = `Aktives Profil: ${name}`; }
-      loadHamlibConfig();        // Formularfelder mit neuem Profil befüllen
-      _testHamlibDelayed(2000);  // Status nach rigctld-Hochfahren prüfen
+      rescanHamlibPorts().then(() => loadHamlibConfig()); // Ports neu einlesen, dann Felder befüllen
+      if (r.ok) _testHamlibDelayed(2000);  // rigctld-Status nur prüfen wenn erfolgreich gestartet
     }
   } catch(e) {
     if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = '✗ ' + e.message; }
@@ -2428,23 +2460,26 @@ async function toggleTune() {
     await _tuneStop();
   } else {
     // Erster Klick → starten
+    stopHamlibPolling();   // Polling VOR dem API-Call stoppen — rigctld akzeptiert
+                           // auf Windows nur eine TCP-Verbindung gleichzeitig
     try {
       const r = await apiFetch('/api/tx/tune', { method: 'POST' });
       if (!r.ok) {
         document.getElementById('cfg-hamlib-status').textContent =
           '✗ Tune fehlgeschlagen: ' + (r.error || '');
+        startHamlibPolling();   // Polling wieder aktivieren nach Fehler
         return;
       }
     } catch(e) {
       document.getElementById('cfg-hamlib-status').textContent =
         '✗ Tune Fehler: ' + e.message;
+      startHamlibPolling();   // Polling wieder aktivieren nach Fehler
       return;
     }
     // Button auf aktiv schalten
     btn.dataset.tuning    = '1';
     btn.style.borderColor = 'var(--red)';
     btn.style.color       = 'var(--red)';
-    stopHamlibPolling();   // kein Frequenz-Polling während TX
     _setOnAir(true);
     let remaining = 15;
     btn.textContent = '⏹ Tune (' + remaining + ' s)';
@@ -4138,11 +4173,12 @@ class WebServer:
 
         log.info("TRX-Profil aktiviert: %s", name)
 
-        # Conflict-aware rigctld-Restart über den gemeinsamen Flow, wenn das
-        # aktivierte Profil Hamlib + auto_start nutzt (sonst nur Config-Wechsel).
+        # Beim Profil-Wechsel rigctld immer still neu starten — kein Konflikt-Dialog.
+        # Der User hat bewusst ein Profil aktiviert; der laufende rigctld (egal ob
+        # GUST-eigen oder vom Gateway gestartet) wird in _do_rigctld_restart() beendet.
         if (profile.get("ptt_backend") == "hamlib"
                 and profile.get("auto_start", True)):
-            return await self._restart_or_report_conflict(
+            return await self._do_rigctld_restart(
                 profile.get("rig_model"),
                 profile.get("device"),
                 profile.get("baud", 19200))
@@ -4925,9 +4961,26 @@ class WebServer:
     async def _do_rigctld_restart(self, rig_model, device, baud) -> web.Response:
         """Startet rigctld mit aktueller Konfiguration und liest Frequenz zur Bestaetigung."""
         await self._stop_tune()
-        # Defensiv: einen von GUST gestarteten rigctld zuerst beenden, damit kein
-        # zweiter Prozess denselben Port belegt (zweite Instanz -> Bind-Fehler).
-        if self._rigctld_proc is not None and self._rigctld_proc.poll() is None:
+        # Defensiv: rigctld auf Port 4532 beenden — egal ob von GUST oder extern
+        # gestartet. Beim Profil-Wechsel muss der alte Prozess weg, sonst Bind-Fehler.
+        _, target_port = self._hamlib_endpoint()
+        owner = self._find_port_owner(target_port)
+        if owner is not None:
+            try:
+                import psutil
+                proc = psutil.Process(owner["pid"])
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except psutil.TimeoutExpired:
+                    proc.kill()
+                log.info("[rigctld] Prozess PID %d (%s) auf Port %d beendet (Profil-Wechsel).",
+                         owner["pid"], owner["name"], target_port)
+            except Exception as exc:
+                log.warning("[rigctld] Beenden von PID %d fehlgeschlagen: %s", owner["pid"], exc)
+            self._rigctld_proc = None
+            await asyncio.sleep(0.8)  # Port-Freigabe abwarten
+        elif self._rigctld_proc is not None and self._rigctld_proc.poll() is None:
             try:
                 self._rigctld_proc.terminate()
                 await asyncio.sleep(0.5)
@@ -4982,19 +5035,21 @@ class WebServer:
             audio = (0.8 * np.sin(2 * np.pi * freq_hz * t)).astype(np.float32)
 
             audio_cfg = self._config.get("audio", {}) if isinstance(self._config, dict) else {}
-            # rigctld sicherstellen bevor PTT-Verbindung aufgebaut wird
-            # (synchron + blockierend bis ~5 s → im Executor, nicht im Event-Loop)
-            from gust_audio import ensure_rigctld_running, HamlibPTT
+            # rigctld muss bereits laufen (Früh-Start in cmd_daemon).
+            # ensure_rigctld_running() wird hier NICHT aufgerufen — auf Windows
+            # akzeptiert rigctld nur eine TCP-Verbindung gleichzeitig; ein zweiter
+            # Start würde einen Doppelprozess erzeugen wenn der Polling-Loop
+            # gerade verbunden ist.
+            # Fallback: falls rigctld doch nicht läuft, HamlibPTT-Connect schlägt
+            # mit klarer Fehlermeldung fehl.
+            from gust_audio import HamlibPTT
             loop = asyncio.get_running_loop()
-            _proc = await loop.run_in_executor(None, ensure_rigctld_running, self._config)
-            if _proc is not None:
-                # rigctld von GUST (Tune) gestartet → Handle merken, damit
-                # _handle_hamlib_config den eigenen Prozess erkennt.
-                self._rigctld_proc = _proc
             # HamlibPTT direkt instanziieren — rigctld läuft bereits,
             # build_ptt würde intern nochmals ensure_rigctld_running aufrufen
             # was auf Windows zu ConnectionRefused führt (nur 1 TCP-Conn erlaubt)
-            host = audio_cfg.get('hamlib_host', 'localhost')
+            # localhost → 127.0.0.1 (IPv4/IPv6-Konflikt Windows, siehe gust_knowledge §20)
+            _h = audio_cfg.get('hamlib_host', 'localhost')
+            host = "127.0.0.1" if _h in ("localhost", "127.0.0.1") else _h
             port = int(audio_cfg.get('hamlib_port', 4532))
             ptt  = HamlibPTT(host=host, port=port)
             try:
