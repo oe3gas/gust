@@ -38,6 +38,7 @@ import json
 import logging
 import time
 import hashlib
+from pathlib import Path
 from collections import deque
 from datetime import datetime, timezone
 from typing import Optional, Set
@@ -623,18 +624,18 @@ h2:first-child { margin-top: 0; }
 <div id="onair-banner">📡 ON AIR</div>
 
 <nav>
-  <button class="active" onclick="switchTab('monitor',this)">📡 Monitor</button>
-  <button onclick="switchTab('tx',this)">📤 Senden</button>
-  <button onclick="switchTab('inbox',this)">💬 Kommunikation <span id="inbox-badge" class="inbox-badge hidden">0</span></button>
-  <button onclick="switchTab('status',this)">⚙ Status &amp; Config</button>
-  <button onclick="switchTab('log',this)">🗒 Log</button>
+  <button class="active" onclick="switchTab('monitor',this)" data-i18n="nav.monitor">📡 Monitor</button>
+  <button onclick="switchTab('tx',this)" data-i18n="nav.send">📤 Senden</button>
+  <button onclick="switchTab('inbox',this)"><span data-i18n="nav.inbox">💬 Kommunikation</span> <span id="inbox-badge" class="inbox-badge hidden">0</span></button>
+  <button onclick="switchTab('status',this)" data-i18n="nav.status">⚙ Status &amp; Config</button>
+  <button onclick="switchTab('log',this)" data-i18n="nav.log">🗒 Log</button>
 </nav>
 
 <main>
 
 <!-- ══════════════════════════════════════════════════════ TAB: MONITOR -->
 <div id="tab-monitor" class="tab-panel active">
-  <h2>Audio-Eingang (RX)</h2>
+  <h2 data-i18n="monitor.audio_in">Audio-Eingang (RX)</h2>
   <div id="audio-meter" class="nosig">
     <div class="am-hdr">
       <span>🎤 <span id="am-device">–</span></span>
@@ -652,32 +653,32 @@ h2:first-child { margin-top: 0; }
     </div>
   </div>
 
-  <h2>Kanalübersicht — 8 Kanäle (600–2600 Hz NF)</h2>
+  <h2 data-i18n="monitor.channels">Kanalübersicht — 8 Kanäle (600–2600 Hz NF)</h2>
   <div id="channel-grid"></div>
 
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px;">
-    <h2 style="margin:0;">Live RX-Feed</h2>
+    <h2 style="margin:0;" data-i18n="monitor.feed.title">Live RX-Feed</h2>
     <div style="display:flex;gap:14px;align-items:center;">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text2);font-size:var(--fs-sm);"
              title="Verhindert Dekodierung des eigenen Sendesignals (TRX-Monitor-Schutz)">
         <input type="checkbox" id="ignore-rx-while-tx" style="accent-color:var(--accent);">
         Ignore Decodes while Sending
       </label>
-      <label id="autoscroll-toggle"><input type="checkbox" id="autoscroll" checked> Auto-Scroll</label>
+      <label id="autoscroll-toggle" data-i18n="monitor.autoscroll"><input type="checkbox" id="autoscroll" checked> Auto-Scroll</label>
     </div>
   </div>
   <div class="audio-toggles">
     <label class="toggle-sw">
       <input type="checkbox" id="toggle-audio-emerg">
-      🔔 Ton bei Emergency
+      🔔 <span data-i18n="monitor.sound_emerg">Ton bei Emergency</span>
     </label>
     <label class="toggle-sw">
       <input type="checkbox" id="toggle-audio-mine">
-      🔔 Ton bei Nachricht für mich
+      🔔 <span data-i18n="monitor.sound_msg">Ton bei Nachricht für mich</span>
     </label>
   </div>
   <div id="rx-feed">
-    <div style="color:var(--text2);padding:8px;">Warte auf RX-Frames …</div>
+    <div style="color:var(--text2);padding:8px;" data-i18n="monitor.feed.empty">Warte auf RX-Frames …</div>
   </div>
 </div>
 
@@ -694,44 +695,44 @@ h2:first-child { margin-top: 0; }
   <div class="tx-group p4-group">
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p4-dot"></span>
-      <span class="tx-prio-name p4-col">Telemetrie</span>
-      <span class="tx-prio-info">P4 · Schedule: alle <span id="p4-interval">5 min</span> — nächster Schedule in <span class="cd" id="p4-next">–</span></span>
+      <span class="tx-prio-name p4-col" data-i18n="send.group.telemetry">Telemetrie</span>
+      <span class="tx-prio-info">P4 · <span data-i18n="send.p4.schedule">Schedule: alle</span> <span id="p4-interval">5 min</span> <span data-i18n="send.p4.next">— nächster Schedule in</span> <span class="cd" id="p4-next">–</span></span>
     </div>
     <div class="tx-btn-row">
-      <button class="tx-btn active" onclick="selectTxType('weather',this)">🌤 Wetter</button>
+      <button class="tx-btn active" onclick="selectTxType('weather',this)" data-i18n="tab.send.weather">🌤 Wetter</button>
     </div>
   </div>
 
   <div class="tx-group p3-group">
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p3-dot"></span>
-      <span class="tx-prio-name p3-col">Navigation</span>
-      <span class="tx-prio-info">P3 · nächster Schedule in <span class="cd" id="p3-next">–</span></span>
+      <span class="tx-prio-name p3-col" data-i18n="send.group.navigation">Navigation</span>
+      <span class="tx-prio-info">P3 · <span data-i18n="send.p3.next">nächster Schedule in</span> <span class="cd" id="p3-next">–</span></span>
     </div>
     <div class="tx-btn-row">
-      <button class="tx-btn" onclick="selectTxType('position',this)">📍 Position</button>
+      <button class="tx-btn" onclick="selectTxType('position',this)" data-i18n="tab.send.position">📍 Position</button>
     </div>
   </div>
 
   <div class="tx-group p2-group">
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p2-dot"></span>
-      <span class="tx-prio-name p2-col">Kommunikation</span>
-      <span class="tx-prio-info">P2 · Sendung ≤ 30 s nach Einreihung</span>
+      <span class="tx-prio-name p2-col" data-i18n="send.group.communication">Kommunikation</span>
+      <span class="tx-prio-info" data-i18n="send.p2.label">P2 · Sendung ≤ 30 s nach Einreihung</span>
     </div>
     <div class="tx-btn-row">
-      <button class="tx-btn" onclick="selectTxType('text',this)">💬 Freitext</button>
+      <button class="tx-btn" onclick="selectTxType('text',this)" data-i18n="tab.send.text">💬 Freitext</button>
     </div>
   </div>
 
   <div class="tx-group p1-group">
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p1-dot"></span>
-      <span class="tx-prio-name p1-col">Notfall</span>
-      <span class="tx-prio-info">P1 · sofort — überspringt Cooldown</span>
+      <span class="tx-prio-name p1-col" data-i18n="send.group.emergency">Notfall</span>
+      <span class="tx-prio-info" data-i18n="send.p1.label">P1 · sofort — überspringt Cooldown</span>
     </div>
     <div class="tx-btn-row">
-      <button class="tx-btn p1-btn" onclick="selectTxType('emergency',this)">🆘 Notfall-Beacon</button>
+      <button class="tx-btn p1-btn" onclick="selectTxType('emergency',this)" data-i18n="tab.send.emergency">🆘 Notfall-Beacon</button>
     </div>
   </div>
 
@@ -739,23 +740,23 @@ h2:first-child { margin-top: 0; }
 
   <!-- Wetter-Formular -->
   <div id="form-weather" class="tx-form form-p4">
-    <div class="field-row"><label>Temperatur</label>
+    <div class="field-row"><label data-i18n="send.weather.temp">Temperatur</label>
       <input type="number" id="w-temp" value="20.0" step="0.1"><span class="unit">°C</span></div>
-    <div class="field-row"><label>Luftfeuchte</label>
+    <div class="field-row"><label data-i18n="send.weather.hum">Luftfeuchte</label>
       <input type="number" id="w-hum" value="65" min="0" max="100"><span class="unit">%</span></div>
-    <div class="field-row"><label>Luftdruck</label>
+    <div class="field-row"><label data-i18n="send.weather.pressure">Luftdruck</label>
       <input type="number" id="w-pres" value="1013.2" step="0.1"><span class="unit">hPa</span></div>
-    <div class="field-row"><label>Windgeschw.</label>
+    <div class="field-row"><label data-i18n="send.weather.wind">Windgeschw.</label>
       <input type="number" id="w-wind" value="15" min="0"><span class="unit">km/h</span></div>
-    <div class="field-row"><label>Windrichtung</label>
+    <div class="field-row"><label data-i18n="send.weather.wdir">Windrichtung</label>
       <input type="number" id="w-wdir" value="270" min="0" max="359"><span class="unit">°</span></div>
-    <div class="field-row"><label>Niederschlag</label>
+    <div class="field-row"><label data-i18n="send.weather.rain">Niederschlag</label>
       <input type="number" id="w-rain" value="0.0" step="0.1"><span class="unit">mm/h</span></div>
-    <div class="field-row"><label>UV-Index</label>
+    <div class="field-row"><label data-i18n="send.weather.uv">UV-Index</label>
       <input type="number" id="w-uv" value="3" min="0" max="15"></div>
     <div style="display:flex;gap:8px;align-items:center;">
-      <button class="btn" onclick="sendTx('weather')">Wetter senden</button>
-      <button class="btn secondary" type="button" onclick="clearForm('weather')">Löschen</button>
+      <button class="btn" onclick="sendTx('weather')" data-i18n="send.btn.submit.weather">Wetter senden</button>
+      <button class="btn secondary" type="button" onclick="clearForm('weather')" data-i18n="send.btn.clear">Löschen</button>
     </div>
   </div>
 
@@ -772,18 +773,18 @@ h2:first-child { margin-top: 0; }
     <div class="field-row"><label>Heading</label>
       <input type="number" id="p-hdg" value="0" min="0" max="359"><span class="unit">°</span></div>
     <div class="field-row"><label>Mobil</label>
-      <select id="p-mobile"><option value="0">Nein (Bake)</option><option value="1">Ja (mobil)</option></select></div>
+      <select id="p-mobile"><option value="0" data-i18n="send.position.no">Nein (Bake)</option><option value="1" data-i18n="send.position.yes">Ja (mobil)</option></select></div>
     <div style="display:flex;gap:8px;align-items:center;">
-      <button class="btn" onclick="sendTx('position')">Position senden</button>
-      <button class="btn secondary" type="button" onclick="clearForm('position')">Löschen</button>
+      <button class="btn" onclick="sendTx('position')" data-i18n="send.btn.submit.position">Position senden</button>
+      <button class="btn secondary" type="button" onclick="clearForm('position')" data-i18n="send.btn.clear">Löschen</button>
     </div>
   </div>
 
   <!-- Text-Formular -->
   <div id="form-text" class="tx-form form-p2 hidden">
-    <div class="field-row"><label>An (Rufzeichen)</label>
+    <div class="field-row"><label data-i18n="send.text.to">An (Rufzeichen)</label>
       <input type="text" id="t-to" value="" maxlength="6" style="text-transform:uppercase" placeholder="z.B. OE1XTU"></div>
-    <div class="field-row"><label>Nachricht</label>
+    <div class="field-row"><label data-i18n="send.text.message">Nachricht</label>
       <input type="text" id="t-msg" value="" maxlength="56"
              placeholder="Nachricht (max. 56 Byte / 4 Frames)"
              oninput="updateTextCounter()"></div>
@@ -798,63 +799,65 @@ h2:first-child { margin-top: 0; }
          font-size:var(--fs-sm);">
       <label class="toggle-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
         <input type="checkbox" id="qso-mode-toggle" onchange="toggleQsoMode(this.checked)">
-        <span>⚡ QSO-Modus (60 s / Fragment)</span>
+        <span>⚡ <span data-i18n="send.text.qso_mode">QSO-Modus (60 s / Fragment)</span></span>
       </label>
       <span id="qso-mode-hint" style="color:var(--text2);font-size:var(--fs-xs);">
-        Schedule-Intervall: <span id="qso-interval-display">300 s</span>
+        <span data-i18n="send.text.schedule">Schedule-Intervall:</span> <span id="qso-interval-display">300 s</span>
       </span>
     </div>
     <div id="qso-mode-warning" class="hidden" style="font-size:var(--fs-xs);color:var(--orange,#d97706);
-         margin-bottom:8px;padding:4px 8px;border-radius:3px;border:1px solid var(--orange,#d97706);">
+         margin-bottom:8px;padding:4px 8px;border-radius:3px;border:1px solid var(--orange,#d97706);"
+         data-i18n="send.text.qso_warning">
       ⚠ QSO-Modus aktiv — nur bei interaktivem Betrieb verwenden. Für automatischen Betrieb deaktivieren.
     </div>
     <div style="display:flex;gap:8px;align-items:center;">
-      <button class="btn" onclick="sendTx('text')">Text senden</button>
-      <button class="btn secondary" type="button" onclick="clearForm('text')">Löschen</button>
+      <button class="btn" onclick="sendTx('text')" data-i18n="send.btn.submit.text">Text senden</button>
+      <button class="btn secondary" type="button" onclick="clearForm('text')" data-i18n="send.btn.clear">Löschen</button>
     </div>
   </div>
 
   <!-- Notfall-Formular -->
   <div id="form-emergency" class="tx-form form-p1 hidden">
     <div style="background:rgba(248,81,73,.12);border:1px solid var(--red);border-radius:4px;
-                padding:8px;margin-bottom:12px;color:var(--red);font-size:var(--fs-sm);">
+                padding:8px;margin-bottom:12px;color:var(--red);font-size:var(--fs-sm);"
+         data-i18n="send.emergency.warning">
       ⚠ Notfall-Frames erhalten Priorität 1 — sofortige Übertragung ohne Cooldown
     </div>
     <div class="field-row"><label>Latitude</label>
       <input type="number" id="e-lat" value="48.2082" step="0.0001"><span class="unit">°</span></div>
     <div class="field-row"><label>Longitude</label>
       <input type="number" id="e-lon" value="16.3738" step="0.0001"><span class="unit">°</span></div>
-    <div class="field-row"><label>Personen</label>
+    <div class="field-row"><label data-i18n="send.emergency.persons">Personen</label>
       <input type="number" id="e-persons" value="1" min="1"></div>
-    <div class="field-row"><label>Verletzung</label>
+    <div class="field-row"><label data-i18n="send.emergency.injury">Verletzung</label>
       <select id="e-injury">
-        <option value="0">Unbekannt</option><option value="1">Leicht</option>
+        <option value="0" data-i18n="send.emergency.unknown">Unbekannt</option><option value="1">Leicht</option>
         <option value="2">Schwer</option><option value="3">Kritisch</option>
       </select></div>
-    <div class="field-row"><label>Priorität</label>
+    <div class="field-row"><label data-i18n="send.emergency.prio">Priorität</label>
       <select id="e-prio">
-        <option value="1">Mittel</option><option value="2">Hoch</option>
-        <option value="3" selected>Sofort</option>
+        <option value="1">Mittel</option><option value="2" data-i18n="send.emergency.urgent">Hoch</option>
+        <option value="3" selected data-i18n="send.emergency.immediate">Sofort</option>
       </select></div>
-    <div class="field-row"><label>Kurztext (8 Z.)</label>
-      <input type="text" id="e-text" value="" maxlength="8" style="text-transform:uppercase" placeholder="z.B. TRAPPED"></div>
+    <div class="field-row"><label data-i18n="send.emergency.shorttext">Kurztext (8 Z.)</label>
+      <input type="text" id="e-text" value="" maxlength="8" style="text-transform:uppercase" placeholder="z.B. TRAPPED" data-i18n-placeholder="send.emergency.placeholder"></div>
     <div style="display:flex;gap:8px;align-items:center;">
-      <button class="btn danger" onclick="sendTx('emergency')">🆘 NOTFALL senden</button>
-      <button class="btn secondary" type="button" onclick="clearForm('emergency')">Löschen</button>
+      <button class="btn danger" onclick="sendTx('emergency')" data-i18n="send.emergency.btn">🆘 NOTFALL senden</button>
+      <button class="btn secondary" type="button" onclick="clearForm('emergency')" data-i18n="send.btn.clear">Löschen</button>
     </div>
   </div>
 
   <div id="tx-result"></div>
 
   <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;margin-bottom:6px;">
-    <h2 style="margin:0;">TX-Warteschlange</h2>
+    <h2 style="margin:0;" data-i18n="send.queue.title">TX-Warteschlange</h2>
     <button id="btn-clear-queue" class="btn secondary" style="font-size:var(--fs-xs);padding:4px 10px;"
             onclick="clearTxQueue()" title="Alle ausstehenden Frames löschen">
-      ✕ Warteschlange löschen
+      ✕ <span data-i18n="send.queue.clear">Warteschlange löschen</span>
     </button>
   </div>
   <div id="tx-queue">
-    <div class="txq-empty">Warteschlange leer — keine ausstehenden Frames</div>
+    <div class="txq-empty" data-i18n="send.queue.empty">Warteschlange leer — keine ausstehenden Frames</div>
   </div>
 </div>
 
@@ -863,48 +866,48 @@ h2:first-child { margin-top: 0; }
   <!-- Sub-Navigation -->
   <div style="display:flex;gap:8px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:8px;">
     <button id="comm-tab-rx" class="btn active" onclick="switchCommTab('rx')"
-            style="font-size:var(--fs-sm);">📨 Empfangen</button>
+            style="font-size:var(--fs-sm);" data-i18n="tab.inbox.rx">📨 Empfangen</button>
     <button id="comm-tab-tx" class="btn secondary" onclick="switchCommTab('tx')"
-            style="font-size:var(--fs-sm);">📤 Gesendet</button>
+            style="font-size:var(--fs-sm);" data-i18n="tab.inbox.tx">📤 Gesendet</button>
   </div>
 
   <!-- Empfangen -->
   <div id="comm-panel-rx">
-    <div id="inbox-empty" style="color:var(--text2);padding:8px;">Keine Nachrichten empfangen.</div>
+    <div id="inbox-empty" style="color:var(--text2);padding:8px;" data-i18n="inbox.empty">Keine Nachrichten empfangen.</div>
     <div id="inbox-list"></div>
   </div>
 
   <!-- Gesendet -->
   <div id="comm-panel-tx" style="display:none;">
-    <div id="sent-empty" style="color:var(--text2);padding:8px;">Noch nichts gesendet.</div>
+    <div id="sent-empty" style="color:var(--text2);padding:8px;" data-i18n="inbox.sent_empty">Noch nichts gesendet.</div>
     <div id="sent-list"></div>
   </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════ TAB: STATUS & CONFIG -->
 <div id="tab-status" class="tab-panel">
-  <h3>System-Status</h3>
+  <h3 data-i18n="status.title">System-Status</h3>
   <div id="status-grid">
-    <div class="stat-card"><div class="key">Rufzeichen</div><div class="val accent" id="s-call">–</div></div>
+    <div class="stat-card"><div class="key" data-i18n="status.callsign">Rufzeichen</div><div class="val accent" id="s-call">–</div></div>
     <div class="stat-card stat-card-split">
       <div class="split-half">
-        <div class="key">Heimatkanal</div>
+        <div class="key" data-i18n="status.homechannel">Heimatkanal</div>
         <div class="val accent" id="s-ch">–</div>
       </div>
       <div class="split-divider"></div>
       <div class="split-half">
-        <div class="key">TX-Offset</div>
+        <div class="key" data-i18n="status.tx_offset">TX-Offset</div>
         <div class="val accent" id="s-ch-offset">–</div>
         <div class="split-sub" id="s-ch-cycle"></div>
       </div>
     </div>
-    <div class="stat-card"><div class="key">Uptime</div><div class="val" id="s-uptime">–</div></div>
-    <div class="stat-card"><div class="key">TX-Queue</div><div class="val" id="s-queue">–</div></div>
-    <div class="stat-card"><div class="key">Letzter TX</div><div class="val" id="s-last-tx">–</div></div>
-    <div class="stat-card"><div class="key">Letzter RX</div><div class="val green" id="s-last-rx">–</div></div>
-    <div class="stat-card"><div class="key">Audio-Gerät</div><div class="val" id="s-audio">–</div></div>
-    <div class="stat-card"><div class="key">PTT-Backend</div><div class="val" id="s-ptt">–</div></div>
-    <div class="stat-card"><div class="key">RX-Frames (Session)</div><div class="val green" id="s-rx-count">0</div></div>
+    <div class="stat-card"><div class="key" data-i18n="status.uptime">Uptime</div><div class="val" id="s-uptime">–</div></div>
+    <div class="stat-card"><div class="key" data-i18n="status.tx_queue">TX-Queue</div><div class="val" id="s-queue">–</div></div>
+    <div class="stat-card"><div class="key" data-i18n="status.last_tx">Letzter TX</div><div class="val" id="s-last-tx">–</div></div>
+    <div class="stat-card"><div class="key" data-i18n="status.last_rx">Letzter RX</div><div class="val green" id="s-last-rx">–</div></div>
+    <div class="stat-card"><div class="key" data-i18n="status.audio_device">Audio-Gerät</div><div class="val" id="s-audio">–</div></div>
+    <div class="stat-card"><div class="key" data-i18n="status.ptt_backend">PTT-Backend</div><div class="val" id="s-ptt">–</div></div>
+    <div class="stat-card"><div class="key" data-i18n="status.rx_count">RX-Frames (Session)</div><div class="val green" id="s-rx-count">0</div></div>
   </div>
 
   <!-- Konfiguration — Trennbereich mit Header -->
@@ -913,54 +916,55 @@ h2:first-child { margin-top: 0; }
               display:flex;align-items:center;gap:12px;">
     <h3 style="margin:0;font-size:var(--fs-sm);text-transform:uppercase;
                letter-spacing:1px;color:var(--text2);white-space:nowrap;">
-      ⚙ Konfiguration
+      ⚙ <span data-i18n="cfg.title">Konfiguration</span>
     </h3>
     <div style="flex:1;height:1px;background:var(--border);"></div>
   </div>
   <nav class="cfg-subnav">
-    <button class="active" onclick="switchCfgTab('cfg-audio',this)">🔊 Audio &amp; PTT</button>
-    <button onclick="switchCfgTab('cfg-hamlib',this)">📻 Transceiver (Hamlib)</button>
-    <button onclick="switchCfgTab('cfg-sdr',this)">📡 SDR-TX (SoapySDR)</button>
-    <button onclick="switchCfgTab('cfg-display',this)">🎨 Darstellung</button>
+    <button class="active" onclick="switchCfgTab('cfg-audio',this)" data-i18n="cfg.tab.audio">🔊 Audio &amp; PTT</button>
+    <button onclick="switchCfgTab('cfg-hamlib',this)" data-i18n="cfg.tab.hamlib">📻 Transceiver (Hamlib)</button>
+    <button onclick="switchCfgTab('cfg-sdr',this)" data-i18n="cfg.tab.sdr">📡 SDR-TX (SoapySDR)</button>
+    <button onclick="switchCfgTab('cfg-display',this)" data-i18n="cfg.tab.display">🎨 Darstellung</button>
   </nav>
 
   <!-- ── Unterseite: Audio & PTT ── -->
   <div id="cfg-audio" class="cfg-subpanel active">
     <div class="audio-cfg-card">
       <div class="audio-cfg-row">
-        <label>Audio-Eingang (RX)</label>
+        <label data-i18n="cfg.audio.rx">Audio-Eingang (RX)</label>
         <select id="cfg-audio-in"><option value="">– Standard / wie TX –</option></select>
       </div>
       <div class="audio-cfg-row">
-        <label>Audio-Ausgang (TX)</label>
+        <label data-i18n="cfg.audio.tx">Audio-Ausgang (TX)</label>
         <select id="cfg-audio-out"><option value="">– Standard –</option></select>
       </div>
       <div class="audio-cfg-row">
-        <label>PTT-Backend</label>
+        <label data-i18n="cfg.audio.ptt">PTT-Backend</label>
         <select id="cfg-ptt">
           <option value="null">null (kein PTT)</option>
           <option value="gpio">gpio</option>
           <option value="hamlib">hamlib</option>
         </select>
       </div>
-      <div class="audio-cfg-note">
+      <div class="audio-cfg-note" data-i18n-html="cfg.audio.info.html">
         <b>TX-Wechsel</b> wirkt sofort beim nächsten Sendevorgang.
         <b>RX-Wechsel</b> erfordert einen Neustart des Daemons —
         der RX-Loop hält das Gerät beim Start fest.
       </div>
       <div class="audio-cfg-actions">
-        <button class="btn" onclick="saveAudioConfig()">💾 Speichern</button>
-        <button class="btn secondary" onclick="loadAudioConfig()">↻ Neu laden</button>
+        <button class="btn" onclick="saveAudioConfig()" data-i18n="btn.save">💾 Speichern</button>
+        <button class="btn secondary" onclick="loadAudioConfig()" data-i18n="btn.reload">↻ Neu laden</button>
       </div>
       <div id="cfg-audio-status"></div>
     </div>
 
     <div style="margin-top:16px;background:var(--bg2);border:1px solid var(--border);
          border-radius:6px;padding:14px;width:fit-content;max-width:100%;">
-      <h2 style="margin-top:0;margin-bottom:10px;">PTT-Timing</h2>
+      <h2 style="margin-top:0;margin-bottom:10px;" data-i18n="cfg.audio.ptt_timing">PTT-Timing</h2>
       <div style="display:flex;gap:8px;align-items:center;">
         <label style="color:var(--text2);font-size:var(--fs-sm);width:140px;flex-shrink:0;"
-               title="Lead (vor Audio) = Tail (nach Audio) — symmetrisch">
+               title="Lead (vor Audio) = Tail (nach Audio) — symmetrisch"
+               data-i18n="cfg.audio.ptt_lead">
           PTT Lead/Tail
         </label>
         <input type="number" id="cfg-ptt-delay" value="250" min="0" max="2000" step="10"
@@ -981,12 +985,12 @@ h2:first-child { margin-top: 0; }
     <div class="audio-cfg-card">
       <!-- TRX-Profil-Auswahl — nur sichtbar wenn trx_profiles vorhanden -->
       <div id="trx-profile-row" class="audio-cfg-row hidden" style="margin-bottom:12px;">
-        <label>TRX-Profil</label>
+        <label data-i18n="cfg.hamlib.profile">TRX-Profil</label>
         <select id="trx-profile-select" onchange="onTrxProfileChange(this.value)"
                 style="flex:1;">
         </select>
         <button class="btn" style="flex-shrink:0;padding:5px 12px;"
-                onclick="activateTrxProfile()">✓ Aktivieren</button>
+                onclick="activateTrxProfile()" data-i18n="btn.activate">✓ Aktivieren</button>
       </div>
       <div id="trx-profile-active" style="font-size:var(--fs-xs);color:var(--text2);
            margin-bottom:10px;display:none;">
@@ -997,19 +1001,19 @@ h2:first-child { margin-top: 0; }
       </div>
       <div id="cfg-hamlib-status" style="margin-bottom:6px;"></div>
       <div class="audio-cfg-row">
-        <label>Serieller Port</label>
+        <label data-i18n="cfg.hamlib.port">Serieller Port</label>
         <select id="hamlib-port"><option value="">– (Rescan) –</option></select>
         <button class="btn secondary" style="margin-top:0;padding:5px 12px;flex-shrink:0;"
-                onclick="rescanHamlibPorts()">↻ Rescan</button>
+                onclick="rescanHamlibPorts()" data-i18n="btn.rescan">↻ Rescan</button>
       </div>
       <div class="audio-cfg-row">
-        <label>Gewähltes Modell</label>
+        <label data-i18n="cfg.hamlib.model">Gewähltes Modell</label>
         <span id="hamlib-model-selected" style="color:var(--accent);font-size:var(--fs-sm);">–</span>
         <input type="hidden" id="hamlib-model-id" value="">
       </div>
       <div class="audio-cfg-row">
-        <label>Rig-Modell suchen</label>
-        <input type="text" id="hamlib-model-search" placeholder="Suche (z.B. TS-790)"
+        <label data-i18n="cfg.hamlib.search">Rig-Modell suchen</label>
+        <input type="text" id="hamlib-model-search" placeholder="Suche (z.B. TS-790)" data-i18n-placeholder="cfg.hamlib.search_ph"
                oninput="searchHamlibModels(this.value)"
                style="flex:1;background:var(--bg3);border:1px solid var(--border);
                       color:var(--text);padding:6px 10px;border-radius:4px;
@@ -1026,7 +1030,7 @@ h2:first-child { margin-top: 0; }
         </select>
       </div>
       <div class="audio-cfg-row">
-        <label>Baudrate</label>
+        <label data-i18n="cfg.hamlib.baud">Baudrate</label>
         <select id="hamlib-baud">
           <option value="1200">1200</option>
           <option value="4800">4800</option>
@@ -1040,20 +1044,20 @@ h2:first-child { margin-top: 0; }
       <div class="audio-cfg-row">
         <label class="toggle-sw" style="width:auto;cursor:pointer;">
           <input type="checkbox" id="hamlib-autostart" checked>
-          rigctld automatisch starten (auto_start)
+          <span data-i18n="cfg.hamlib.autostart">rigctld automatisch starten (auto_start)</span>
         </label>
       </div>
-      <div class="audio-cfg-note">
+      <div class="audio-cfg-note" data-i18n-html="cfg.hamlib.info.html">
         GUST startet rigctld beim Hochfahren automatisch mit den eingetragenen
         Parametern. PTT-Backend wird auf <b>hamlib</b> gesetzt. Extern gestartete
         rigctld-Instanzen werden nicht beendet.
       </div>
       <div class="audio-cfg-actions">
-        <button class="btn" onclick="saveHamlibConfig()">💾 Speichern</button>
-        <button class="btn secondary" onclick="loadHamlibConfig()">↻ Neu laden</button>
-        <button class="btn secondary" onclick="testHamlibConnection()">🔌 Verbinden &amp; Testen</button>
+        <button class="btn" onclick="saveHamlibConfig()" data-i18n="btn.save">💾 Speichern</button>
+        <button class="btn secondary" onclick="loadHamlibConfig()" data-i18n="btn.reload">↻ Neu laden</button>
+        <button class="btn secondary" onclick="testHamlibConnection()" data-i18n="btn.connect_test">🔌 Verbinden &amp; Testen</button>
         <button class="btn secondary" id="tune-btn" onclick="toggleTune()"
-                style="border-color:var(--orange);color:var(--orange);">
+                style="border-color:var(--orange);color:var(--orange);" data-i18n="btn.tune">
           📡 Tune
         </button>
       </div>
@@ -1066,35 +1070,36 @@ h2:first-child { margin-top: 0; }
       <div class="audio-cfg-row">
         <label class="toggle-sw" style="width:auto;cursor:pointer;">
           <input type="checkbox" id="sdr-enabled">
-          Aktiv — TX über SDR statt NF-Audio
+          <span data-i18n="cfg.sdr.active">Aktiv — TX über SDR statt NF-Audio</span>
         </label>
       </div>
       <div class="audio-cfg-row">
-        <label>TX-Gerät</label>
+        <label data-i18n="cfg.sdr.device">TX-Gerät</label>
         <select id="sdr-device"><option value="">– (Rescan starten) –</option></select>
         <button class="btn secondary" style="margin-top:0;padding:5px 12px;flex-shrink:0;"
-                onclick="rescanSdrDevices()" title="SoapySDR.Device.enumerate() neu aufrufen">
+                onclick="rescanSdrDevices()" title="SoapySDR.Device.enumerate() neu aufrufen"
+                data-i18n="btn.rescan">
           ↻ Rescan
         </button>
       </div>
       <div class="audio-cfg-row">
-        <label>Frequenz</label>
+        <label data-i18n="cfg.sdr.freq">Frequenz</label>
         <input type="number" id="sdr-freq" value="14110000" min="1000" step="1000"
                style="flex:1;min-width:140px;background:var(--bg3);border:1px solid var(--border);
                       color:var(--text);padding:6px 10px;border-radius:4px;
                       font-family:inherit;font-size:var(--fs-sm);">
-        <span class="unit" style="color:var(--text2);font-size:var(--fs-xs);">Hz (USB-Dial)</span>
+        <span class="unit" style="color:var(--text2);font-size:var(--fs-xs);" data-i18n="cfg.sdr.freq_unit">Hz (USB-Dial)</span>
       </div>
       <div class="audio-cfg-row">
-        <label>Sample-Rate</label>
+        <label data-i18n="cfg.sdr.samplerate">Sample-Rate</label>
         <select id="sdr-sr"><option value="2000000">2 000 000 Hz</option></select>
       </div>
       <div class="audio-cfg-row">
-        <label>Antenne</label>
+        <label data-i18n="cfg.sdr.antenna">Antenne</label>
         <select id="sdr-antenna"><option value="">– Default –</option></select>
       </div>
       <div class="audio-cfg-row">
-        <label>Gain (normalisiert)</label>
+        <label data-i18n="cfg.sdr.gain">Gain (normalisiert)</label>
         <input type="range" id="sdr-gain" min="0" max="1" step="0.01" value="0.5"
                style="flex:1;accent-color:var(--accent);">
         <span class="unit" id="sdr-gain-val"
@@ -1103,19 +1108,19 @@ h2:first-child { margin-top: 0; }
       <div id="sdr-gain-elements" style="display:none;font-size:var(--fs-xs);
            color:var(--text2);margin:4px 0 8px;padding:6px 10px;background:var(--bg3);
            border-radius:3px;"></div>
-      <div class="audio-cfg-note" id="sdr-note">
+      <div class="audio-cfg-note" id="sdr-note" data-i18n-html="cfg.sdr.info.html">
         <b>Discovery-only</b> (ADR-16) — Geräte kommen aus
         <code>SoapySDR.Device.enumerate()</code>. RX-only-Geräte (z.B. RTL-SDR)
         sind ausgegraut. Gespeichert werden Treiber + Seriennummer, nicht der
         Listenindex.
       </div>
       <div class="audio-cfg-actions">
-        <button class="btn" onclick="saveSdrConfig()">💾 Speichern</button>
-        <button class="btn secondary" onclick="loadSdrConfig()">↻ Neu laden</button>
+        <button class="btn" onclick="saveSdrConfig()" data-i18n="btn.save">💾 Speichern</button>
+        <button class="btn secondary" onclick="loadSdrConfig()" data-i18n="btn.reload">↻ Neu laden</button>
       </div>
       <div id="sdr-cfg-status"></div>
       <details id="sdr-modules-details" style="margin-top:10px;font-size:var(--fs-xs);">
-        <summary style="cursor:pointer;color:var(--text2);">
+        <summary style="cursor:pointer;color:var(--text2);" data-i18n="cfg.sdr.diag">
           Geladene SoapySDR-Module (Diagnose)
         </summary>
         <pre id="sdr-modules-list" style="margin-top:6px;padding:6px 10px;
@@ -1129,18 +1134,26 @@ h2:first-child { margin-top: 0; }
   <!-- ── Unterseite: Darstellung ── -->
   <div id="cfg-display" class="cfg-subpanel">
     <h3 style="margin-top:0;margin-bottom:8px;font-size:var(--fs-sm);
-               text-transform:uppercase;letter-spacing:1px;color:var(--text2);">
+               text-transform:uppercase;letter-spacing:1px;color:var(--text2);"
+        data-i18n="cfg.display.title">
       Darstellung
     </h3>
     <div class="status-cfg-row">
-      <label class="cfg-label">Theme</label>
+      <label class="cfg-label" data-i18n="cfg.display.theme">Theme</label>
       <select id="cfg-theme" onchange="applyTheme(this.value)">
         <option value="dark">Dark Amber</option>
         <option value="light">Light Clean</option>
       </select>
     </div>
     <div class="status-cfg-row">
-      <label class="cfg-label">Schriftart</label>
+      <label class="cfg-label" data-i18n="cfg.display.lang">Sprache / Language</label>
+      <select id="cfg-lang" onchange="loadLang(this.value)">
+        <option value="de">🇩🇪 Deutsch</option>
+        <option value="en">🇬🇧 English</option>
+      </select>
+    </div>
+    <div class="status-cfg-row">
+      <label class="cfg-label" data-i18n="cfg.display.font">Schriftart</label>
       <select id="cfg-font" onchange="applyFont(this.value)">
         <option value="mono">Monospace (Standard)</option>
         <option value="system">System UI (Segoe / Helvetica)</option>
@@ -1149,7 +1162,7 @@ h2:first-child { margin-top: 0; }
       </select>
     </div>
     <div class="status-cfg-row">
-      <label class="cfg-label">Schriftgröße</label>
+      <label class="cfg-label" data-i18n="font.size_label">Schriftgröße</label>
       <select id="cfg-fontsize" onchange="applyFontSize(this.value)">
         <option value="12">12 px</option>
         <option value="13">13 px (Standard)</option>
@@ -1162,7 +1175,7 @@ h2:first-child { margin-top: 0; }
     </div>
 
     <div style="margin-top:16px;">
-      <button class="btn secondary" onclick="loadStatus()">↻ Aktualisieren</button>
+      <button class="btn secondary" onclick="loadStatus()" data-i18n="status.refresh">↻ Aktualisieren</button>
     </div>
   </div>
 </div>
@@ -1174,14 +1187,14 @@ h2:first-child { margin-top: 0; }
   <div style="margin-bottom:18px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
       <h3 style="margin:0;font-size:var(--fs-sm);text-transform:uppercase;
-                 letter-spacing:1px;color:var(--text2);">📡 Aktivitätslog</h3>
+                 letter-spacing:1px;color:var(--text2);" data-i18n="log.activity">📡 Aktivitätslog</h3>
       <button class="btn secondary" style="padding:3px 10px;font-size:var(--fs-xs);"
-              onclick="clearActivityLog()">Leeren</button>
+              onclick="clearActivityLog()" data-i18n="log.clear">Leeren</button>
     </div>
     <div id="activity-feed"
          style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;
                 padding:8px;max-height:200px;overflow-y:auto;font-size:var(--fs-sm);">
-      <div style="color:var(--text2);">Noch keine Aktivität.</div>
+      <div style="color:var(--text2);" data-i18n="log.activity.empty">Noch keine Aktivität.</div>
     </div>
   </div>
 
@@ -1189,16 +1202,16 @@ h2:first-child { margin-top: 0; }
   <div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
       <h3 style="margin:0;font-size:var(--fs-sm);text-transform:uppercase;
-                 letter-spacing:1px;color:var(--text2);">🗒 Systemlog</h3>
-      <span style="color:var(--text2);font-size:var(--fs-sm);">Ebene:</span>
+                 letter-spacing:1px;color:var(--text2);">🗒 <span data-i18n="log.systemlog">Systemlog</span></h3>
+      <span style="color:var(--text2);font-size:var(--fs-sm);" data-i18n="log.level">Ebene:</span>
       <select id="log-level-filter" onchange="filterLogLevel()">
-        <option value="ALL">Alle</option>
+        <option value="ALL" data-i18n="log.filter.all">Alle</option>
         <option value="INFO">INFO+</option>
         <option value="WARNING">WARNING+</option>
         <option value="ERROR">ERROR</option>
       </select>
       <label id="autoscroll-toggle">
-        <input type="checkbox" id="log-autoscroll" checked> Auto-Scroll
+        <input type="checkbox" id="log-autoscroll" checked> <span data-i18n="monitor.autoscroll">Auto-Scroll</span>
       </label>
       <button class="btn secondary" style="padding:3px 10px;font-size:var(--fs-xs);"
               onclick="clearLog()">Leeren</button>
@@ -1219,6 +1232,8 @@ const state = {
   rxCount:    0,
   wsRx:       null,
   wsLog:      null,
+  lang:       {},
+  currentLang: localStorage.getItem('gust_lang') || 'de',
   wsRetryTimer: null,
   txInterval: 300,    // TX-Schedule-Intervall in Sekunden (aus /api/status)
   qsoMode:    false,  // QSO-Modus: 60 s Fragment-Intervall statt txInterval
@@ -1238,6 +1253,42 @@ const state = {
   lastHeartbeat:  null,   // Date.now() beim letzten Heartbeat-Empfang
   daemonAlive:    false,  // true nach erstem Heartbeat
 };
+
+// ═══════════════════════════ i18n ════════════════════════════
+function t(key) {
+  return state.lang[key] ?? key;
+}
+
+async function loadLang(code) {
+  try {
+    const r = await fetch('/api/lang/' + code);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    state.lang = await r.json();
+    state.currentLang = code;
+    localStorage.setItem('gust_lang', code);
+    applyI18n();
+  } catch(e) {
+    console.warn('i18n load failed:', e);
+  }
+}
+
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    const val = t(key);
+    // Buttons und Spans: innerHTML nur wenn kein Kind-Element vorhanden
+    if (el.children.length === 0) el.textContent = val;
+  });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => {
+    el.innerHTML = t(el.getAttribute('data-i18n-html'));
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    el.title = t(el.getAttribute('data-i18n-title'));
+  });
+}
 
 // Freitext-Frame-Typ (0x40 — siehe gust_frame.py FrameType.TEXT)
 function _setOnAir(active) {
@@ -1498,11 +1549,11 @@ async function sendTx(type) {
     const r = await apiFetch('/api/tx/' + type, { method: 'POST',
       headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
     el.className = 'ok'; el.style.display = 'block';
-    el.textContent = '✓ ' + (r.message || 'Frame eingereiht');
+    el.textContent = '✓ ' + (r.message || t('tx.queued'));
     fetchTxQueue();   // Warteschlange sofort aktualisieren
   } catch(e) {
     el.className = 'err'; el.style.display = 'block';
-    el.textContent = '✗ Fehler: ' + e.message;
+    el.textContent = t('tx.error') + ' ' + e.message;
   }
   setTimeout(() => el.style.display = 'none', 4000);
 }
@@ -1512,7 +1563,7 @@ async function loadStatus() {
   try {
     const s = await apiFetch('/api/status');
     document.getElementById('s-call').textContent = s.callsign || '–';
-    document.getElementById('s-ch').textContent   = 'Kanal ' + (s.home_channel ?? '–');
+    document.getElementById('s-ch').textContent   = t('unit.channel') + ' ' + (s.home_channel ?? '–');
     if (s.tx_time_offset_s != null && s.tx_interval_s) {
       const off  = s.tx_time_offset_s;
       const itvl = s.tx_interval_s;
@@ -1532,7 +1583,7 @@ async function loadStatus() {
     document.getElementById('s-last-tx').textContent = s.last_tx ? fmtTs(s.last_tx) : '–';
     document.getElementById('s-last-rx').textContent = s.last_rx ? fmtTs(s.last_rx) : '–';
     document.getElementById('s-audio').textContent  = s.audio_device || '–';
-    document.getElementById('s-ptt').textContent    = s.ptt_backend  || '–';
+    document.getElementById('s-ptt').textContent    = s.ptt_backend  || t('status.unknown');
     document.getElementById('s-rx-count').textContent = state.rxCount;
     applyStatusPush(s);   // Interval + Offset für Countdown übernehmen
   } catch(e) { /* ignore */ }
@@ -1790,7 +1841,7 @@ async function loadSdrDevices() {
       }
     }
     // Dropdown befüllen — RX-only ausgrauen
-    const opts = ['<option value="">– (kein Gerät) –</option>'];
+    const opts = ['<option value="">' + t('cfg.sdr.no_device') + '</option>'];
     sdrState.devices.forEach(d => {
       const k = _sdrArgsKey(d.args);
       const lbl = `${d.label || d.driver}` +
@@ -2294,7 +2345,7 @@ async function testHamlibConnection() {
       const freq = status.freq_hz
         ? (status.freq_hz / 1e6).toFixed(6) + ' MHz'
         : '(Frequenz unbekannt)';
-      txtEl.textContent = 'rigctld läuft — gelesene Frequenz vom TRx: ' + freq;
+      txtEl.textContent = t('cfg.hamlib.status_running') + ' ' + freq;
       startHamlibPolling();
     } else {
       dotEl.classList.add('err');
@@ -2310,7 +2361,21 @@ function _testHamlibDelayed(delayMs) {
   // Wartet delayMs Millisekunden bevor testHamlibConnection() aufgerufen
   // wird — gibt rigctld nach einem Neustart Zeit zum Hochfahren.
   // Standard-Delay: 2000 ms (rigctld braucht ~1-2 s auf Windows/RPi).
-  setTimeout(testHamlibConnection, delayMs || 2000);
+  // Tune-Button während des Delays deaktivieren — verhindert Tune-Klick
+  // bevor rigctld mit neuen Parametern erreichbar ist.
+  const tuneBtn = document.getElementById('tune-btn');
+  if (tuneBtn) {
+    tuneBtn.disabled = true;
+    tuneBtn.title    = 'Warte auf rigctld …';
+  }
+  setTimeout(() => {
+    testHamlibConnection().finally(() => {
+      if (tuneBtn) {
+        tuneBtn.disabled = false;
+        tuneBtn.title    = '';
+      }
+    });
+  }, delayMs || 2000);
 }
 
 // ── Hamlib Frequenz-Polling (alle 5 s) ──────────────────────
@@ -2333,7 +2398,7 @@ function startHamlibPolling() {
         const freq = status.freq_hz
           ? (status.freq_hz / 1e6).toFixed(6) + ' MHz  (Update alle 5 s)'
           : '(Frequenz unbekannt)';
-        txtEl.textContent = 'rigctld läuft — gelesene Frequenz vom TRx: ' + freq;
+        txtEl.textContent = t('cfg.hamlib.status_running') + ' ' + freq;
       } else {
         dotEl.className = 'hamlib-status-dot err';
         txtEl.textContent = 'rigctld nicht erreichbar' + (status.error ? ': ' + status.error : '');
@@ -2410,7 +2475,7 @@ function _tuneReset() {
   btn.dataset.tuning    = '0';
   btn.style.borderColor = 'var(--orange)';
   btn.style.color       = 'var(--orange)';
-  btn.textContent       = '📡 Tune';
+  btn.textContent       = t('btn.tune');
 }
 
 // Hamlib-Unterseite beim Öffnen automatisch befüllen (lazy):
@@ -2830,30 +2895,41 @@ function showInboxDetail(msg) {
         Kanal: ${ch} &nbsp;|&nbsp; Frame-Type: 0x40 &nbsp;|&nbsp; CRC: OK
         &nbsp;|&nbsp; SNR: ${snr != null ? snr.toFixed(1) + ' dB' : '–'}</div>`;
   } else {
-    const missing = Math.max(0, msg.total - msg.received);
-    const body = msg.complete
-      ? _esc(msg.text)
-      : `${_esc(msg.text)}<br><span style="color:var(--orange);">` +
-        `(unvollständig, ${missing} Frame(s) fehlen)</span>`;
     // Fragmente nach Index indizieren
     const byIdx = {};
     msg.frames.forEach(f => { byIdx[_fragOf(f).frag_index ?? 0] = f; });
+    // body: empfangene Chunks zusammensetzen, fehlende als […fehlt…]-Badge einsetzen
+    let bodyParts = [];
+    for (let i = 0; i < msg.total; i++) {
+      if (byIdx[i]) {
+        bodyParts.push(_esc(_fragOf(byIdx[i]).text ?? ''));
+      } else {
+        bodyParts.push(
+          `<span style="display:inline-block;background:rgba(240,165,0,0.12);` +
+          `border:1px dashed var(--orange);border-radius:3px;` +
+          `color:var(--orange);font-size:0.85em;padding:1px 6px;` +
+          `font-style:italic;vertical-align:middle;">${t('inbox.missing_frame')}</span>`
+        );
+      }
+    }
+    const body = msg.complete ? bodyParts.join('') : bodyParts.join('');
     let rows = '';
     for (let i = 0; i < msg.total; i++) {
       const f  = byIdx[i];
       const t  = f ? new Date((f.ts || msg.ts) * 1000).toLocaleTimeString('de-AT') : '–';
       const ch = f ? (f.channel ?? f.detected_channel ?? '?') : '–';
-      const st = f ? '✅ empfangen' : '❌ fehlt';
+      const st = f ? t('inbox.status.ok') : t('inbox.status.missing');
       rows += `<tr><td>${i + 1}</td><td>${t}</td><td>${ch}</td><td>${st}</td></tr>`;
     }
     html = `<h3>Nachricht von ${_esc(msg.from)} an ${_esc(msg.to)}
         (${msg.received}/${msg.total} Frames)</h3>
       <div style="color:var(--text2);font-size:var(--fs-xs);margin-bottom:8px;">${ts}</div>
       <div style="border-top:1px solid var(--border);border-bottom:1px solid var(--border);
-           padding:10px 0;margin:8px 0;white-space:pre-wrap;">${body || '(kein Text)'}</div>
-      <div style="font-size:var(--fs-sm);color:var(--text2);">Frame-Sequenz:</div>
+           padding:10px 0;margin:8px 0;white-space:pre-wrap;
+           font-size:var(--fs-lg);color:var(--text);">${body || t('inbox.no_text')}</div>
+      <div style="font-size:var(--fs-sm);color:var(--text2);">${t('inbox.frames_label')}</div>
       <table class="seq-table">
-        <thead><tr><th>Index</th><th>Zeit</th><th>Kanal</th><th>Status</th></tr></thead>
+        <thead><tr><th>${t('inbox.col.index')}</th><th>${t('inbox.col.time')}</th><th>${t('inbox.col.channel')}</th><th>${t('inbox.col.status')}</th></tr></thead>
         <tbody>${rows}</tbody></table>`;
   }
 
@@ -2973,7 +3049,7 @@ function updateAudioMeter(d) {
     status = '⚠ Clipping — Eingangspegel reduzieren!';
   } else if (rmsDb == null || rmsDb < -55) {
     box.classList.add('silent');
-    status = 'Stille — kein nennenswertes Signal';
+    status = t('monitor.silence');
   } else if (rmsDb < -40) {
     box.classList.add('weak');
     status = 'Sehr leise — möglicherweise zu wenig Pegel';
@@ -3097,7 +3173,7 @@ function connectWsRx() {
   state.wsRx.onopen = () => {
     ind.className = 'connected';
     ind.title = 'WebSocket verbunden';
-    log2ui('INFO', 'WS /ws/rx verbunden');
+    log2ui('INFO', t('ws.connected'));
   };
   state.wsRx.onmessage = (evt) => {
     try {
@@ -3105,7 +3181,7 @@ function connectWsRx() {
       if (msg.type === 'rx_frame')       appendRxFrame(msg.data);
       if (msg.type === 'status')         applyStatusPush(msg.data);
       if (msg.type === 'rx_audio_level') updateAudioMeter(msg.data);
-      if (msg.type === 'tx_done')      { state.isSending = false; _setOnAir(false); if (state._txDoneResolve) { const _r = state._txDoneResolve; state._txDoneResolve = null; _r(); } log2ui('INFO', 'TX abgeschlossen: ' + (msg.data?.type_name||'?')); fetchTxQueue(); appendTxDone(msg.data || {}); }
+      if (msg.type === 'tx_done')      { state.isSending = false; _setOnAir(false); if (state._txDoneResolve) { const _r = state._txDoneResolve; state._txDoneResolve = null; _r(); } log2ui('INFO', t('tx.done') + ' ' + (msg.data?.type_name||'?')); fetchTxQueue(); appendTxDone(msg.data || {}); }
       if (msg.type === 'ping')           state.wsRx.send(JSON.stringify({type:'pong'}));
       if (msg.type === 'heartbeat')      updateDaemonHeartbeat(msg);
     } catch(e) { /* ignore malformed */ }
@@ -3115,7 +3191,7 @@ function connectWsRx() {
     // Daemon-Status auf WARN sobald WS abbricht — Watchdog übernimmt nach 22s
     if (state.daemonAlive) _setDaemonWarn();
     ind.className = '';
-    log2ui('WARNING', 'WS /ws/rx getrennt — reconnect in 5 s');
+    log2ui('WARNING', t('ws.disconnected'));
     clearTimeout(state.wsRetryTimer);
     state.wsRetryTimer = setTimeout(connectWsRx, 5000);
   };
@@ -3169,7 +3245,7 @@ function activityLog(direction, typeName, peer, extra) {
 
 function clearActivityLog() {
   const feed = document.getElementById('activity-feed');
-  if (feed) feed.innerHTML = '<div style="color:var(--text2);">Noch keine Aktivität.</div>';
+  if (feed) feed.innerHTML = '<div style="color:var(--text2);">' + t('log.activity.empty') + '</div>';
 }
 
 function log2ui(level, msg) {
@@ -3423,7 +3499,7 @@ function renderTxQueue() {
   }));
   const combined = [...q, ...fragQ];
   if (!combined.length) {
-    box.innerHTML = '<div class="txq-empty">Warteschlange leer — keine ausstehenden Frames</div>';
+    box.innerHTML = '<div class="txq-empty">' + t('send.queue.empty') + '</div>';
     return;
   }
   box.innerHTML = combined.map((it, i) => {
@@ -3503,6 +3579,11 @@ function fmtTs(ts) {
 
 // ═══════════════════════════ INIT ═════════════════════════════
 (async function init() {
+  // Sprache laden (vor allem anderen, damit UI sofort lokalisiert ist)
+  await loadLang(state.currentLang);
+  // Sprachschalter auf gespeicherten Wert setzen
+  const cfgLang = document.getElementById('cfg-lang');
+  if (cfgLang) cfgLang.value = state.currentLang;
   try {
     const s = await apiFetch('/api/status');
     state.callsign   = s.callsign || '–';
@@ -3515,7 +3596,7 @@ function fmtTs(ts) {
     if (Array.isArray(hist.frames)) hist.frames.forEach(appendRxFrame);
   } catch(e) {
     buildChannelGrid(null);
-    log2ui('WARNING', 'Status-API nicht erreichbar: ' + e.message);
+    log2ui('WARNING', t('api.error') + ' ' + e.message);
   }
   connectWsRx();
   startHeartbeatWatchdog();
@@ -3596,6 +3677,7 @@ class WebServer:
         # Pfad zur Konfigurationsdatei — None = Schreiben deaktiviert
         # (z.B. Standalone-Test). Bei daemon/rx wird er aus gust.py übergeben.
         self._config_path = config_path
+        self._locales_dir = Path(__file__).parent / 'locales'
         # Serialisiert konkurrierende Schreibvorgänge auf gateway.json
         self._config_write_lock = asyncio.Lock()
 
@@ -3681,6 +3763,7 @@ class WebServer:
         app.router.add_get("/",              self._handle_index)
         app.router.add_get("/api/health",    self._handle_health)
         app.router.add_get("/api/status",    self._handle_status)
+        app.router.add_get("/api/lang/{code}", self._handle_lang)
         app.router.add_get("/api/config",    self._handle_config)
         app.router.add_patch("/api/config",  self._handle_config_patch)
         app.router.add_post("/api/config",   self._handle_config_post)
@@ -3778,6 +3861,27 @@ class WebServer:
         # Im Monitor-Modus (rx / Standalone) ist es None → GUI deaktiviert Senden.
         status["tx_available"] = self._gateway is not None
         return web.json_response(status)
+
+    async def _handle_lang(self, request: web.Request) -> web.Response:
+        """Liefert die Sprachdatei locales/<code>.json aus."""
+        code = request.match_info.get('code', 'de')
+        # Nur erlaubte Codes durchlassen (Sicherheit: kein Path-Traversal)
+        if not code.isalpha() or len(code) > 5:
+            raise web.HTTPBadRequest(text='Invalid language code')
+        lang_file = self._locales_dir / f'{code}.json'
+        if not lang_file.exists():
+            # Fallback auf Deutsch
+            lang_file = self._locales_dir / 'de.json'
+        try:
+            text = lang_file.read_text(encoding='utf-8')
+            return web.Response(
+                text=text,
+                content_type='application/json',
+                charset='utf-8',
+            )
+        except Exception as exc:
+            log.error('Lang-Datei lesen fehlgeschlagen: %s', exc)
+            raise web.HTTPInternalServerError(text='Lang file error')
 
     async def _handle_config(self, _request: web.Request) -> web.Response:
         """Aktuelle Konfiguration zurückgeben — API-Key wird ausgeblendet."""
