@@ -1,6 +1,6 @@
 # GUST — Backlog
-**OE3GAS — Offene Aufgaben, Ideen und bekannte Probleme**
-*Stand: Mai 2026 — Phase 7 Empfänger-Robustheit + SNR-Baseline abgeschlossen*
+**OE3GAS — Generic Universal Shortwave Telemetry**
+*Stand: Juni 2026 — i18n DE/EN (P5-21) · Inbox-Kosmetik fehlende Frames (P5-22) · CLI-Verbesserungen · QSO-Modus · TRX-Profile · BUG-10 root fix · gust_tx_test Fixes*
 
 ---
 
@@ -28,9 +28,16 @@
 | P5-10 | 🟡 | refactor | Event-Bus in Gateway | Verdrahtung in demo_wiring.py + gust.py daemon | ✅ |
 | P5-11 | 🟢 | feature | Web-UI: Dark + Light Theme | Dark Amber + Light Clean, localStorage | ✅ |
 | P5-12 | 🟢 | feature | Web-UI: Frame-History | deque(maxlen=50), /api/log beim Laden, /ws/rx Echtzeit | ✅ |
-| P5-13 | 🟡 | refactor | Web-UI Config-Tab: Strukturierung in Unterseiten | Aktueller Config-Tab ist eine einzelne, lange Seite mit Audio, SDR, PTT, Gateway-Parametern. Mit dem Hamlib-Feature (P5-14) wird er zu unübersichtlich. **Lösung: Tab-interne Unternavigation** (Sub-Tabs oder vertikale Sidebar) mit diesen Sektionen: (1) **Gateway** — Rufzeichen, Web-Port, API-Key, Betriebsmodus; (2) **Audio** — TX/RX-Gerät, Pegel, PTT-Backend-Auswahl (null / hamlib / gpio), PTT-Delay; (3) **Transceiver (Hamlib)** — sichtbar/aktiv nur wenn PTT-Backend = hamlib oder auto_start = true; COM-Port-Dropdown, Rig-Modell-Suche, Baudrate, Auto-Start-Toggle, Verbinden-Button mit Live-Status; (4) **SDR-TX (SoapySDR)** — bestehende SoapySDR-Sektion unverändert hierher verschoben; (5) **Connectors** — MQTT-Broker, Topics, HA-Integration (Vorbereitung Phase 6). Umsetzungsregel: Alle Sektionen schreiben nur in `gateway.json` — kein Konfigurations-Split. Sektion (3) blendet sich automatisch aus wenn `ptt_backend != "hamlib"`. Aktive Sektion wird im `localStorage` gemerkt (kein Reset beim Reload). | ✅ |
-| P5-14 | 🟡 | feature | Web-UI: Hamlib/rigctld-Konfiguration | Neue Sektion „Transceiver (Hamlib)" im Config-Tab (siehe P5-13). **Backend-Endpunkte:** `GET /api/hamlib/ports` — serielle Ports enumerieren (`/dev/ttyUSB*`, `/dev/ttyACM*`, `COM*`; plattformübergreifend via `serial.tools.list_ports`); `GET /api/hamlib/models?q=<suchbegriff>` — `rigctld --list` parsen, nach Suchbegriff filtern, max. 50 Treffer zurückgeben (Format: `[{"id": 2034, "label": "Kenwood TS-790"}, …]`); `GET /api/hamlib/status` — TCP-Connect auf `hamlib_host:hamlib_port`, bei Erfolg `f`-Kommando senden → Frequenz zurückgeben; `POST /api/hamlib/start` — ruft `ensure_rigctld_running()` mit aktuellem `rigctld`-Block auf; `POST /api/hamlib/stop` — sendet SIGTERM/terminate() an intern gestarteten rigctld-Prozess (nur wenn GUST ihn gestartet hat; extern gestartete rigctld-Prozesse werden nicht berührt); `POST /api/hamlib/config` — schreibt `rigctld`-Block + `audio.ptt_backend` + `audio.hamlib_host/port` atomar in `gateway.json`. **GUI-Elemente:** COM-Port-Dropdown mit Rescan-Button; Rig-Modell-Suchfeld (Freitext → Live-Suche gegen `/api/hamlib/models`) mit Anzeige von ID + Label; Baudrate-Dropdown (1200 / 4800 / 9600 / 19200 / 38400 / 57600 / 115200); Auto-Start-Checkbox; Speichern-Button; Verbinden-&-Testen-Button → zeigt rigctld-Status + aktuelle Frequenz oder Fehlermeldung. **gateway.json-Resultat:** `audio.ptt_backend = "hamlib"`, `rigctld.auto_start`, `rigctld.rig_model`, `rigctld.device`, `rigctld.baud` — identisch mit bisherigem manuellen Format, nur jetzt GUI-gesteuert. **Abhängigkeit:** P5-13 (Unterseiten-Struktur) sollte zuerst oder parallel umgesetzt werden. | ✅ |
-| P5-18 | 🟡 | feature | TRX-Profile: Mehrgeräteverwaltung | `gateway.json` speichert ein Array `trx_profiles` (Name, rig_model, device, baud, audio_device, ptt_backend). Das aktive Profil steht in `active_trx_profile` (Name-String). **Web-UI:** Dropdown „Aktiver TRX" im Config-Tab → Auswahl ruft `POST /api/trx/activate` (`{name}`) auf → übernimmt die Profilwerte in den aktiven `rigctld`/`audio`-Block, schreibt `active_trx_profile` atomar in `gateway.json` und stößt bei Hamlib+auto_start den conflict-aware rigctld-Neustart an (gemeinsamer Flow mit dem Hamlib-Config-Tab). Profil-Anlage und -Bearbeitung erfolgt manuell in `gateway.json` (kein CRUD-Editor). Das erste Profil wird beim ersten Speichern via Hamlib-Config-Tab automatisch als Profil angelegt. Rückwärtskompatibel: fehlt `trx_profiles`, arbeitet GUST wie bisher mit dem einzelnen `rigctld`-Block. | ✅ |
+| P5-13 | 🟡 | refactor | Web-UI Config-Tab: Strukturierung in Unterseiten | Sub-Navigation mit 4 Unterseiten: Audio & PTT, Transceiver (Hamlib), SDR-TX (SoapySDR), Darstellung. Aktiver Sub-Tab in localStorage. | ✅ |
+| P5-14 | 🟡 | feature | Web-UI: Hamlib/rigctld-Konfiguration | 6 Endpunkte: ports/models/status/start/stop/config. COM-Port-Dropdown, Rig-Modell-Suche, Baudrate, Auto-Start, Verbinden & Testen. | ✅ |
+| P5-15 | 🟡 | feature | Web-UI: Tune-Button | 15-s-Sinuston (1000 Hz) mit PTT via Hamlib, Countdown-Anzeige, vorzeitiger Stop, Polling-Pause während TX. | ✅ |
+| P5-16 | 🟡 | feature | Web-UI: Kommunikations-Tab | Inbox (RX-Freitext mit Fragment-Reassembly), Gesendet-Liste (tx_done), Sub-Navigation RX/TX. | ✅ |
+| P5-17 | 🟡 | feature | Web-UI: Aktivitätslog + ON AIR Banner | Echtzeit-Systemlog via /ws/log, ON AIR Banner während TX. | ✅ |
+| P5-18 | 🟡 | feature | TRX-Profile: Mehrgeräteverwaltung | `gateway.json` speichert Array `trx_profiles` + `active_trx_profile`. Web-UI Dropdown → `POST /api/trx/activate` → schreibt rigctld/audio-Block + stößt conflict-aware rigctld-Neustart an. Profil-Anlage manuell in gateway.json. Erstes Profil wird beim Hamlib-Config-Speichern automatisch angelegt. Rückwärtskompatibel. Felder: `name`, `rig_model`, `device`, `baud`, `audio_device_tx`, `audio_device_rx`, `ptt_backend`, `auto_start`. | ✅ |
+| P5-19 | 🟡 | feature | Web-UI: QSO-Modus (Freitext-Schnellsendung) | Toggle im Text-Formular verkürzt Fragment-Intervall von txInterval (300 s) auf 60 s. Nur über Web-UI aktivierbar — bewusst nicht in gateway.json/API (Designentscheidung: nur für interaktiven Ham-Betrieb, nicht für automatischen Betrieb). Bleibt aktiv bis manuell deaktiviert. Dokumentiert in gust_spec.md §3.4. | ✅ |
+| P5-20 | 🟡 | feature | Web-UI: TX-Warteschlange löschen | Button „✕ Warteschlange löschen" über der TX-Queue-Anzeige. `DELETE /api/tx/queue` → `TxGateway.clear_queue()` → gibt Anzahl gelöschter Frames zurück. Frames die gerade gesendet werden bleiben unberührt. | ✅ |
+| P5-21 | 🟢 | feature | Web-UI: Mehrsprachigkeit (i18n DE/EN) | `locales/de.json` + `locales/en.json` (194 Keys). `/api/lang/<code>`-Endpunkt. JS-Mechanismus `t('key')`, `loadLang()`, `applyI18n()` mit `data-i18n` / `data-i18n-html` / `data-i18n-placeholder`. Sprachschalter im Darstellung-Tab, `localStorage`-Persistenz. | ✅ |
+| P5-22 | 🟢 | feature | Web-UI: Inbox-Kosmetik fehlende Frames | Fehlende Frames im Nachrichtentext als `[…fehlt…]`-Badge (inline, orange gestrichelt). Nachrichtentext in `var(--text)` und `var(--fs-lg)` für bessere Lesbarkeit. | ✅ |
 
 ### Umsetzungsnotiz P5-13 / P5-14 (Mai 2026)
 
@@ -42,17 +49,21 @@ Alle Änderungen ausschließlich in `gust_web.py`; Spec in `gust_spec.md §4.4` 
   (`gust_cfg_subtab`), System-Status-Grid bleibt dauerhaft oben sichtbar.
 - **6 Hamlib-Endpunkte** wie spezifiziert implementiert
   (`ports`/`models`/`status`/`start`/`stop`/`config`); `_handle_hamlib_*`-Methoden
-  + `self._rigctld_proc`-Handle. End-to-End gegen Standalone-Server getestet
-  (Port-Enumeration, `rigctld --list`-Parsing, TCP-Probe, Stop-Guard).
-- **Abweichungen vom ursprünglichen P5-13-Entwurf:**
-  - Sektion **Gateway** (Rufzeichen/Web-Port/API-Key) und Sektion **Connectors**
-    (MQTT/HA, Phase-6-Vorbereitung) **nicht** als eigene Unterseiten gebaut —
-    zurückgestellt (Gateway-Felder unverändert, Connectors → Phase 6).
-    Stattdessen wurde die bestehende **Darstellung** als eigene Unterseite geführt.
-  - Hamlib-Unterseite ist **immer sichtbar** (kein Auto-Ausblenden bei
-    `ptt_backend != "hamlib"`); das Speichern setzt `ptt_backend = "hamlib"`.
-  - `models`-Label = vollständige `rigctld --list`-Zeile (Hersteller + Modell +
-    Version + Status), nicht nur „Hersteller Modell" — Spec-konform („Rest = Label").
+  + `self._rigctld_proc`-Handle. End-to-End gegen Standalone-Server getestet.
+- **Abweichungen:** Gateway- und Connectors-Sektion zurückgestellt; Hamlib-Unterseite
+  immer sichtbar (kein Auto-Ausblenden); models-Label = vollständige rigctld-Zeile.
+
+### Umsetzungsnotiz P5-18 / P5-19 / P5-20 (Juni 2026)
+
+- **TRX-Profile (P5-18):** JSON-Schema mit `audio_device_tx`/`audio_device_rx` statt
+  einzelnem `audio_device` — unterstützt unterschiedliche TX/RX-Soundkarten pro Gerät.
+  `_handle_trx_activate()` schreibt audio.device + rx.device separat. Conflict-aware
+  rigctld-Restart über gemeinsamen `_restart_or_report_conflict()`-Flow.
+- **QSO-Modus (P5-19):** `_nextCycleSecs()` verwendet im QSO-Modus festes 60-s-Raster
+  (kein Offset-Phasenversatz). Confirm-Dialog zeigt korrekte Zeitschätzung. CSS `.hidden`-
+  Bug gefixt (generische Regel ergänzt). Designentscheidung in gust_spec.md §3.4 dokumentiert.
+- **Warteschlange löschen (P5-20):** `TxGateway.clear_queue()` gibt Anzahl zurück;
+  `DELETE /api/tx/queue` in gust_spec.md §4.4 dokumentiert.
 
 ---
 
@@ -79,15 +90,15 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 
 | ID | Prio | Typ | Titel | Beschreibung | Status |
 |---|---|---|---|---|---|
-| P6-10 | 🟡 | feature | `weather_from_ecowitt` — Froggit/Ambient/Fine-Offset | Transform für Ecowitt-Protokoll (HP2000 Pro, WS2900, WH2650 u.a.). Felder: `temp`→`temp_c`, `humidity`, `baromrel`→`pressure_hpa` (NN-normiert), `windspeed`, `winddir`, `rainrate`, `uv`; `batt`-Inversion (`batt==0` → gut → `flags\|=0x01`); `metric=1`-Prüfung; **PASSKEY wird aktiv verworfen und nie geloggt**. | 🔲 |
-| P6-11 | 🟡 | feature | `field_map` — generischer YAML-Transform (Stufe 2) | Transform ohne Python-Code: Benutzer definiert Key-Mapping in `connectors.yaml` (`temp_c: "temp_aussen"`). Optional: `scale`-Faktor pro Feld (z.B. `scale: 0.1` für Zehntelgrad-Quellen). Aufgerufen über `transform: field_map` + `field_map:`-Block. Ermöglicht eigene Sensoren ohne Code-Änderung. | 🔲 |
+| P6-10 | 🟡 | feature | `weather_from_ecowitt` — Froggit/Ambient/Fine-Offset | Transform für Ecowitt-Protokoll. PASSKEY wird aktiv verworfen und nie geloggt. | 🔲 |
+| P6-11 | 🟡 | feature | `field_map` — generischer YAML-Transform (Stufe 2) | Transform ohne Python-Code via connectors.yaml Key-Mapping + optionalem scale-Faktor. | 🔲 |
 
 ### Test-Infrastruktur
 
 | ID | Prio | Typ | Titel | Beschreibung | Status |
 |---|---|---|---|---|---|
-| P6-12 | 🟡 | feature | `test_transforms.py` — offline Unit-Tests | Vollständige Unit-Tests für alle Transform-Funktionen ohne Broker. Tests: `weather_from_ecowitt` mit Froggit-Sample-JSON; Roundtrip → `encode_weather()` → 14 Byte; PASSKEY-Ausschluss (Security); `field_map` mit benutzerdefiniertem Mapping; `weather_from_ha_json`; `passthrough`. Läuft ohne Netz, ohne Infrastruktur. | 🔲 |
-| P6-13 | 🟡 | feature | `amqtt` pytest-Fixture für Integrationstests | `amqtt` (pure Python, `pip install amqtt`) als In-Process-Broker-Fixture für pytest. Port 18830 (kein Konflikt mit System-Mosquitto). Ermöglicht vollständige Connector-Roundtrip-Tests ohne externen Broker. Alternativ: `test.mosquitto.org` als öffentlicher Fallback (Konfiguration via `GUST_TEST_BROKER` Env-Variable). | 🔲 |
+| P6-12 | 🟡 | feature | `test_transforms.py` — offline Unit-Tests | Vollständige Unit-Tests für alle Transform-Funktionen ohne Broker. | 🔲 |
+| P6-13 | 🟡 | feature | `amqtt` pytest-Fixture für Integrationstests | In-Process-Broker-Fixture für pytest, Port 18830. | 🔲 |
 
 ### Ergänzend geplante Connectors (Phase 8/9)
 
@@ -103,14 +114,14 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 
 | ID | Prio | Typ | Titel | Beschreibung | Status |
 |---|---|---|---|---|---|
-| P7-01 | 🔴 | research | Bandplan OE prüfen | §16 AFG geklärt: GUST-Aussendungen sind lizenzkonform als Datenübertragung im digitalen Sub-Band eingestuft. Testfrequenzen dokumentiert in gust_spec.md §8. | ✅ |
+| P7-01 | 🔴 | research | Bandplan OE prüfen | §16 AFG geklärt: GUST-Aussendungen sind lizenzkonform. Testfrequenzen in gust_spec.md §8. | ✅ |
 | P7-02 | 🔴 | feature | TX-Hardware-Verdrahtung in gust.py | cmd_tx(): gust_frame → gust_modulator → gust_audio verketten | ✅ |
 | P7-03 | 🔴 | feature | Symbol-Windowing Raised Cosine | Flanken glätten, Spectral Leakage reduzieren | ✅ |
-| P7-04 | 🔴 | feature | SoapySDR TX-Pfad (generisch) | Direktes IQ-TX über beliebiges SoapySDR-Gerät (HackRF, IC-7610, Lime, Pluto …), nicht auf ein Treiber-Modul festgenagelt. Neues Modul `gust_soapy_tx.py` mit `SoapyTxBackend` (dünne, generische Schicht analog PTT-Backend). Geräteauswahl ausschließlich per `Device.enumerate()`-Discovery — kein manuelles Args-/Pfad-Feld. REST `/api/sdr/devices` (enumerate + Rescan) + `/api/sdr/caps` + `/api/sdr/config` → GUI-Dropdown im Config-Tab; gespeichert werden Device-Args (driver + serial/label) in `gateway.json.sdr_tx.device_args`, nicht der Listenindex. TX-only-Filter via `getNumChannels(SOAPY_SDR_TX)`; Gain/Sample-Rate/Antenne nach Auswahl dynamisch aus dem Gerät; `listModules()` als ausklappbare Diagnose-Anzeige unter dem Dropdown. `cmd_tx()` verzweigt bei `sdr_tx.enabled` über `_tx_via_sdr()`. Siehe ADR-16. | ✅ |
-| P7-05 | 🔴 | research | SNR-Schwelle messen | HackRF TX-Gain-Stepping (Gain-Folge via `tx_test.py --gain-sequence`); empirische Baseline ermittelt → siehe T-10.2 | ✅ |
+| P7-04 | 🔴 | feature | SoapySDR TX-Pfad (generisch) | `gust_soapy_tx.py`, Device-Discovery, ADR-16. | ✅ |
+| P7-05 | 🔴 | research | SNR-Schwelle messen | HackRF TX-Gain-Stepping; Decode-Schwelle ≤ 10 dB SNR ermittelt → T-10.2. | ✅ |
 | P7-06 | 🟡 | feature | Erster On-Air-Test | IC-7610 TX → SDRplay RX, Frame dekodieren | ✅ |
-| P7-07 | 🟡 | research | Preamble-Länge optimieren | 8 Symbole (256 ms) — ausreichend für KW? Weitere Tests nötig | 🔲 |
-| P7-08 | 🟡 | research | Kollisionstest mit OE1XTU | Zwei Stationen, gleicher Kanal, Frameverlustrate | 🔲 |
+| P7-07 | 🟡 | research | Preamble-Länge optimieren | Geschlossen: 256 ms ausreichend, Costas-Array verbessert SYNC-Qualität | ✅ |
+| P7-08 | 🟡 | research | Kollisionstest mit OE1XTU | Zwei Stationen, gleicher Kanal, Frameverlustrate messen. Testplan T-10.3 vollständig ausgearbeitet (Juni 2026). | 🔲 |
 | P7-09 | 🟢 | feature | MeshCom End-to-End Test | LoRa → GUST-Gateway → HF → Remote → LoRa | 🔲 |
 | P7-10 | 🟢 | research | Demodulator GNU Radio OOT | Python-Demodulator als GNU Radio OOT-Block portieren | 🔲 |
 
@@ -125,14 +136,14 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | P7-E | bug | RS-Decoder Loop Range Fix | Breitband-Modus: Loop bis `rs_min` statt nur 9 Schritte |
 | P7-F | feature | CLI-Verbesserungen | `--dry-run`, `--callsign`, `--device`, `--level` nach Subcommand |
 | P7-G | feature | gateway.json level-Normalisierung | Wert > 1 wird als % interpretiert (50 → 0.5) |
-| P7-H | feature | Frequenz-Fein-Refinement | `_refine_sync()`: f0 von 8-Hz-Raster auf < 1 Hz nachschärfen (Single-Bin-Energiemaximum) |
-| P7-I | feature | Scan-Range-Erweiterung | Breitband-Scan 320–2760 Hz statt 380–2580 Hz → Kanal 9 (2650 Hz) jetzt erfasst |
-| P7-J | feature | Halb-Block-Timing-Auflösung | SYNC-Suche im 128-Sample-Raster + Sample-genaues Timing-Refinement → Frames an beliebiger Pufferposition dekodierbar |
+| P7-H | feature | Frequenz-Fein-Refinement | `_refine_sync()`: f0 von 8-Hz-Raster auf < 1 Hz nachschärfen |
+| P7-I | feature | Scan-Range-Erweiterung | Breitband-Scan 320–2760 Hz statt 380–2580 Hz |
+| P7-J | feature | Halb-Block-Timing-Auflösung | SYNC-Suche im 128-Sample-Raster + Sample-genaues Timing-Refinement |
 | P7-K | feature | Kontinuierlicher RX-Loop | `gust_rx.py`: asyncio-Scan-Loop über Ringpuffer, Dedup-Cache, EventBus-Anbindung |
-| P7-L | feature | HackRF Dual-Kanal-TX + Parallelkanal | `transmit_iq()`: zwei Kanäle gleichzeitig senden; Diversity-Gewinn im SNR-Test bestätigt |
-| P7-M | bug | HackRF TX-Underrun | Langer `writeStream`-Timeout (1 s) verursachte Firmware-Hänger → Default-Timeout, originale Write-Loop |
+| P7-L | feature | HackRF Dual-Kanal-TX + Parallelkanal | `transmit_iq()`: zwei Kanäle gleichzeitig; Diversity-Gewinn bestätigt |
+| P7-M | bug | HackRF TX-Underrun | Default-Timeout-Fix, originale Write-Loop |
 | P7-N | feature | `tx_test.py` Mess-Skript | TX-Testharness: Einzel-/Dual-Kanal, `--channels`, `--gain-sequence`, CSV-Log |
-| P7-O | feature | Scan-Obergrenze 2760→2900 Hz | Breitband-Scan in `_find_sync_candidates` erweitert → Kanal 9 erhält symmetrische positive Offset-Toleranz (vorher Einbruch ab +140 Hz, jetzt ≥ +200 Hz). Keine Regression (Kanäle 0–9 weiter 20/20 in AWGN). Behebt NUR den Offset-Anteil des Kanal-9-Problems, nicht den Filter-Cut → siehe ADR-14. |
+| P7-O | feature | Scan-Obergrenze 2760→2900 Hz | Kanal-9-Offset-Symmetrie ≥ +200 Hz |
 
 ---
 
@@ -141,20 +152,13 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | ID | Prio | Typ | Titel | Beschreibung | Status |
 |---|---|---|---|---|---|
 | P9-01 | 🔴 | feature | Kanalplan v0.5 | `CHANNEL_BASE_HZ=600`, `N_CHANNELS=8`; Scan-Range 500–2510 Hz; Protokoll-Break dokumentiert | ✅ |
-| P9-02 | 🔴 | feature | Costas-8 SYNC | `SYNC_SYMBOLS=[2,0,6,7,1,4,3,5]`; 8-Ton-Scoring in `_find_sync_candidates()`; Selbsttest angepasst | ✅ |
-| P9-03 | 🟡 | feature | Passband-Equalizer | `_build_equalizer()` + `_fft_detect_symbol_eq()`; `demodulate(use_equalizer=True)` | ✅ |
-| P9-04 | 🟡 | feature | `gust_iq_rx.py` — IQ-Eingang | RTL-SDR Filterbank, Breitband-Modus, `IQReceiver` asyncio-Klasse; CF32-Datei-Dekodierung | ✅ |
-| P9-05 | 🟡 | feature | Web-UI 8-Kanal-Grid | CSS Grid 5→4 Spalten; Kanalplan 600–2600 Hz in `buildChannelGrid()` | ✅ |
+| P9-02 | 🔴 | feature | Costas-8 SYNC | `SYNC_SYMBOLS=[2,0,6,7,1,4,3,5]`; 8-Ton-Scoring; Selbsttest angepasst | ✅ |
+| P9-03 | 🟡 | feature | Passband-Equalizer | `_build_equalizer()` + `_fft_detect_symbol_eq()` | ✅ |
+| P9-04 | 🟡 | feature | `gust_iq_rx.py` — IQ-Eingang | RTL-SDR Filterbank, Breitband-Modus, `IQReceiver` asyncio-Klasse | ✅ |
+| P9-05 | 🟡 | feature | Web-UI 8-Kanal-Grid | CSS Grid; Kanalplan 600–2600 Hz in `buildChannelGrid()` | ✅ |
 | P9-06 | 🟢 | docs | Spec v0.5 | §3.1/§3.2 Kanalplan, §3.3 Costas-SYNC, §3.x IQ-Eingang | ✅ |
 | P9-07 | 🟢 | docs | Knowledge-Update Phase 9 | gust_knowledge.md: Costas-Abschnitt, IQ-Abschnitt, Connector-Konzept-Übersicht | ✅ |
-| P9-08 | 🔴 | feature | GitHub Repository | OE3GAS/gust initialisieren, README.md, .gitignore, Commit | ✅ |
-
-### Aus Feature-Ideen übernommen
-
-| ID | Aktion |
-|---|---|
-| IDEA-05 | → P9-04 (SDR-Monitor-Modus) ✅ umgesetzt |
-| P7-07   | → Geschlossen: Preamble-Länge bleibt 256 ms; SYNC-Qualität durch Costas-Array verbessert |
+| P9-08 | 🔴 | feature | GitHub Repository | OE3GAS/gust initialisiert, committed + gepusht (Juni 2026) | ✅ |
 
 ---
 
@@ -162,12 +166,12 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 
 | ID | Prio | Typ | Titel | Beschreibung | Status |
 |---|---|---|---|---|---|
-| P8-01 | 🟡 | docs | Protokollspezifikation finalisieren | Vollständiges Markdown-Dokument v0.5 (Costas-SYNC, 8 Kanäle 600–2600 Hz, IQ-Eingang), publikationsreif | 🔲 |
+| P8-01 | 🟡 | docs | Protokollspezifikation finalisieren | Vollständiges Markdown-Dokument v0.5, publikationsreif | 🔲 |
 | P8-02 | 🟡 | docs | Installationsanleitung RPi | Schritt-für-Schritt: OS, Python, Hardware, gateway.json | 🔲 |
 | P8-03 | 🟢 | docs | GitHub Repository aufsetzen | OE3GAS/gust, README, Lizenz CC BY-SA 4.0 | ✅ |
 | P8-04 | 🟢 | docs | ÖVSV-Präsentation vorbereiten | Folien für OE-Community, Protokollvorstellung | 🔲 |
 | P8-05 | 🟢 | docs | Protokoll bei ÖVSV einreichen | Offizielle Registrierung als OE-Digitalmode | 🔲 |
-| P8-06 | 🟡 | research | Kanalplan vs. SSB-Passband entscheiden | Kanal 9 (obere Töne bis 2868,75 Hz) wird vom Rig-SSB-Filter gecuttet → OTA CRC-Fail. Optionen A–D in **ADR-14** abgewogen → **Entscheidung gefallen** (Variante C-Ableitung: 8 Kanäle 600–2600 Hz, v0.5). Umgesetzt in P9-01. | ✅ |
+| P8-06 | 🟡 | research | Kanalplan vs. SSB-Passband | Entschieden: 8 Kanäle 600–2600 Hz, v0.5. Umgesetzt in P9-01. | ✅ |
 
 ---
 
@@ -180,11 +184,13 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | BUG-03 | 🟢 | bug | CF32-Export zeigt Rest-Spiegelbild | Randeffekt durch Stille-Abschnitte nach Hilbert-Transform | ⏸ |
 | BUG-04 | 🟡 | refactor | RS-FEC ineffizient für kurze Frames | RS(255,223): immer 32 Byte Overhead. RS(31,15) wäre effizienter | 🔲 Phase 8 |
 | BUG-05 | 🟢 | refactor | asyncio.get_event_loop() deprecated | Python 3.10+: auf get_running_loop() umstellen (Meshtastic-Adapter) | 🔲 |
-| BUG-06 | 🟡 | bug | SNR-Schätzer falsch an unterer Bandkante | Rauschreferenzband 200–380 Hz überlappte Kanal-0-Töne (400+ Hz) → SNR-Anzeige bis ~30 dB zu niedrig (negativ trotz sauberem Decode). **Fix:** Rauschband adaptiv relativ zum Signalband [f0, f0+218,75 Hz], beidseitig mit 80 Hz Guard gemessen, niedrigere Schätzung gewinnt (kontaminierte Seite verworfen). Alle Kanäle jetzt konsistent, volle Dynamik erhalten. | ✅ |
-| BUG-07 | 🟢 | research | Simplex-Fenstertiming-Miss | Ohne Diversity gelegentlich (~1/6–1/11) ein Frame verloren: erschien nur in 2–3 Scanfenstern, keines sauber ausgerichtet bevor er aus dem Puffer rollte. **Ursache:** Schleife schlief `interval` und scannte DANN — die variable Decode-Zeit (0,5–1,3 s) blähte das effektive Capture-Intervall auf bis 3,3 s > Containment-Marge (8−5,4=2,6 s) → Lücke. **Fix:** Fixed-Cadence-Scheduling (`next_tick += interval`, Decode wird in den Sleep absorbiert → effektives Intervall = 2,0 s konstant) + Fenster 8→9 s + Startup-Garantieprüfung. Simulation: ALT 10,55% Miss → NEU 0%. | ✅ |
-| BUG-08 | 🟢 | refactor | Frame-Contention bei dichter Folge | Zwei Frames im selben 8s-Fenster: Single-Pass-Auswahl rastet auf den höher bewerteten, der zweite kann verloren gehen | 🔲 |
-| BUG-10 | 🔴 | bug | rigctld nicht neu gestartet nach TRx-Wechsel in Web-GUI | Wird in `_handle_hamlib_config` eine neue TRx-Konfiguration gespeichert (anderer COM-Port, Modell, Baudrate), läuft rigctld weiter mit den alten Parametern. **Fix:** `_handle_hamlib_config` prüft via `_find_port_owner()` (psutil) ob Port 4532 belegt ist. Falls ja: GUI zeigt Konflikt-Dialog mit Prozessname + PID, User bestätigt. `POST /api/hamlib/force_restart` beendet gezielt nur diesen PID und startet rigctld mit neuer Konfiguration. Falls Port frei: direkter Neustart via `_do_rigctld_restart()`. Defensives Terminate von `self._rigctld_proc` (poll() is None Check) vor jedem Neustart. Frequenz wird als Bestätigung gelesen. `psutil` als neue Abhängigkeit in `requirements.txt`. | ✅ |
-| BUG-09 | 🟡 | bug | Freitext-Längenlimit nur clientseitig | Das 56-Byte-/4-Frame-Limit für 0x40-Freitext wird **nur in der Web-UI** durchgesetzt (`sendTx()`-`alert()` + Byte-Counter). `fragment_text()` hat **keine Obergrenze** und zerlegt beliebig langen Text in `ceil(len/14)` Fragmente; das Wire-Format trägt via 4-Bit-Gesamtfeld bis zu **16** Fragmente. Direkte API-/CLI-Aufrufe (`/api/tx/text`, `gust.py tx`) umgehen die Grenze. **Bewusst offengelassen** (kein Server-Hard-Limit gewünscht) — relevant, falls künftige Frame-Varianten serverseitige Fragmentgrenzen brauchen: dann zentral in `fragment_text()` (Parameter `max_fragments`) lösen. | 🔲 |
+| BUG-06 | 🟡 | bug | SNR-Schätzer falsch an unterer Bandkante | Fix: adaptives Rauschband beidseitig mit 80 Hz Guard. | ✅ |
+| BUG-07 | 🟢 | research | Simplex-Fenstertiming-Miss | Fix: Fixed-Cadence-Scheduling + Fenster 9 s. Simulation: 10,55% → 0% Miss. | ✅ |
+| BUG-08 | 🟢 | refactor | Frame-Contention bei dichter Folge | Zwei Frames im selben 8s-Fenster: Single-Pass-Auswahl — zweiter kann verloren gehen | 🔲 |
+| BUG-09 | 🟡 | bug | Freitext-Längenlimit nur clientseitig | 56-Byte-/4-Frame-Limit nur in Web-UI durchgesetzt. Bewusst offengelassen. | 🔲 |
+| BUG-10 | 🔴 | bug | rigctld nicht neu gestartet nach TRx-Wechsel | **Fix (Juni 2026, zweiteilig):** (1) `_handle_hamlib_config`: prüft via `_find_port_owner()` ob PID == `self._rigctld_proc.pid` → eigener Prozess → stiller Neustart, kein Konflikt-Dialog. (2) Root cause: `create_ptt()` in `gust_audio.py` merkt Popen-Handle an `ptt._rigctld_proc`; `cmd_daemon()` in `gust.py` übergibt Handle an `server._rigctld_proc` nach `gateway.start()`. | ✅ |
+| BUG-11 | 🟡 | bug | Hamlib-Status-Dot nach Profilwechsel rot | rigctld-Status-Poll sofort nach Neustart schlägt fehl (rigctld noch hochfahrend). **Fix:** `_testHamlibDelayed(2000)` — 2 s Delay vor Poll; Tune-Button während Delay deaktiviert. | ✅ |
+| BUG-12 | 🟡 | bug | gust_tx_test.py: ConnectionRefused nach rigctld-Test | Windows-rigctld schließt TCP nach jedem Kommando. `ensure_rigctld_running()` + `HamlibPTT._connect()` öffnen zwei Verbindungen in zu kurzem Abstand → ConnectionRefused. **Fix:** 300 ms sleep zwischen `ensure_rigctld_running()` und `HamlibPTT()`-Instanziierung. Außerdem: hardcodierter Fehlertext (`/dev/ttyUSB0`) durch generischen ersetzt; `load_gateway_config()` liest jetzt auch den `rigctld`-Block. | ✅ |
 
 ---
 
@@ -200,7 +206,7 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | IDEA-06 | feature | Frame-Statistik-Dashboard | Langzeit-Statistik: Frames/Tag, Kanalbelegung, Top-Stationen |
 | IDEA-07 | feature | htmx/Alpine.js Migration | Web-UI reaktiver machen ohne Build-System |
 | IDEA-08 | research | GUST auf VHF/UHF | Gleiche Protokollschicht, andere Frequenzarchitektur für 2m/70cm |
-| IDEA-09 | feature | Mehrsprachige Web-UI | DE/EN Sprachauswahl |
+| ~~IDEA-09~~ | feature | ~~Mehrsprachige Web-UI~~ | ~~DE/EN Sprachauswahl~~ → **Umgesetzt als P5-21** |
 | IDEA-10 | feature | AX.25-Kompatibilität | FROM/TO-Felder AX.25-kompatibel für Rückwärtskompatibilität |
 
 ---
@@ -212,23 +218,19 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | ✅ P7-02 | 7 | feature | TX-Hardware-Verdrahtung gust.py | Mai 2026 |
 | ✅ P7-03 | 7 | feature | Symbol-Windowing Raised Cosine | Mai 2026 |
 | ✅ P7-06 | 7 | feature | Erster On-Air-Test 14.110 MHz | Mai 2026 |
-| ✅ P7-A  | 7 | feature | Protokoll v0.3 (SYNC 8 Symbole + CHANNEL-Byte) | Mai 2026 |
-| ✅ P7-B  | 7 | feature | Breitband-SYNC-Detektor | Mai 2026 |
-| ✅ P7-C  | 7 | feature | load_wav() Resampling + uint8 | Mai 2026 |
-| ✅ P7-D  | 7 | bug | PTT Triple-Release Fix | Mai 2026 |
-| ✅ P7-E  | 7 | bug | RS-Decoder Loop Range Fix | Mai 2026 |
-| ✅ P7-F  | 7 | feature | CLI --dry-run/--callsign/--device/--level nach Subcommand | Mai 2026 |
-| ✅ P7-G  | 7 | feature | gateway.json level-Normalisierung | Mai 2026 |
-| ✅ P7-05 | 7 | research | SNR-Baseline gemessen (Simplex + Dual, Gain 28→1) | Mai 2026 |
-| ✅ P7-H  | 7 | feature | Frequenz-Fein-Refinement (_refine_sync) | Mai 2026 |
-| ✅ P7-I  | 7 | feature | Scan-Range 320–2760 Hz (Kanal 9 erfasst) | Mai 2026 |
-| ✅ P7-J  | 7 | feature | Halb-Block-Timing-Auflösung + Sample-Refinement | Mai 2026 |
-| ✅ P7-K  | 7 | feature | Kontinuierlicher RX-Loop (gust_rx.py) | Mai 2026 |
-| ✅ P7-L  | 7 | feature | HackRF Dual-Kanal-TX + Parallelkanal-Diversity | Mai 2026 |
-| ✅ P7-M  | 7 | bug | HackRF TX-Underrun (Default-Timeout-Fix) | Mai 2026 |
-| ✅ P7-N  | 7 | feature | tx_test.py Mess-Skript (--channels, --gain-sequence) | Mai 2026 |
-| ✅ P7-O  | 7 | feature | Scan-Obergrenze 2760→2900 Hz (Kanal-9-Offset-Symmetrie) | Mai 2026 |
 | ✅ P7-04 | 7 | feature | Generischer SoapySDR-TX-Backend (`gust_soapy_tx.py`, ADR-16) | Mai 2026 |
+| ✅ P7-05 | 7 | research | SNR-Baseline gemessen (Simplex + Dual, Gain 28→1) | Mai 2026 |
+| ✅ P5-15 | 5 | feature | Tune-Button (15-s Sinuston, PTT, Countdown) | Mai 2026 |
+| ✅ P5-16 | 5 | feature | Kommunikations-Tab (Inbox + Gesendet) | Mai 2026 |
+| ✅ P5-17 | 5 | feature | Aktivitätslog + ON AIR Banner | Mai 2026 |
+| ✅ P5-18 | 5 | feature | TRX-Profile Mehrgeräteverwaltung | Juni 2026 |
+| ✅ P5-19 | 5 | feature | QSO-Modus (60 s Fragment-Intervall, Web-UI only) | Juni 2026 |
+| ✅ P5-20 | 5 | feature | TX-Warteschlange löschen (DELETE /api/tx/queue) | Juni 2026 |
+| ✅ BUG-10 | — | bug | rigctld-Konflikt-Dialog bei eigenem Prozess + root cause fix | Juni 2026 |
+| ✅ BUG-11 | — | bug | Hamlib-Status-Dot nach Profilwechsel (2s-Delay) | Juni 2026 |
+| ✅ BUG-12 | — | bug | gust_tx_test.py Windows-TCP-Race + hardcodierter Fehlertext | Juni 2026 |
+| ✅ P5-21 | 5 | feature | Web-UI i18n DE/EN (194 Keys, /api/lang, localStorage) | Juni 2026 |
+| ✅ P5-22 | 5 | feature | Inbox-Kosmetik: fehlende Frames als […fehlt…]-Badge | Juni 2026 |
 
 ---
 
@@ -237,133 +239,61 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 ### ADR-01 bis ADR-06 (Phase 1–5) — unverändert, siehe vorherige Version
 
 ### ADR-07: Protokoll v0.3 — 8-Symbol SYNC + CHANNEL-Byte ✅
-Motivation: On-Air-Tests zeigten dass der Decoder den Kanal vorab kennen
-musste und kein Frequenzversatz toleriert wurde. Lösung: SYNC auf 8 Symbole
-verlängert (Δf = 218,75 Hz kanalunabhängig → Breitband-Erkennung möglich),
-CHANNEL-Byte im Header (Konsistenzprüfung TX ↔ RX). Protokoll-Break bewusst
-akzeptiert (noch nicht veröffentlicht).
+Protokoll-Break bewusst akzeptiert. SYNC auf 8 Symbole verlängert, CHANNEL-Byte im Header.
 
 ### ADR-08: Audio-Level per gateway.json + CLI ✅
-NF-Pegel am IC-7610-ACC-Eingang stark abhängig von der Transceiver-Konfiguration
-(ACC/USB Input Level). Daher konfigurierbar statt hardcodiert.
-Normalisierung: Wert > 1 = Prozent (50 → 0.5), Wert ≤ 1 = bereits normalisiert.
-Referenzwert IC-7610: ACC Input 40%, Software Level 10%.
+Wert > 1 = Prozent (50 → 0.5). Referenzwert IC-7610: ACC Input 40%, Software Level 10%.
 
 ### ADR-09: Geräteadressierung per ID statt Name ✅
-Windows meldet dasselbe Audiogerät dreimal mit verschiedenen APIs
-(MME, DirectSound, WASAPI). sounddevice wirft Fehler bei Namensübergabe.
-Lösung: Geräte-ID (Integer) in gateway.json. `py gust.py devices` zeigt IDs.
+Windows meldet dasselbe Gerät dreimal (MME/DS/WASAPI). Geräte-ID in gateway.json.
 
-### ADR-10: SNR-Test via HackRF Gain-Stepping ✅ (durchgeführt)
-Kein Abschwächer vorhanden. Stattdessen: HackRF TX-Gain in 1-dB-Schritten,
-IC-7610 als RX-Referenz (USB-Audio, Gerät 1), `gust_rx.py` als kontinuierlicher
-Decoder. Mess-Skript: `tx_test.py --gain-sequence`. Ergebnis siehe Testplan T-10.2.
-**Kernergebnis:** Decoder dekodiert bis mindestens 10,1 dB angezeigtem SNR (Dual),
-der TX-Boden (1 dB Gain) wurde erreicht *bevor* der Decoder aussetzte — die echte
-Schwelle liegt also ≤ 10 dB SNR. Absolutwert setup-spezifisch (starke Kopplung),
-aber als Praxisaussage „zuverlässig bis 10 dB SNR" belastbar.
+### ADR-10: SNR-Test via HackRF Gain-Stepping ✅
+Decode-Schwelle ≤ 10 dB SNR. Dual-Kanal 100%, Simplex ~90%.
 
 ### ADR-11: Decoder-Robustheit — Frequenz- + Timing-Refinement ✅
-Motivation: Live-Tests dekodierten trotz hohem SNR nur ~1/5 Frames. Drei separate
-Ursachen identifiziert: (1) 8-Hz-Frequenzraster traf nie den wahren f0 → Symbol-
-Detektion verfehlt; (2) Scan-Range endete bei 2580 Hz, Kanal 9 (2650 Hz) lag außerhalb;
-(3) block-ausgerichtete SYNC-Suche → bis ±128 Samples Timing-Fehler, halbes Symbol
-versetzte Frames scheiterten. Lösung: `_refine_sync()` schärft f0 (< 1 Hz) und Timing
-(sample-genau) nach, Scan-Range auf 320–2760 Hz erweitert, SYNC-Suche auf Halb-Block-
-Auflösung (128 Samples). Sandbox: 1/5 → 10/10 Kanäle + alle Sample-Offsets. Live: 5/5.
+`_refine_sync()`: f0 < 1 Hz, Timing sample-genau. Sandbox: 1/5 → 10/10.
 
 ### ADR-12: Parallelkanal-Diversity (Dual-Kanal-TX) ✅
-Motivation: Bei On-Air-QRM kann ein einzelner Kanal von einer Störung getroffen werden.
-Lösung: Notfall-Frames können gleichzeitig auf zwei NF-Kanälen gesendet werden
-(`transmit_iq()` mischt zwei IQ-Signale). Der RX dekodiert beide als getrennte
-Kandidaten; der erste mit CRC-OK gewinnt, der zweite wird vom Dedup unterdrückt.
-Tradeoff: Sendeleistung wird auf zwei Kanäle aufgeteilt (~6 dB weniger pro Kanal),
-dafür zwei unabhängige Empfangschancen. Empirisch: Simplex ~90% Dekodierrate,
-Dual 100% (15/15) — die Redundanz fängt Fenstertiming-Aussetzer ab.
+`transmit_iq()` mischt zwei IQ-Signale. Simplex ~90% → Dual 100% Dekodierrate.
 
 ### ADR-13: HackRF TX — Default-Timeout zwingend ✅
-Ein langer `writeStream`-Timeout (1 s) in `transmit_iq()` verursachte beim ersten
-Lauf einen TX-Underrun, der die HackRF-Firmware in einem festgefahrenen Zustand
-hinterließ (exakt 1.966.080 Samples akzeptiert, dann Stillstand, brummender Träger).
-Danach schlugen alle Sendungen fehl bis zum USB-Neustart. Lösung: Default-Timeout
-verwenden, Write-Loop exakt wie die funktionierende `transmit()` (`pos += sr.ret if
-sr.ret > 0 else BLOCK`). Diagnose-Tool `hackrf_diag.py` mit Watchdog-Timer half beim
-Aufspüren.
+Langer Timeout → TX-Underrun → Firmware-Hänger. Default-Timeout + originale Write-Loop.
 
 ### ADR-14: Protokoll v0.5 — Kanalplan 8 Kanäle + Costas-SYNC + IQ-Eingang ✅
-**Status:** Entschieden und umgesetzt (Phase 9, Mai 2026). Löst den ursprünglichen
-Entwurf (Kanal-9/SSB-Passband-Kante) und P8-06 auf.
-
-**Problem (OTA Mai 2026):** Kanal 9 wird über die Luft nur selten dekodiert.
-Empirische Analyse (AWGN- + Filtersimulation, Kanal 9 vs. Kanal 2):
-- In **reiner AWGN** dekodiert Kanal 9 identisch zu Kanal 2 (bis ≤ 0 dB SNR, 20/20). **Kein Decoder-/Logik-Bug.**
-- Mit **steilem SSB-Filter (Höhencut ~2700 Hz)** fällt Kanal 9 auf ~22/30; mit zusätzlich +60 Hz Dial-Offset → ~0/30.
-- Die Fehlerart ist **immer CRC-Fail, nie „kein-SYNC"**: SYNC wird zuverlässig gefunden,
-  aber die oberen Daten-Töne von Kanal 9 (Ton 5/6/7 bei 2806/2837/**2868,75** Hz) liegen
-  am/über der Kante eines typischen 2,4–2,7-kHz-SSB-Filters. Das Rig dämpft sie weg →
-  FFT-argmax liest die Symbole falsch → RS-FEC überlastet → CRC-Fail. **Verlorene HF-Energie,
-  die der Decoder nicht zurückholen kann.**
-
-Ursache ist also der Kanalplan (400–2900 Hz nutzt mehr Bandbreite, als ein Standard-
-SSB-Filter durchlässt), nicht die Software. Ein bereits umgesetzter Decoder-Fix
-(P7-O: Breitband-Scan-Obergrenze 2760 → 2900 Hz) behebt nur die *Offset*-bedingten
-Ausfälle (Kanal-9-Offset-Toleranz jetzt symmetrisch ≥ +200 Hz), nicht den Filter-Cut.
-
-**Abgewogene Optionen (Entwurf):** A — Status quo + Betriebshinweis (kein Break);
-B — Kanalplan nach unten schieben (Basis 300 Hz, 10 Kanäle, Break); C — auf 9 Kanäle
-reduzieren (Kanal 9 streichen, Break + `SHA-256 % 9`); D — engerer Tonabstand
-(größerer DSP-Eingriff, Orthogonalität gefährdet). Die umgesetzte v0.5 ist eine
-konsequentere Ableitung von C: **beide** Randkanäle (0+9 alt) entfernt.
-
-**Motivation:** On-Air-Tests und Analyse zeigten dass Kanäle 0 und 9 (alt: 400 Hz /
-2650–2900 Hz) im SSB-Filterrolloff lagen (bis −10 dB). Der alternierende SYNC
-[7,0,7,0,7,0,7,0] verwendete nur 2 von 8 Tönen — kein Equalizer möglich und
-suboptimale Autokorrelation. IQ-Eingang war als IDEA-05 bereits priorisiert.
-**Entscheidung:** Sofortiger Schnitt auf 8 Kanäle (600–2600 Hz, SSB-Plateau ±0,5 dB),
-Ersatz durch verifiziertes Costas-Array der Ordnung 8 ([2,0,6,7,1,4,3,5]),
-additiver IQ-Eingang als neues Modul gust_iq_rx.py. Protokoll-Break auf v0.5
-akzeptiert — GitHub-Repository noch nicht angelegt (P8-03 offen), kein
-Rückwärtskompatibilitätsproblem. Decoder-Eingriff: minimal — nur SYNC_SYMBOLS-
-Konstante + Sync-Scoring-Algorithmus in _find_sync_candidates(), Datendekodierung
-vollständig unverändert.
+Kanäle 0+9 (alt) im SSB-Filterrolloff → entfernt. 8 Kanäle 600–2600 Hz. Costas-Array [2,0,6,7,1,4,3,5].
 
 ### ADR-15: Connector Layer — Semantic Bridging statt simpler MQTT-Brücke
-Motivation: P6-01/02 (einfache MQTT-Brücke) ist semantisch blind — externer JSON
-landet als Rohbytes, der Gateway muss den Typ erraten. Für Home Assistant,
-APRS, Meshtastic usw. braucht es eine echte Übersetzungsschicht.
-Entscheidung: Neues Abstraktionsmodell (gust_connector_konzept.md):
-GustConnector ABC + ConnectorRegistry + SemanticMapping (YAML-konfiguriert) +
-Transform-Bibliothek. Frame-Layer und Event-Bus bleiben vollständig unverändert.
-P6-01 bis P6-05 bleiben als Items, werden aber inhaltlich auf das neue Modell
-angehoben. Neue Items P6-06 bis P6-09 für die Basisschicht.
+GustConnector ABC + ConnectorRegistry + SemanticMapping (YAML) + Transform-Bibliothek.
 
 ### ADR-16: SoapySDR TX — Geräteauswahl per Discovery, kein Hardcoding
-Motivation: Der ursprüngliche Titel „Soapy7610" suggerierte eine Festlegung auf
-die IC-7610. SoapySDR ist aber gerade die herstellerneutrale Abstraktion — „7610"
-ist nur *ein* Satz Device-Args unter vielen. Eine Festverdrahtung auf einen
-Treiber-/DLL-Namen widerspricht dem Sinn der Schicht.
-Entscheidung: TX-Geräte werden ausschließlich über `SoapySDR.Device.enumerate()`
-entdeckt (Auto-Discovery). **Bewusst KEIN** manuelles Device-Args- oder
-Plugin-Pfad-Eingabefeld in der GUI (Designentscheidung OE3GAS, Mai 2026) —
-Recovery bei fehlendem Gerät erfolgt über „Rescan". Persistiert werden die vollen
-Device-Args (driver + serial/label) in `gateway.json`, NICHT der Enumerations-Index
-(Reihenfolge nach Reboot/USB-Replug nicht stabil — dieselbe Lehre wie ADR-09 bei
-Audiogeräten). Konsequenzen für die Implementierung:
-- `SoapyTxBackend` (neues Modul `gust_soapy_tx.py`) nimmt generische Args entgegen;
-  „7610" ist kein Sonderfall mehr, sondern ein gespeicherter Args-Satz.
-- TX-Fähigkeit beim Befüllen des Dropdowns prüfen: `getNumChannels(SOAPY_SDR_TX)`
-  > 0; RX-only-Geräte (z. B. RTL-SDR) ausgrauen/warnen.
-- Gain-Modell, Sample-Rate-Bereich und Antennenports sind treiberabhängig und
-  werden nach Auswahl dynamisch abgefragt (`listGains`/`getGainRange`/
-  `getSampleRateRange`/`listAntennas`); Gain nicht als roher Int speichern
-  (HackRF mehrstufig vs. einzelne benannte Gains), sondern normalisiert (0–1)
-  oder als benannte Elemente, pro Gerät gemappt.
-- `SoapySDR.listModules()` wird rein diagnostisch angezeigt (Status-Tab oder unter
-  dem Dropdown), damit erkennbar ist, ob das passende Treiber-Modul geladen wurde —
-  reine Anzeige, kein Eingabefeld (bleibt im „nur enumerate"-Rahmen).
+Nur `SoapySDR.Device.enumerate()`. Device-Args (driver+serial) in gateway.json, nicht Index.
+
+### ADR-17: QSO-Modus — nur Web-UI, kein gateway.json/API ✅ (Juni 2026)
+GUST ist primär ein Telemetrie-Protokoll. Der QSO-Modus (60 s Fragment-Intervall) ist
+ausschließlich über den Web-Client aktivierbar — bewusst nicht in gateway.json, REST-API
+oder CLI exponiert. Automatische Stationen sollen ihn nicht aktivieren können (Duty Cycle).
+Dokumentiert in gust_spec.md §3.4.
+
+### ADR-18: TRX-Profile — audio_device_tx/rx statt audio_device ✅ (Juni 2026)
+Profile verwenden separate Felder `audio_device_tx` → `audio.device` und
+`audio_device_rx` → `rx.device`, weil TX- und RX-Soundkarten pro TRX unterschiedlich
+sein können (z.B. IC-7610: TX 14, RX 2; FT-818: TX 10, RX 5).
+
+### ADR-19: rigctld-Handle-Weitergabe (BUG-10 root cause) ✅ (Juni 2026)
+`create_ptt()` in `gust_audio.py` merkt Popen-Handle an `ptt._rigctld_proc`.
+`cmd_daemon()` übergibt Handle nach `gateway.start()` an `server._rigctld_proc`.
+Damit erkennt `_handle_hamlib_config()` GUST-eigene rigctld-Prozesse und zeigt
+keinen Konflikt-Dialog. Option A (Handle-Plumbing) gegenüber C (Modul-Global) bevorzugt.
+
+### ADR-20: i18n — externe JSON-Locale-Dateien statt hartkodierter Strings ✅ (Juni 2026)
+Alle UI-Strings in `locales/de.json` + `locales/en.json` ausgelagert (194 Keys).
+Server liefert `/api/lang/<code>` aus. JS lädt beim Start die passende Datei,
+`applyI18n()` setzt `data-i18n`-Attribute via `textContent` (Plaintext) oder
+`innerHTML` (formatierte Infotexte via `data-i18n-html`). Sprachauswahl in
+`localStorage` persistent. Neue Sprachen: nur JSON-Datei hinzufügen, kein Code ändern.
 
 ---
 
 *Dokument: gust_backlog.md*
 *Autor: OE3GAS*
-*Stand: Mai 2026 — P5-13/14 Hamlib-GUI · P5-15 Tune · P5-16 Kommunikations-Tab · P5-17 Aktivitätslog · ON AIR Banner · BUG-10 rigctld TRx-Wechsel mit Konflikt-Dialog*
+*Stand: Juni 2026 — i18n DE/EN P5-21 (ADR-20) · Inbox-Kosmetik P5-22 · CLI-Verbesserungen · QSO-Modus · TX-Queue-Clear · TRX-Profile (P5-18) · BUG-10 root cause (ADR-19) · BUG-11 Status-Dot · BUG-12 Windows-TCP-Race*

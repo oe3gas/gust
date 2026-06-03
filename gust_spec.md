@@ -2,7 +2,7 @@
 **OE3GAS — Generic Universal Shortwave Telemetry**
 
 > *GUST — Generic Universal Shortwave Telemetry — a terse HF broadcast protocol inspired by Olivia, optimized for sub-5-second transmissions.*
-*Version 0.5 — Mai 2026*
+*Version 0.5 — Juni 2026*
 
 ---
 
@@ -45,7 +45,7 @@ Die Töne sind **orthogonal** (Δf = 1/T), was optimale Spektraleffizienz ohne I
 - Byteorientiert — passt nativ zu Binärdaten
 - Overhead: 32 Byte pro Frame (shortened code via reedsolo)
 - Korrigiert bis zu 16 Byte-Fehler pro Block
-- SNR-Schwelle ähnlich Olivia (~−12 bis −14 dB, durch HF-Tests zu bestimmen)
+- SNR-Schwelle empirisch ermittelt: ≤ 10 dB SNR (T-10.2)
 
 **Nettobitrate mit RS-FEC:**
 ```
@@ -106,7 +106,7 @@ Gesamt-Span:     600–2600 Hz  = 2.000 Hz  → SSB-Plateau ±0,5 dB ✓
 ```
 Bit 7   : TEST-Flag  — 1 = Frame ist als Testframe gekennzeichnet
 Bit 6–4 : reserviert (0x00)
-Bit 3–0 : Kanal 0–9  (0x00–0x09)
+Bit 3–0 : Kanal 0–7  (0x00–0x07)
 
 Beispiel: 0x82 = Bit 7 gesetzt (TEST) + Kanal 2
 ```
@@ -156,6 +156,7 @@ GUST unterstützt ab v0.5 zwei unabhängige Empfangspfade:
 0x41  QSO-CQ / Anruf
 0xF0  Protokoll-Management (Kanalzuweisung, Timing)
 0xFF  Erweiterungsreserviert
+```
 
 #### QSO-Modus (Frame 0x40 — Designentscheidung)
 
@@ -176,7 +177,6 @@ dient ausschließlich der interaktiven Ham-Kommunikation über den Web-Client.
 
 Der QSO-Modus bleibt bis zur manuellen Deaktivierung aktiv
 (kein automatisches Zurückschalten nach der Nachricht).
-```
 
 ### 3.5 Payload-Definitionen
 
@@ -240,12 +240,12 @@ Offset  Größe  Inhalt
 - Maximale Textlänge: **56 Byte UTF-8** (= 56 ASCII-Zeichen)
 - Kapazität nach Fragmentanzahl:
 
-| Fragmente | Textlänge | Sendedauer (bei 5-min-Zyklus) |
-|:---------:|:---------:|:-----------------------------:|
-| 1         | 1–14 Byte | ~5 min                        |
-| 2         | 15–28 Byte| ~10 min                       |
-| 3         | 29–42 Byte| ~15 min                       |
-| 4         | 43–56 Byte| ~20 min (Maximum)             |
+| Fragmente | Textlänge | Sendedauer (Standard) | Sendedauer (QSO-Modus) |
+|:---------:|:---------:|:---------------------:|:----------------------:|
+| 1         | 1–14 Byte | ~5 min                | ~1 min                 |
+| 2         | 15–28 Byte| ~10 min               | ~2 min                 |
+| 3         | 29–42 Byte| ~15 min               | ~3 min                 |
+| 4         | 43–56 Byte| ~20 min (Maximum)     | ~4 min                 |
 
 **Web-UI-Verhalten:**
 - Byte-Counter zeigt laufend: verwendete Bytes / 56, Frame-Anzahl, verbleibende Bytes
@@ -254,17 +254,11 @@ Offset  Größe  Inhalt
   (byte-korrekt in 14-Byte-Chunks, gemeinsame Sequenznummer) und sendet **ein Fragment
   pro Schedule-Slot** über `POST /api/tx/text_fragment` — nicht alle back-to-back.
   Nach jedem `tx_done` wird bis zum nächsten Slot gewartet, dann das nächste Fragment.
-  (Der ältere `POST /api/tx/text` fragmentiert dagegen serverseitig und sendet alle
-  Teile unmittelbar hintereinander.)
 - **RX-Reassembly:** Eingehende Fragmente werden im Browser anhand `Rufzeichen:Seq-Nr`
   gesammelt und bei Vollständigkeit als zusammengesetzte Klartextzeile angezeigt
   (mit `[n/n Frg. ✓]`); unvollständige Nachrichten zeigen den ausstehenden Rest.
 - **Kein serverseitiges Hard-Limit (Stand v0.3):** Das 56-Byte-/4-Frame-Limit wird
-  **ausschließlich clientseitig** (Web-UI: `alert()` + Byte-Counter) durchgesetzt.
-  `fragment_text()` fragmentiert serverseitig beliebig langen Text **ohne Obergrenze**.
-  Das Wire-Format erlaubt über das 4-Bit-Gesamtfeld (Fragment-Info Bits 3-0) sogar bis
-  zu **16 Fragmente** (= 224 Byte). Direkte API-/CLI-Aufrufe umgehen die 56-Byte-Grenze
-  daher vollständig. Siehe BUG-09.
+  **ausschließlich clientseitig** durchgesetzt. Siehe BUG-09.
 
 ### 3.6 Rufzeichen-Kodierung (Basis-40)
 
@@ -276,9 +270,9 @@ Rufzeichen > 6 Zeichen werden auf 6 Zeichen gekürzt (bekannte Einschränkung, s
 ```python
 import hashlib
 
-def assign_channel(callsign, n_channels=10, interval=300):
+def assign_channel(callsign, n_channels=8, interval=300):
     h = int(hashlib.sha256(callsign.upper().encode()).hexdigest(), 16)
-    channel     = h % n_channels       # Heimatkanal (0–9)
+    channel     = h % n_channels       # Heimatkanal (0–7)
     time_offset = (h >> 8) % interval  # Zeitversatz (s)
     return channel, time_offset
 
@@ -295,25 +289,23 @@ GUST besteht aus einem **einzigen Daemon-Prozess** mit eingebettetem Web-Server.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    GUST Daemon                            │
-│                                                              │
-│  TX-Stack           Interner          RX-Stack              │
-│  ─────────          Event-Bus         ───────────           │
-│  Quellen ──→        asyncio           Audio-In              │
-│  Queue   ──→  pub ──────────── sub ←─ Demodulator           │
-│  Modulator          Fan-out           Decoder               │
-│  Audio-TX                             Output-Router         │
-│                        │                                     │
-│              ┌─────────┴──────────┐                         │
-│              │  Eingebetteter     │                          │
-│              │  Web-Server        │                          │
-│              │  aiohttp :8080     │                          │
-│              │                    │                          │
-│              │  REST   /api/…     │                          │
-│              │  WS     /ws/rx     │                          │
-│              │  WS     /ws/log    │                          │
-│              │  Static /          │                          │
-│              └────────────────────┘                         │
+│                    GUST Daemon                              │
+│                                                             │
+│  TX-Stack           Interner          RX-Stack             │
+│  ─────────          Event-Bus         ───────────          │
+│  Quellen ──→        asyncio           Audio-In             │
+│  Queue   ──→  pub ──────────── sub ←─ Demodulator          │
+│  Modulator          Fan-out           Decoder              │
+│  Audio-TX                             Output-Router        │
+│                        │                                    │
+│              ┌─────────┴──────────┐                        │
+│              │  Eingebetteter     │                         │
+│              │  Web-Server        │                         │
+│              │  aiohttp :8080     │                         │
+│              │  REST   /api/…     │                         │
+│              │  WS     /ws/rx     │                         │
+│              │  WS     /ws/log    │                         │
+│              └────────────────────┘                        │
 └─────────────────────────────────────────────────────────────┘
                          │  LAN / VPN
                     ┌────┴────┐
@@ -324,21 +316,28 @@ GUST besteht aus einem **einzigen Daemon-Prozess** mit eingebettetem Web-Server.
 ### 4.2 Betriebsmodi
 
 **Monitor-Modus** (`gust rx`):
-- Dauerlauf, beobachtet alle 10 Kanäle gleichzeitig
+- Dauerlauf, beobachtet alle 8 Kanäle gleichzeitig
 - FFT-basierter Channel-Scan mit 4096-Punkte Zero-Padding
 - Dekodierte Frames → Event-Bus → WebSocket → Browser
-- Dekodierte Frames → JSON-Lines Logfile (rotierend)
-- Optional: MQTT-Publish (konfigurierbar)
 
 **Sender-Modus** (`gust tx <typ>`):
 - One-Shot: einmal senden, beenden
-- Daemon: periodisch senden aus konfigurierten Quellen
 - Prioritäts-Queue (Prio 1–4) mit Kanal-Cooldown (10 s Standard)
 
 **Daemon-Modus** (`gust daemon`):
 - TX + RX gleichzeitig, Vollbetrieb
 - Alle Quellen aktiv (BME280, MQTT, Meshtastic, File)
 - Web-Server läuft für GUI-Zugriff
+
+**CLI-Startoptionen:**
+
+| Aufruf | Modus | Beschreibung |
+|---|---|---|
+| `gust.py daemon` | `DAEMON` | TX + RX Vollbetrieb, echte Hardware |
+| `gust.py daemon --sim` | `DAEMON · SIM` | SimAdapter erzeugt synthetische Frames |
+| `gust.py daemon --dry-run` | `DAEMON · DRY-RUN` | TX-Pipeline aktiv, kein Audio/PTT |
+| `gust.py daemon --sim --dry-run` | `DAEMON · SIM · DRY-RUN` | Reine Software-Simulation |
+| `gust.py rx` | `RX-MONITOR` | Nur Empfang + Web-UI |
 
 ### 4.3 Interner Event-Bus
 
@@ -363,28 +362,35 @@ class EventBus:
 | Methode | Pfad | Funktion |
 |---|---|---|
 | GET | `/` | Web-UI (HTML/JS/CSS, eingebettet) |
-| GET | `/api/status` | Daemon-Status, Queue-Statistik |
+| GET | `/api/status` | Daemon-Status, Queue-Statistik, `active_trx_profile`, `trx_profile_count` |
 | GET | `/api/config` | Aktuelle Konfiguration (ohne Passwörter) |
 | PATCH | `/api/config` | Partielles Konfig-Update (z.B. `audio.ptt_delay_ms`), schreibt `gateway.json` |
 | POST | `/api/tx/weather` | One-Shot Wetter-Frame |
 | POST | `/api/tx/position` | One-Shot Positions-Frame |
-| POST | `/api/tx/text` | Text-Frame (langer Text → serverseitig fragmentiert, back-to-back) |
+| POST | `/api/tx/text` | Text-Frame (serverseitig fragmentiert, back-to-back) |
 | POST | `/api/tx/text_fragment` | Einzelnes vorberechnetes Text-Fragment (Schedule-getaktet vom Web-UI) |
 | POST | `/api/tx/emergency` | Notfall-Frame (sofort, Prio 1) |
-| GET    | `/api/log`       | Letzte N Einträge aus dem Logfile |
-| DELETE | `/api/tx/queue`  | Alle ausstehenden TX-Frames löschen — gibt `{cleared: N}` zurück. Frames die gerade gesendet werden bleiben unberührt. |
+| POST | `/api/tx/tune` | 15-s-Sinuston (1000 Hz) mit PTT — für Antennenabgleich |
+| POST | `/api/tx/tune_stop` | Tune sofort abbrechen, PTT lösen |
+| GET | `/api/log` | Letzte N Einträge aus dem Logfile |
+| DELETE | `/api/tx/queue` | Alle ausstehenden TX-Frames löschen — gibt `{cleared: N}` zurück. Frames die gerade gesendet werden bleiben unberührt. |
+| POST | `/api/trx/activate` | TRX-Profil aktivieren — Body: `{"name": "IC-7610"}`. Schreibt rigctld/audio-Block, stößt conflict-aware rigctld-Neustart an. |
 | GET | `/api/hamlib/ports` | Verfügbare serielle Ports (pyserial `list_ports`) |
 | GET | `/api/hamlib/models` | Hamlib-Rig-Liste (`?q=`Suchstring, max. 50 Treffer) |
 | GET | `/api/hamlib/status` | rigctld TCP-Erreichbarkeit + aktuelle Frequenz |
 | POST | `/api/hamlib/start` | rigctld starten (`ensure_rigctld_running`) |
 | POST | `/api/hamlib/stop` | rigctld stoppen (nur wenn GUST ihn gestartet hat) |
 | POST | `/api/hamlib/config` | rigctld-Block + `ptt_backend` in `gateway.json` schreiben |
+| POST | `/api/hamlib/force_restart` | rigctld-Prozess (PID) beenden und neu starten |
+| GET | `/api/sdr/devices` | SoapySDR-Geräte enumerieren (enumerate + Rescan) |
+| GET | `/api/sdr/caps` | SoapySDR-Geräteeigenschaften (Gain, Sample-Rate, Antennen) |
+| POST | `/api/sdr/config` | SoapySDR-TX-Konfiguration in `gateway.json` schreiben |
 
 **WebSocket-Endpunkte:**
 
 | Pfad | Inhalt | Format |
 |---|---|---|
-| `/ws/rx` | Dekodierte RX-Frames (Echtzeit) | JSON-Objekt |
+| `/ws/rx` | Dekodierte RX-Frames, tx_done, heartbeat (Echtzeit) | JSON-Objekt |
 | `/ws/log` | Systemlog-Einträge (Echtzeit) | JSON-Objekt |
 
 **RX-Frame JSON-Format:**
@@ -403,7 +409,46 @@ class EventBus:
 }
 ```
 
-### 4.5 Wetter-Adapter-Bibliothek
+### 4.5 TRX-Profile (gateway.json)
+
+GUST unterstützt ab Juni 2026 mehrere Transceiver-Profile in `gateway.json`.
+Das aktive Profil wird über das Web-UI ausgewählt und in `active_trx_profile` gespeichert.
+
+```json
+"trx_profiles": [
+  {
+    "name":            "IC-7610",
+    "rig_model":       3078,
+    "device":          "COM11",
+    "baud":            19200,
+    "audio_device_tx": 14,
+    "audio_device_rx": 2,
+    "ptt_backend":     "hamlib",
+    "auto_start":      true
+  },
+  {
+    "name":            "FT-818",
+    "rig_model":       1045,
+    "device":          "COM7",
+    "baud":            38400,
+    "audio_device_tx": 10,
+    "audio_device_rx": 5,
+    "ptt_backend":     "hamlib",
+    "auto_start":      true
+  }
+],
+"active_trx_profile": "IC-7610"
+```
+
+**Designentscheidungen:**
+- `audio_device_tx` → `audio.device` (TX-Soundkarte)
+- `audio_device_rx` → `rx.device` (RX-Soundkarte)
+- Profil-Anlage manuell in `gateway.json`; erstes Profil wird beim Hamlib-Config-Speichern automatisch angelegt
+- Rückwärtskompatibel: fehlt `trx_profiles`, arbeitet GUST wie bisher mit dem einzelnen `rigctld`-Block
+- Profilwechsel stößt conflict-aware rigctld-Neustart an (gemeinsamer Flow mit Hamlib-Config-Tab)
+- Status-Poll nach Neustart: 2 s Delay (`_testHamlibDelayed`) — gibt rigctld Zeit zum Hochfahren
+
+### 4.6 Wetter-Adapter-Bibliothek
 
 Alle Adapter implementieren `WeatherAdapterBase` und liefern ein einheitliches Dict:
 
@@ -415,18 +460,9 @@ Alle Adapter implementieren `WeatherAdapterBase` und liefern ein einheitliches D
 | `WeeWxAdapter` | WeeWx SQLite-DB | Häufigste RPi-Wetterstation |
 | `MqttWeatherAdapter` | MQTT-Topic | WiFi-Wetterstationen mit MQTT-Output |
 
-Konfiguration in `gateway.json`:
-```json
-"weather_source": {
-  "adapter": "sim",
-  "file_path": "/var/lib/weewx/weewx.sdb",
-  "rtl433_cmd": "rtl_433 -F json"
-}
-```
+### 4.7 MQTT-Bridge (optional)
 
-### 4.6 MQTT-Bridge (optional)
-
-Die MQTT-Bridge ist ein optionaler Event-Bus-Subscriber/-Publisher. Sie wird nur instanziiert wenn `mqtt.enabled: true` in der Konfiguration. Der Rest des Systems ist davon vollständig unabhängig.
+Die MQTT-Bridge ist ein optionaler Event-Bus-Subscriber/-Publisher. Nur aktiv wenn `mqtt.enabled: true`.
 
 **Output-Topics (RX → MQTT):**
 ```
@@ -434,13 +470,6 @@ gust/rx/weather    → dekodierte Wetter-Frames
 gust/rx/position   → dekodierte Positions-Frames
 gust/rx/text       → dekodierte Text-Frames
 gust/status        → Daemon-Status (60 s Intervall)
-```
-
-**Input-Topics (MQTT → TX):**
-```
-gust/tx/weather    → Wetter-Frame senden
-gust/tx/text       → Text-Frame senden
-gust/tx/position   → Positions-Frame senden
 ```
 
 ---
@@ -454,29 +483,32 @@ gust/tx/position   → Positions-Frame senden
 | `gust_frame.py` | Frame Layer: alle Encoder/Decoder, CRC, Rufzeichen, Kanal | 1+2 | ✅ fertig |
 | `gust_modulator.py` | MFSK-8 Modulator/Demodulator, TX/RX Pipeline, WAV/CF32 | 1 | ✅ fertig |
 | `gust_decode.py` | Standalone Decoder, Channel-Scan CLI | 2 | ✅ fertig |
-| `gust_audio.py` | Audio TX, PTT-Steuerung (GPIO, hamlib, null) | 3 | ✅ fertig |
+| `gust_audio.py` | Audio TX, PTT-Steuerung (GPIO, hamlib, null); `create_ptt()` gibt Popen-Handle zurück | 3 | ✅ fertig |
 | `gust_hackrf.py` | HackRF TX-Pfad | 3 | ✅ fertig |
+| `gust_soapy_tx.py` | Generischer SoapySDR-TX-Backend (ADR-16) | 7 | ✅ fertig |
 | `gust_sources.py` | Datenquellen-Adapter (BME280, MQTT, Meshtastic) | 4 | ✅ fertig |
-| `gust_gateway.py` | Sendeplaner, Prioritäts-Queue, Aggregator | 4 | ✅ fertig |
-| `gust_weather.py` | Wetter-Adapter-Bibliothek (Sim, File, rtl_433, WeeWx) | 5 | 🔲 geplant |
-| `gust_eventbus.py` | Interner asyncio Fan-out Event-Bus | 5 | 🔲 geplant |
-| `gust_web.py` | aiohttp Web-Server, REST API, WebSocket, Static UI | 5 | 🔲 geplant |
+| `gust_gateway.py` | Sendeplaner, Prioritäts-Queue, Aggregator; `clear_queue()` | 4 | ✅ fertig |
+| `gust_weather.py` | Wetter-Adapter-Bibliothek (Sim, File, rtl_433, WeeWx) | 5 | ✅ fertig |
+| `gust_eventbus.py` | Interner asyncio Fan-out Event-Bus | 5 | ✅ fertig |
+| `gust_iq_rx.py` | IQ-Empfangspfad, RTL-SDR Filterbank, asyncio IQReceiver | 9 | ✅ fertig |
+| `gust_web.py` | aiohttp Web-Server, REST API, WebSocket, Static UI; TRX-Profile, QSO-Modus, Queue-Clear | 5 | ✅ fertig |
 | `gust_mqtt.py` | Optionale MQTT-Bridge (Subscriber + Publisher) | 6 | 🔲 geplant |
-| `gust.py` | Einheitlicher CLI-Einstiegspunkt | 5 | 🔲 geplant |
-| `gateway.json` | Konfigurationsvorlage | 4 | ✅ fertig |
-| `requirements.txt` | Python-Abhängigkeiten (PC + RPi) | 4 | ✅ fertig |
+| `gust.py` | CLI-Einstiegspunkt; 80-Zeichen-Banner, ANSI-Logging, `_mode_badges` | 5 | ✅ fertig |
+| `gust_tx_test.py` | TX-Testharness HackRF/IC-7610; Epilog mit Beispielaufrufen + Hinweis kein gleichzeitiger daemon | 7 | ✅ fertig |
+| `gateway.json` | Konfiguration inkl. `trx_profiles` + `active_trx_profile` | 4 | ✅ fertig |
+| `requirements.txt` | Python-Abhängigkeiten (PC + RPi); `psutil` ergänzt | 4 | ✅ fertig |
 
-### 5.2 CLI-Interface (geplant)
+### 5.2 CLI-Interface
 
 ```
 gust <subcommand> [optionen]
 
 Subcommands:
-  tx weather   Wetter-Frame senden (one-shot oder daemon)
+  tx weather   Wetter-Frame senden (one-shot)
   tx position  Positions-Frame senden
   tx text      Freitext senden
   tx emergency Notfall-Frame (sofort)
-  rx           Monitor-Modus (alle 10 Kanäle, Dauerlauf)
+  rx           Monitor-Modus (alle 8 Kanäle, Dauerlauf)
   daemon       Vollbetrieb (TX + RX + Web-Server)
   info         Kanalinfo für Rufzeichen anzeigen
   devices      Verfügbare Audio-Geräte listen
@@ -484,22 +516,26 @@ Subcommands:
 Globale Optionen:
   --callsign OE3GAS     Rufzeichen
   --config gateway.json Konfigurationsdatei
-  --dry-run             Kein TX, WAV speichern
+  --dry-run             Kein TX, kein Audio/PTT
+  --sim                 SimAdapter als Datenquelle
   --verbose / -v        Debug-Logging
 ```
 
-### 5.3 Technologie-Stack
+### 5.3 CLI-Logging (gust.py)
 
-| Schicht | Technologie | Begründung |
-|---|---|---|
-| Async-Runtime | `asyncio` (stdlib) | Durchgängig, kein Threading-Mix |
-| Web-Server | `aiohttp` | asyncio-nativ, WS + REST + Static in einem |
-| MQTT | `paho-mqtt` | Bewährt, Thread-sicher, optional |
-| Audio | `sounddevice` | Plattformübergreifend |
-| PTT | `RPi.GPIO` / `hamlib` | RPi-nativ / TRX-agnostisch |
-| FEC | `reedsolo` | Reed-Solomon, getestet ✅ |
-| DSP | `numpy`, `scipy` | FFT, Hilbert, Modulation |
-| Sensor | `smbus2` | I²C BME280, nur RPi |
+Farbiges ANSI-Logging via `GustFormatter` + `_GustStreamHandler`:
+
+| Log-Kategorie | Farbe | Label | Verhalten |
+|---|---|---|---|
+| `INFO` allgemein | grün | `INFO` | scrollend |
+| TX-Gateway-Event | gelb | `TX ▶` | scrollend, kompakt |
+| RX-Frame-Event | blau | `RX ◀` | scrollend, kompakt |
+| RX-Heartbeat (periodisch) | grau | `▸` | **überschreibend** (`\r`) |
+| `WARNING` | orange | `WARNING` | scrollend |
+| `ERROR` | rot | `ERROR` | scrollend |
+| `aiohttp.access` | — | — | **unterdrückt** (WARNING-Level) |
+
+`_GustStreamHandler.emit()` prüft nach dem Formatieren ob der Formatter einen leeren String geliefert hat — falls ja, wird nichts ausgegeben (kein Leerzeilen-Artefakt nach `\r`-Statuszeile).
 
 ### 5.4 PTT-Steuerung (implementiert in gust_audio.py)
 
@@ -507,12 +543,15 @@ Globale Optionen:
 # Drei Backends, konfigurierbar:
 ptt_backend: "null"    # Simulation / Dry-Run
 ptt_backend: "gpio"    # Raspberry Pi GPIO-Pin
-ptt_backend: "hamlib"  # IC-7610, rigctld
+ptt_backend: "hamlib"  # rigctld (IC-7610, FT-818, TS-790, ...)
 ```
 
-### 5.5 Sicherheit (Web-Server)
+`create_ptt()` merkt den von `ensure_rigctld_running()` gestarteten `subprocess.Popen`-Handle
+an `ptt._rigctld_proc`. `cmd_daemon()` übergibt diesen Handle nach `gateway.start()` an
+`server._rigctld_proc`, damit `_handle_hamlib_config()` eigene rigctld-Prozesse erkennt
+und keinen Konflikt-Dialog zeigt (ADR-19).
 
-Für Betrieb im Privatnetz + VPN reicht ein einfacher API-Key im HTTP-Header. HTTPS über den VPN-Tunnel. Kein volles Auth-Framework nötig.
+### 5.5 Sicherheit (Web-Server)
 
 ```json
 "web": {
@@ -530,7 +569,7 @@ Für Betrieb im Privatnetz + VPN reicht ein einfacher API-Key im HTTP-Header. HT
 
 ```
 Meshtastic:  letzte Meile  (Node ↔ Node, 5–50 km, LoRa 868 MHz)
-GUST:     Backbone      (Gateway ↔ Gateway, kontinental, HF)
+GUST:        Backbone      (Gateway ↔ Gateway, kontinental, HF)
 
 [MeshCom Wien] ←──LoRa──→ [HF-Gateway OE3GAS] ←──HF──→ [HF-Gateway remote]
 ```
@@ -545,7 +584,7 @@ Priorität 3 (nächster       Frame-Typ 0x02       — Position
 Priorität 4 (zyklisch):     Frame-Typ 0x01/0x03  — Telemetrie
 ```
 
-Notfall-Frames (Prio 1) überspringen den Kanal-Cooldown. Alle anderen warten min. `min_tx_gap_s` (Standard: 10 s) nach dem letzten TX auf demselben Kanal.
+Notfall-Frames (Prio 1) überspringen den Kanal-Cooldown. Alle anderen warten min. `min_tx_gap_s` (Standard: 10 s).
 
 ---
 
@@ -566,10 +605,6 @@ Notfall-Frames (Prio 1) überspringen den Kanal-Cooldown. Alle anderen warten mi
 
 ## 8. Geplante Testfrequenzen
 
-Testbetrieb mit ausgewählten Gegenstationen ist für die folgenden KW-Segmente
-geplant. Die Segmente entsprechen den digitalen Sub-Bändern des IARU-Region-1-
-Bandplans und decken sich mit dem ÖVSV-Bandplan für OE.
-
 | Band | Segment | MHz-Schreibweise | Anmerkung |
 |------|---------|-----------------|-----------|
 | 630 m | 475–479 kHz | 0,475–0,479 | Schmalband-Digital, QRP |
@@ -582,15 +617,7 @@ Bandplans und decken sich mit dem ÖVSV-Bandplan für OE.
 | 15 m | 21090–21110 kHz | 21,090–21,110 | Digitales Sub-Band |
 | 10 m | 28120–28150 kHz | 28,120–28,150 | Digitales Sub-Band |
 
-Die Dial-Frequenz wird je Band so gewählt, dass die NF-Kanäle 0–7
-(600–2600 Hz, v0.5) vollständig innerhalb des jeweiligen Segments liegen.
-Beispiel 20 m: Dial 14,110 MHz → RF 14,1106–14,1126 MHz ∈ [14,110–14,125] ✓
-
 ### VHF/UHF — Zusatztests
-
-GUST wurde ursprünglich für KW entwickelt. Für ergänzende Tests unter
-UKW-Ausbreitungsbedingungen (Tropo, lokale Reichweite, NVIS-Vergleich)
-werden zusätzlich folgende Segmente herangezogen:
 
 | Band | Frequenz | Anmerkung |
 |------|----------|-----------|
@@ -599,8 +626,7 @@ werden zusätzlich folgende Segmente herangezogen:
 
 > **§16 AFG ✅ geklärt:** GUST-Aussendungen sind als Datenübertragung
 > im digitalen Sub-Band lizenzkonform. Bandbreite (250 Hz/Kanal), Betriebsart
-> und die dokumentierten Testfrequenzen (gust_spec.md §8) entsprechen
-> dem ÖVSV-Bandplan und §16 des österreichischen Amateurfunkgesetzes.
+> und die dokumentierten Testfrequenzen entsprechen dem ÖVSV-Bandplan und §16 AFG.
 
 ---
 
@@ -608,77 +634,36 @@ werden zusätzlich folgende Segmente herangezogen:
 
 ```
 Phase 1 — Modulator/Demodulator  ✅ ABGESCHLOSSEN
-  ✅ Python MFSK-8 Modulator (phasenkontinuierlich)
-  ✅ WAV-Ausgabe → Verifikation in Audacity
-  ✅ CF32-Ausgabe → Verifikation in inspectrum
-  ✅ Reed-Solomon Encoder/Decoder (reedsolo, 5 Fehler korrigiert)
-  ✅ FFT Demodulator mit Zero-Padding (4096 Punkte)
-
 Phase 2 — Frame-Layer  ✅ ABGESCHLOSSEN
-  ✅ TLV-Encoder für alle Frame-Typen (0x01–0x41)
-  ✅ CRC-16/CCITT-FALSE
-  ✅ Rufzeichen Basis-40 Kodierung
-  ✅ Kanalzuweisung per SHA-256-Hash
-  ✅ Vollständiger Loopback-Test
-
 Phase 3 — Hardware-Integration  ✅ ABGESCHLOSSEN
-  ✅ Audio-Ausgabe über USB-Soundkarte (sounddevice)
-  ✅ PTT-Steuerung GPIO / hamlib / null
-  ✅ HackRF TX-Pfad (gust_hackrf.py)
-
 Phase 4 — Quellen-Integration  ✅ ABGESCHLOSSEN
-  ✅ Wetter-Adapter BME280 (I²C + Simulation-Fallback)
-  ✅ Meshtastic/MeshCom Gateway-Adapter
-  ✅ MQTT-Input für WiFi-Quellen
-  ✅ Prioritäts-Queue und Sendeplaner (gust_gateway.py)
-
 Phase 5 — Web-Interface & Event-Bus  ✅ ABGESCHLOSSEN
-  ✅ gust_eventbus.py: asyncio Fan-out Event-Bus, TTL-Filterung
-  ✅ gust_weather.py:  Wetter-Adapter (Simulation + File-Fallback)
-  ✅ gust_web.py:      aiohttp Server, REST API, WebSocket (/ws/rx, /ws/log)
-  ✅ Web-UI: HTML + Vanilla JS, eingebettet in gust_web.py
-      ✅ Monitor-Ansicht: alle 10 Kanäle, Echtzeit-Frames via WebSocket
-      ✅ One-Shot TX: Formular für alle Frame-Typen
-      ✅ Status-Dashboard: Queue, Uptime, letzte TX/RX, PTT-Delay (konfigurierbar)
-      ✅ Dark / Light Theme
-      ✅ API-Key-Authentifizierung (X-API-Key + Bearer)
-  ✅ gust.py: CLI-Einstiegspunkt (tx/rx/daemon/info/devices)
+  ✅ QSO-Modus (60 s Fragment-Intervall, Web-UI only) — Juni 2026
+  ✅ TX-Warteschlange löschen (DELETE /api/tx/queue) — Juni 2026
+  ✅ TRX-Profile Mehrgeräteverwaltung (trx_profiles, POST /api/trx/activate) — Juni 2026
+  ✅ CLI-Logging: ANSI-Farben, TX ▶ / RX ◀, überschreibende Statuszeile — Juni 2026
+  ✅ Banner 80 Zeichen, Aufrufe-Übersicht, korrekte Modus-Label — Juni 2026
 
 Phase 6 — MQTT-Bridge  (optional, zurückgestellt)
   🔲 gust_mqtt.py: MQTTBridge als Event-Bus-Subscriber/-Publisher
-  🔲 Home Assistant / Node-RED Integration testen
-  🔲 Dokumentation MQTT-Topic-Schema
 
 Phase 7 — On-Air-Tests und Decoder-Robustheit  ✅ WEITGEHEND ABGESCHLOSSEN
-  ✅ Protokoll v0.3: 8-Symbol-SYNC + CHANNEL-Byte im Frame-Header
-  ✅ TEST-Flag (Bit 7 im CH-Byte): rückwärtskompatible Testframe-Kennzeichnung
-  ✅ Symbol-Windowing (Raised Cosine) — sauberes Spektrum verifiziert
-  ✅ Breitband-SYNC-Detektor: automatische Kanal- + Offseterkennung
-  ✅ Decoder-Robustheit: Frequenz-Fein-Refinement (< 1 Hz nach Kalibrierung)
-  ✅ Decoder-Robustheit: Scan-Range 320–2760 Hz (alle 10 Kanäle erfasst)
-  ✅ Decoder-Robustheit: Halb-Block-Timing (128-Sample-Raster + Sample-genaues Refinement)
-  ✅ Kontinuierlicher RX-Loop: gust_rx.py, asyncio, Dedup-Cache, EventBus
-  ✅ HackRF Dual-Kanal-TX + Parallelkanal-Diversity (Diversity-Gewinn bestätigt)
-  ✅ SNR-Baseline HackRF→IC-7610: Decode-Schwelle ≤ 10 dB SNR ermittelt
-  ✅ SNR-Schätzer: adaptives Rauschband (BUG-06, alle Kanäle konsistent)
-  ✅ Vollfenster-Garantie: Fixed-Cadence-Scheduling, 100 % Simplex-Rate (BUG-07)
-  ✅ Erster On-Air-Test auf 14.110 MHz (IC-7610 TX → IC-7610/SDRplay RX)
-  ✅ Bandplan §16 AFG: lizenzkonform geklärt — Datenübertragung im digitalen Sub-Band
-  🔲 Soapy7610 TX-Pfad IC-7610 direktes IQ-TX
-  🔲 Kollisionstests mit zweiter Station (OE1XTU oder OE3GAT)
-  🔲 MeshCom End-to-End Test (LoRa → GUST-Gateway → HF → LoRa)
+  ✅ SNR-Baseline: Decode-Schwelle ≤ 10 dB SNR (T-10.2)
+  ✅ Erster On-Air-Test auf 14.110 MHz
+  🔲 Kollisionstests mit zweiter Station (T-10.3 ausgearbeitet)
+  🔲 MeshCom End-to-End Test
 
 Phase 8 — Veröffentlichung  ← AKTUELL
-  ✅ Protokoll umbenennen: OE3Mode → GUST (Generic Universal Shortwave Telemetry)
-  ✅ TEST-Flag in Protokollspezifikation dokumentiert (CH-Byte Bit 7)
-  ✅ Alle Module auf gust_*.py umgestellt, Imports konsistent
-  🔲 README.md für GitHub (Beschreibung, Quickstart, Protokollüberblick)
+  ✅ GitHub Repository (OE3GAS/gust) — committed + gepusht Juni 2026
+  🔲 README.md für GitHub
   🔲 LICENSE (CC BY-SA 4.0)
-  🔲 .gitignore + Repository-Struktur
-  ✅ Bandplan §16 AFG: lizenzkonform geklärt
   🔲 Installationsanleitung Raspberry Pi Gateway
-  🔲 Veröffentlichung auf GitHub (OE3GAS/gust)
   🔲 Präsentation ÖVSV / OE-Amateurfunk-Community
+
+Phase 9 — Protokoll v0.5  ✅ ABGESCHLOSSEN
+  ✅ 8 Kanäle 600–2600 Hz (ADR-14)
+  ✅ Costas-Array SYNC [2,0,6,7,1,4,3,5]
+  ✅ IQ-Eingang gust_iq_rx.py
 ```
 
 ---
@@ -687,9 +672,11 @@ Phase 8 — Veröffentlichung  ← AKTUELL
 
 | Gerät | Rolle im Projekt |
 |---|---|
-| **ICOM IC-7610** | Primärer HF-Transceiver, TX/RX, IQ via Soapy7610 |
+| **ICOM IC-7610** | Primärer HF-Transceiver, TX/RX, TRX-Profil COM11 |
+| **Yaesu FT-818** | Portabler TRX, TRX-Profil COM7 |
+| **Kenwood TS-790** | VHF/UHF-TRX, TRX-Profil COM10 |
 | **SDRplay RSPdx2** | Referenzempfang, Parallelbeobachtung |
-| **HackRF One** | Labortest-TX, Loopback-Tests |
+| **HackRF One** | Labortest-TX, Loopback-Tests, SNR-Baseline |
 | **AirSpy R2** | Empfang der HackRF-Testsignale |
 | **RF-Space SDR-IQ** | Schmalbandanalyse, Referenz |
 | **Raspberry Pi** | Gateway-Zielplattform (ab Beta-Phase) |
@@ -706,7 +693,8 @@ numpy, scipy     — installiert, getestet ✅
 reedsolo         — installiert, getestet ✅
 sounddevice      — Phase 3, implementiert ✅
 paho-mqtt        — Phase 4, implementiert ✅
-aiohttp          — Phase 5, neu hinzugefügt
+aiohttp          — Phase 5, implementiert ✅
+psutil           — BUG-10 Fix, Port-Konflikt-Erkennung ✅
 RPi.GPIO         — nur RPi, Phase 3 ✅
 smbus2           — nur RPi, Phase 4 ✅
 meshtastic       — Phase 4, optional
@@ -716,13 +704,11 @@ meshtastic       — Phase 4, optional
 
 | Frage | Priorität | Phase |
 |---|---|---|
-| SNR-Schwelle GUST vs. Olivia | hoch | 7 |
-| Symbol-Windowing (Raised Cosine) | mittel | 7 |
-| Optimale Preamble-Länge für reale KW-Bedingungen | mittel | 7 |
 | Demodulator: Python vs. GNU Radio OOT | niedrig | 7 |
-| Soapy7610 TX-Pfad IC-7610 | hoch | 7 |
+| Soapy7610 TX-Pfad IC-7610 direktes IQ-TX | mittel | 7 |
 | ~~Bandplankonformität OE (KW-Segment)~~ ✅ | hoch | geklärt Mai 2026 |
 | ~~Lizenzrechtlich: Telemetrie §16 AFG~~ ✅ | hoch | geklärt Mai 2026 |
+| ~~SNR-Schwelle GUST vs. Olivia~~ ✅ | hoch | geklärt (≤ 10 dB SNR, T-10.2) |
 | Rufzeichen > 6 Zeichen (Suffix /P etc.) | niedrig | 8 |
 | RS-FEC Optimierung für sehr kurze Frames | niedrig | 8 |
 
@@ -753,7 +739,7 @@ meshtastic       — Phase 4, optional
 
 ---
 
-*Dokument: gust_projektspezifikation.md*
+*Dokument: gust_spec.md*
 *Autor: OE3GAS*
-*Stand: 25. Mai 2026 — lebendes Dokument, wird laufend aktualisiert*
+*Stand: Juni 2026 — v0.5 · QSO-Modus · TRX-Profile · CLI-Logging · BUG-10/11/12 · 3 TRX-Profile (IC-7610, FT-818, TS-790)*
 *Lizenz: CC BY-SA 4.0 (geplant für Veröffentlichung)*

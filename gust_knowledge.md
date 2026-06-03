@@ -903,6 +903,18 @@ GUST:
 
 GUST hat einen Tune-Button (analog WSJT-X) im Config-Tab → Transceiver (Hamlib). Er sendet 15 Sekunden lang einen 1000-Hz-Sinuston mit aktivierter PTT — nützlich um Ausgangsleistung und SWR zu prüfen. Der Button ist ein Toggle: erster Klick startet, zweiter Klick stoppt vorzeitig. Das Frequenz-Polling wird während Tune automatisch pausiert um CAT-Kollisionen zu vermeiden.
 
+### Windows IPv4/IPv6-Konflikt bei rigctld
+
+**Windows IPv4/IPv6-Konflikt bei rigctld**
+Windows löst `localhost` systemabhängig als IPv6 (`::1`) auf.
+rigctld bindet dann nur auf `::1`, Python-`socket.create_connection`
+verbindet jedoch auf `127.0.0.1` (IPv4) → `ConnectionRefused`, obwohl
+rigctld läuft und im Task-Manager sichtbar ist.
+Diagnose: `netstat -ano | findstr ":4532"` zeigt `[::1]:4532` statt
+`0.0.0.0:4532`.
+Fix: rigctld immer mit `-T 127.0.0.1` starten (nicht `-T localhost`).
+In gateway.json: `"host": "127.0.0.1"` im `rigctld`-Block.
+
 ---
 
 *Dokument: gust_knowledge.md*
