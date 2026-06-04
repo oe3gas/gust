@@ -1,0 +1,48 @@
+# ============================================================
+# GUST — docker-compose.yml
+# ============================================================
+# Schnellstart:
+#   docker compose up
+#   → http://localhost:8080
+#
+# Mit eigenem Rufzeichen (ohne gateway.json):
+#   GUST_CALLSIGN=OE3XYZ docker compose up
+#
+# Mit eigener gateway.json:
+#   Zeile "gateway.json:/app/gateway.json" im volumes-Block einkommentieren
+# ============================================================
+
+services:
+  gust:
+    build: .
+    image: gust:latest
+    container_name: gust-gateway
+
+    # Rufzeichen per Umgebungsvariable setzen (nur wenn kein gateway.json gemountet)
+    environment:
+      - GUST_CALLSIGN=${GUST_CALLSIGN:-N0CALL}
+
+    ports:
+      # Web UI + REST API + WebSocket
+      - "8080:8080"
+
+    volumes:
+      # Optional: eigene gateway.json einbinden (Zeile einkommentieren):
+      # - ./gateway.json:/app/gateway.json:ro
+
+      # Optional: Empfangene Frames persistent speichern (falls gust.py das unterstützt):
+      # - gust-data:/app/data
+
+    restart: unless-stopped
+
+    # Healthcheck: Web UI erreichbar?
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+# volumes:
+#   gust-data:

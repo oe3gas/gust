@@ -1,5 +1,5 @@
-# OE3Mode — Python-Abhängigkeiten
-# PC:          pip install -r requirements.txt
+# GUST — Python-Abhängigkeiten
+# PC:           pip install -r requirements.txt
 # Raspberry Pi: pip install -r requirements.txt --break-system-packages
 
 # Signalverarbeitung & Modulator
@@ -9,11 +9,11 @@ scipy
 # Reed-Solomon FEC
 reedsolo
 
-# Audio I/O (Gateway-Betrieb, Phase 3)
+# Audio I/O (Gateway-Betrieb)
 sounddevice
 
-# System-Prozess-Monitoring (Port-Konflikt-Erkennung fuer rigctld)
-psutil
+# Web-Server (REST API + WebSocket)
+aiohttp
 
 # Raspberry Pi GPIO / PTT-Steuerung (nur auf RPi aktiv)
 # RPi.GPIO         # auskommentiert — nicht installierbar auf PC

@@ -172,6 +172,8 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | P8-04 | 🟢 | docs | ÖVSV-Präsentation vorbereiten | Folien für OE-Community, Protokollvorstellung | 🔲 |
 | P8-05 | 🟢 | docs | Protokoll bei ÖVSV einreichen | Offizielle Registrierung als OE-Digitalmode | 🔲 |
 | P8-06 | 🟡 | research | Kanalplan vs. SSB-Passband | Entschieden: 8 Kanäle 600–2600 Hz, v0.5. Umgesetzt in P9-01. | ✅ |
+| P8-07 | 🟡 | feature | Docker-Deployment | `Dockerfile`, `docker-compose.yml`, `docker-entrypoint.sh`, `.dockerignore` im Repo-Root. Simulator-Modus out-of-the-box, Rufzeichen per `GUST_CALLSIGN`-Umgebungsvariable. Healthcheck auf `/api/status`. | ✅ |
+| P8-08 | 🟢 | docs | Docker RPi Audio-Passthrough | Anleitung für `--device /dev/snd` und USB-Audio in Docker auf Raspberry Pi ergänzen (für Hardware-TX im Container-Betrieb). | 🔲 |
 
 ---
 
@@ -321,8 +323,13 @@ Fix: `RIGCTLD_HOST_DEFAULT = "127.0.0.1"` in `gust_audio.py` als Modul-Konstante
 Alle rigctld-Starts via `ensure_rigctld_running()` verwenden `127.0.0.1` statt `localhost`.
 Dokumentiert in `gust_knowledge.md` §20.
 
+### ADR-24: Docker-Basis-Image python:3.11-slim ✅ (Juni 2026)
+`python:3.11-slim` als Basis gewählt (nicht Alpine): Alpine verwendet musl-libc,
+PortAudio und `sounddevice` sind dort schwer zu kompilieren. `slim` ist kompakt
+genug (~180 MB Image) und vermeidet Kompatibilitätsprobleme mit nativen Libs.
+
 ---
 
 *Dokument: gust_backlog.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — BUG-13–17 TRX-Profil/Tune/rigctld-Fixes · ADR-21–23 · BUG-05 asyncio · IPv4/IPv6-Fix (ADR-23)*
+*Stand: Juni 2026 — BUG-13–17 TRX-Profil/Tune/rigctld-Fixes · ADR-21–24 · Docker-Deployment (P8-07) · requirements.txt-Fix (aiohttp)*

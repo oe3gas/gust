@@ -1,0 +1,48 @@
+# GUST — .dockerignore
+# Hält das Docker-Image schlank
+
+# Entwicklungsdaten
+*.wav
+*.cf32
+*.iq
+*.bin
+*.npy
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtuelle Umgebungen
+.venv/
+venv/
+env/
+
+# Entwicklungstools
+.git/
+.gitignore
+*.md
+!README.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Testdaten / Messungen
+test_data/
+logs/
+*.log
+
+# Typst / Dokumente
+*.typ
+*.pdf
+
+# Persönliche Konfiguration (wird im Container neu erzeugt)
+gateway.json
+
+# Windows-spezifisch
+Thumbs.db
+desktop.ini

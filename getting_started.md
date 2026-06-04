@@ -14,6 +14,74 @@
 
 ---
 
+## 0. Try GUST without hardware — Docker
+
+The fastest way to explore GUST — no transceiver, no Python, no configuration needed.
+Docker runs a complete GUST gateway in simulator mode. All web UI features are fully
+functional: live frame feed, channel grid, REST API, WebSocket, TX queue.
+
+**This is the recommended first step** before setting up real hardware.
+
+### What you need
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows / macOS)
+  or Docker Engine (Linux / WSL2)
+- A browser
+
+### Start in three commands
+
+```bash
+git clone https://github.com/OE3GAS/gust.git
+cd gust
+docker build -t gust .
+docker run --rm -p 8080:8080 -e GUST_CALLSIGN=OE0XYZ gust
+```
+
+Replace `OE0XYZ` with your callsign. Open **[http://localhost:8080](http://localhost:8080)**.
+
+Simulated WEATHER, POSITION and TEXT frames arrive automatically every 45–90 seconds.
+
+### What works in Docker
+
+| Feature | Available |
+|---------|-----------|
+| Web dashboard (all tabs) | ✅ |
+| Live frame feed (WebSocket) | ✅ |
+| Channel grid + frame detail popup | ✅ |
+| REST API (`/api/status`, `/api/tx/*`) | ✅ |
+| TX queue, priority system | ✅ |
+| Emergency frame dialog | ✅ |
+| Audio TX / PTT | ❌ (no soundcard access) |
+| CAT control / rigctld | ❌ (no COM port access) |
+
+### docker compose (alternative)
+
+```bash
+GUST_CALLSIGN=OE0XYZ docker compose up
+```
+
+### Installing Docker on Windows 11 with WSL2
+
+If Docker Desktop is not available, Docker Engine runs directly inside WSL2:
+
+```bash
+sudo apt update && sudo apt install -y ca-certificates curl gnupg
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update && sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+sudo service docker start
+sudo usermod -aG docker $USER && newgrp docker
+```
+
+Port forwarding from WSL2 to Windows works automatically —
+`http://localhost:8080` opens in any Windows browser.
+
+> **Ready for hardware?** Continue with [§1 Prerequisites](#1-prerequisites) below.
+
+---
+
 ## 1. Prerequisites
 
 ### Software
@@ -370,4 +438,4 @@ successful reception, and every suggestion helps improve the protocol.
 
 ---
 
-*GUST v0.4 · License: CC BY-SA 4.0 · OE3GAS · May 2026*
+*GUST v0.5 · License: CC BY-SA 4.0 · OE3GAS · June 2026*

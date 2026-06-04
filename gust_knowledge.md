@@ -917,6 +917,95 @@ In gateway.json: `"host": "127.0.0.1"` im `rigctld`-Block.
 
 ---
 
+## 21. Docker-Deployment & Fresh-Install-Test
+
+### Hintergrund
+
+Um GUST aus der Perspektive eines Neunutzers zu testen (GitHub-Clone → Installation →
+Betrieb), wurde ein Docker-Setup erstellt. Docker in WSL2 (Ubuntu) auf Windows 11
+ermöglicht einen sauberen, reproduzierbaren Installationstest ohne das
+Entwicklungssystem zu beeinflussen.
+
+### Docker-Setup (vier Dateien im Repo-Root)
+
+| Datei | Zweck |
+|:------|:------|
+| `Dockerfile` | `python:3.11-slim` + PortAudio + `requirements.txt` + Quellcode |
+| `docker-entrypoint.sh` | Erzeugt `gateway.json` aus Umgebungsvariable, startet `daemon --sim` |
+| `docker-compose.yml` | Komfortabler Wrapper mit Healthcheck auf `/api/status` |
+| `.dockerignore` | Hält Image schlank (keine WAV, kein `.git`, keine `gateway.json`) |
+
+### Verwendung
+
+```bash
+# Image bauen
+docker build -t gust .
+
+# Starten (Simulator-Modus, kein Hardware erforderlich)
+docker run --rm -p 8080:8080 -e GUST_CALLSIGN=OE3GAS gust
+
+# Mit eigener gateway.json
+docker run --rm -p 8080:8080 -v ./gateway.json:/app/gateway.json gust
+
+# Per docker compose
+docker compose up
+```
+
+Web UI erreichbar unter `http://localhost:8080` (Port-Forwarding WSL2 → Windows
+funktioniert automatisch).
+
+### Docker auf Windows 11 / WSL2
+
+Docker Desktop ist nicht zwingend erforderlich. Docker Engine direkt in WSL2
+(Ubuntu) installierbar:
+
+```bash
+sudo apt update && sudo apt install -y ca-certificates curl gnupg
+# Docker-Repository hinzufügen, dann:
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+sudo service docker start
+sudo usermod -aG docker $USER
+```
+
+In WSL2 kein systemd → Daemon manuell starten. Empfehlung: in `~/.bashrc` eintragen:
+```bash
+sudo service docker start 2>/dev/null
+```
+
+### Erkenntnisse beim ersten Build
+
+**BUG: `requirements.txt` unvollständig** — `aiohttp` fehlte.
+Auf dem Entwicklungs-PC war `aiohttp` bereits global installiert und fiel nie auf.
+Der Docker-Build zeigte den Fehler sofort:
+```
+ModuleNotFoundError: No module named 'aiohttp'
+```
+Fix: `aiohttp` in `requirements.txt` ergänzt. Damit ist die Datei jetzt vollständig
+und für Neuinstallationen korrekt.
+
+**Vollständige Abhängigkeitsliste (Stand Juni 2026):**
+- `numpy` — FFT, Signalverarbeitung
+- `scipy` — Hilbert, Resampling, WAV
+- `reedsolo` — Reed-Solomon FEC
+- `sounddevice` — Audio TX/RX
+- `aiohttp` — Web-Server, REST API, WebSocket ← neu ergänzt
+
+### Scope des Docker-Deployments
+
+| Funktion | Docker ✅ | Docker ❌ |
+|:---------|:----------|:----------|
+| Simulator-Modus (`--sim`) | ✅ vollständig | |
+| Web UI + REST API | ✅ via Port 8080 | |
+| WebSocket RX-Live-Feed | ✅ | |
+| Audio TX (Soundkarte) | | ❌ kein WASAPI/MME |
+| PTT / CAT (COM-Port) | | ❌ kein USB-Passthrough |
+| HackRF TX | | ❌ kein USB |
+
+Docker eignet sich als **Ziel-Deployment für Raspberry Pi Gateway-Betrieb** —
+dort läuft Audio über USB-Device-Passthrough mit `--device /dev/snd`.
+
+---
+
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
-*Stand: Mai 2026 — Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Connector-Konzept · Microham-Konfiguration*
+*Stand: Juni 2026 — Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Connector-Konzept · Microham-Konfiguration · Docker-Deployment*

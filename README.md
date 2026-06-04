@@ -66,6 +66,29 @@ Web interface available at `http://localhost:8080` after starting daemon.
 
 ---
 
+## Try GUST without hardware — Docker
+
+No transceiver, no Python install required. Docker runs a full GUST gateway
+in simulator mode — all web UI features, live frame feed and REST API work
+exactly as in real operation.
+
+**Requirements:** Docker ([docker.com](https://www.docker.com/products/docker-desktop/))
+
+```bash
+git clone https://github.com/OE3GAS/gust.git
+cd gust
+docker build -t gust .
+docker run --rm -p 8080:8080 -e GUST_CALLSIGN=OE0XYZ gust
+```
+
+Open **[http://localhost:8080](http://localhost:8080)** — simulated WEATHER,
+POSITION and TEXT frames arrive automatically. Use this to explore the
+dashboard, REST API and WebSocket before touching any hardware.
+
+> See [GETTING_STARTED.md](GETTING_STARTED.md) for full hardware setup.
+
+---
+
 ## Test Frequencies
 
 Planned test operation with selected partner stations on the following HF digital sub-bands (IARU Region 1):
