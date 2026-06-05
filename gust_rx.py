@@ -264,11 +264,13 @@ class AudioRXLoop:
         window_s:        float            = WINDOW_S,
         dedup_ttl_s:     float            = DEDUP_TTL_S,
         executor:        Optional[ThreadPoolExecutor] = None,
+        force_samplerate: Optional[int]   = None,
     ):
         self._device     = device
         self._bus        = event_bus
         self._interval   = scan_interval_s
         self._window     = window_s
+        self._force_sr   = force_samplerate
         self._dedup      = _DedupCache(ttl_s=dedup_ttl_s)
         self._executor   = executor or ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="oe3rx"
@@ -346,8 +348,9 @@ class AudioRXLoop:
 
         try:
             receiver = AudioReceiver(
-                device         = self._device,
-                buffer_seconds = max(self._window * 2, 30.0),
+                device           = self._device,
+                buffer_seconds   = max(self._window * 2, 30.0),
+                force_samplerate = self._force_sr,
             )
             print(f"{_ts()}  [RX] AudioReceiver erstellt  Gerät={self._device}", flush=True)
         except Exception as e:
@@ -627,12 +630,18 @@ def build_rx_loop(cfg: dict, event_bus) -> "Optional[AudioRXLoop]":
     # RX-Gerät: explizit aus cfg["rx"]["device"], Fallback auf TX-Gerät
     device = rx_cfg.get("device", cfg.get("audio", {}).get("device"))
 
+    # Optionaler Samplerate-Override (z.B. 48000 für IC-7200 statt default 44100)
+    input_sr = rx_cfg.get("input_sample_rate")
+    if input_sr is not None:
+        input_sr = int(input_sr)
+
     return AudioRXLoop(
-        device          = device,
-        event_bus       = event_bus,
-        scan_interval_s = float(rx_cfg.get("scan_interval_s", SCAN_INTERVAL_S)),
-        window_s        = float(rx_cfg.get("window_s",         WINDOW_S)),
-        dedup_ttl_s     = float(rx_cfg.get("dedup_ttl_s",      DEDUP_TTL_S)),
+        device            = device,
+        event_bus         = event_bus,
+        scan_interval_s   = float(rx_cfg.get("scan_interval_s", SCAN_INTERVAL_S)),
+        window_s          = float(rx_cfg.get("window_s",         WINDOW_S)),
+        dedup_ttl_s       = float(rx_cfg.get("dedup_ttl_s",      DEDUP_TTL_S)),
+        force_samplerate  = input_sr,
     )
 
 

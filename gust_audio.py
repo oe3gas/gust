@@ -796,19 +796,21 @@ class AudioReceiver:
     """
 
     def __init__(self, device: "Union[int, str, None]" = None,
-                 buffer_seconds: float = 60.0):
+                 buffer_seconds: float = 60.0,
+                 force_samplerate: "Optional[int]" = None):
         if not _SD_AVAILABLE:
             raise RuntimeError("sounddevice nicht installiert.")
-        self.device         = device
-        self._buf_seconds   = buffer_seconds
-        self._buf_size      = int(buffer_seconds * SAMPLE_RATE)  # wird in start() korrigiert
-        self._buffer        = np.zeros(self._buf_size, dtype=np.float32)
-        self._write_pos     = 0
-        self._total_written = 0
-        self._lock          = threading.Lock()
-        self._stream        = None
-        self._running       = False
-        self._native_sr     = SAMPLE_RATE   # wird in start() gesetzt
+        self.device           = device
+        self._buf_seconds     = buffer_seconds
+        self._force_sr        = force_samplerate   # None = auto aus Gerät
+        self._buf_size        = int(buffer_seconds * SAMPLE_RATE)  # wird in start() korrigiert
+        self._buffer          = np.zeros(self._buf_size, dtype=np.float32)
+        self._write_pos       = 0
+        self._total_written   = 0
+        self._lock            = threading.Lock()
+        self._stream          = None
+        self._running         = False
+        self._native_sr       = SAMPLE_RATE   # wird in start() gesetzt
 
     def _callback(self, indata, frames, time_info, status):
         """PortAudio Callback — wird im Audio-Thread aufgerufen."""
@@ -852,12 +854,15 @@ class AudioReceiver:
             print(f"[RX] Gerät liefert Stereo — verwende Kanal 0 (links) als Mono",
                   flush=True)
 
-        # Native Samplerate des Geräts abfragen
-        try:
-            dev_info = sd.query_devices(self.device, kind='input')
-            self._native_sr = int(dev_info.get('default_samplerate', SAMPLE_RATE))
-        except Exception:
-            self._native_sr = SAMPLE_RATE
+        # Native Samplerate: force_samplerate hat Vorrang vor Geräte-Default
+        if self._force_sr:
+            self._native_sr = self._force_sr
+        else:
+            try:
+                dev_info = sd.query_devices(self.device, kind='input')
+                self._native_sr = int(dev_info.get('default_samplerate', SAMPLE_RATE))
+            except Exception:
+                self._native_sr = SAMPLE_RATE
 
         # Ringpuffer auf native SR-Größe anpassen
         self._buf_size = int(self._buf_seconds * self._native_sr)
