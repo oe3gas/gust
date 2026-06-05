@@ -807,12 +807,24 @@ class AudioReceiver:
         self._lock          = threading.Lock()
         self._stream        = None
         self._running       = False
+        self._native_sr     = SAMPLE_RATE   # wird in start() gesetzt
+        self._resample_buf  = np.zeros(0, dtype=np.float32)  # Resampling-Puffer
 
     def _callback(self, indata, frames, time_info, status):
         """PortAudio Callback — wird im Audio-Thread aufgerufen."""
         if status:
             print(f"[RX Audio] Status: {status}", file=sys.stderr)
         mono = indata[:, 0] if indata.ndim > 1 else indata.ravel()
+
+        # Resampling falls native SR != 8000 Hz (z.B. IC-7200: 44100, IC-7610: 48000)
+        if self._native_sr != SAMPLE_RATE:
+            from math import gcd
+            from scipy.signal import resample_poly
+            g  = gcd(SAMPLE_RATE, self._native_sr)
+            up = SAMPLE_RATE    // g
+            dn = self._native_sr // g
+            mono = resample_poly(mono.astype(np.float64), up, dn).astype(np.float32)
+
         n = len(mono)
         with self._lock:
             end = self._write_pos + n
@@ -848,19 +860,35 @@ class AudioReceiver:
             print(f"[RX] Gerät liefert Stereo — verwende Kanal 0 (links) als Mono",
                   flush=True)
 
+        # Native Samplerate des Geräts abfragen
+        try:
+            dev_info = sd.query_devices(self.device, kind='input')
+            self._native_sr = int(dev_info.get('default_samplerate', SAMPLE_RATE))
+        except Exception:
+            self._native_sr = SAMPLE_RATE
+
+        # blocksize in nativen Samples — entspricht 1 MFSK-Symbol (256 @ 8kHz)
+        from math import gcd
+        g         = gcd(SAMPLE_RATE, self._native_sr)
+        blocksize = 256 * (self._native_sr // g) // (SAMPLE_RATE // g)
+
         self._stream = sd.InputStream(
-            samplerate=SAMPLE_RATE,
+            samplerate=self._native_sr,
             channels=channels,
             dtype="float32",
             device=self.device,
             callback=self._callback,
-            blocksize=256,   # = 1 MFSK-Symbol
+            blocksize=blocksize,
         )
         self._stream.start()
         self._running = True
         dev_name = self.device if self.device is not None else "Standard"
+        sr_info  = (f"{self._native_sr} Hz → resample → {SAMPLE_RATE} Hz"
+                    if self._native_sr != SAMPLE_RATE
+                    else f"{SAMPLE_RATE} Hz (nativ)")
         print(f"[RX] Aufnahme gestartet  |  Gerät: '{dev_name}'  |  "
-              f"Kanäle: {channels}  |  Puffer: {self._buf_size // SAMPLE_RATE}s",
+              f"Kanäle: {channels}  |  SR: {sr_info}  |  "
+              f"Puffer: {self._buf_size // SAMPLE_RATE}s",
               flush=True)
 
     def stop(self):
