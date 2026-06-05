@@ -412,7 +412,11 @@ class AudioRXLoop:
                     await asyncio.sleep(AUDIO_LEVEL_INTERVAL_S)
                     if self._muted or self._bus is None:
                         continue
-                    chunk = receiver.get_snapshot(seconds=AUDIO_LEVEL_SLICE_S)
+                    chunk = await loop.run_in_executor(
+                        self._executor,
+                        receiver.get_snapshot,
+                        AUDIO_LEVEL_SLICE_S,
+                    )
                     if chunk is None or len(chunk) == 0:
                         continue
                     rms  = float(np.sqrt(np.mean(chunk ** 2)))
@@ -461,8 +465,12 @@ class AudioRXLoop:
                     log.debug("[RX] Scan übersprungen (TX aktiv)")
                     continue
 
-                # Snapshot aus Ringpuffer
-                audio = receiver.get_snapshot(seconds=self._window)
+                # Snapshot aus Ringpuffer (inkl. resample_poly — im Executor um asyncio nicht zu blockieren)
+                audio = await loop.run_in_executor(
+                    self._executor,
+                    receiver.get_snapshot,
+                    self._window,
+                )
 
                 # Stille überspringen (spart CPU)
                 rms = float(np.sqrt(np.mean(audio ** 2)))
