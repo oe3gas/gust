@@ -891,7 +891,7 @@ class AudioReceiver:
                     else f"{SAMPLE_RATE} Hz (nativ)")
         print(f"[RX] Aufnahme gestartet  |  Gerät: '{dev_name}'  |  "
               f"Kanäle: {channels}  |  SR: {sr_info}  |  "
-              f"Puffer: {self._buf_size // SAMPLE_RATE}s",
+              f"Puffer: {self._buf_size // self._native_sr}s",
               flush=True)
 
     def stop(self):
