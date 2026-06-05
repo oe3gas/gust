@@ -800,7 +800,8 @@ class AudioReceiver:
         if not _SD_AVAILABLE:
             raise RuntimeError("sounddevice nicht installiert.")
         self.device         = device
-        self._buf_size      = int(buffer_seconds * SAMPLE_RATE)
+        self._buf_seconds   = buffer_seconds
+        self._buf_size      = int(buffer_seconds * SAMPLE_RATE)  # wird in start() korrigiert
         self._buffer        = np.zeros(self._buf_size, dtype=np.float32)
         self._write_pos     = 0
         self._total_written = 0
@@ -808,23 +809,14 @@ class AudioReceiver:
         self._stream        = None
         self._running       = False
         self._native_sr     = SAMPLE_RATE   # wird in start() gesetzt
-        self._resample_buf  = np.zeros(0, dtype=np.float32)  # Resampling-Puffer
 
     def _callback(self, indata, frames, time_info, status):
         """PortAudio Callback — wird im Audio-Thread aufgerufen."""
         if status:
             print(f"[RX Audio] Status: {status}", file=sys.stderr)
         mono = indata[:, 0] if indata.ndim > 1 else indata.ravel()
-
-        # Resampling falls native SR != 8000 Hz (z.B. IC-7200: 44100, IC-7610: 48000)
-        if self._native_sr != SAMPLE_RATE:
-            from math import gcd
-            from scipy.signal import resample_poly
-            g  = gcd(SAMPLE_RATE, self._native_sr)
-            up = SAMPLE_RATE    // g
-            dn = self._native_sr // g
-            mono = resample_poly(mono.astype(np.float64), up, dn).astype(np.float32)
-
+        # Callback bleibt minimal — kein Resampling hier (würde Overflow auf RPi 3 verursachen)
+        # Resampling erfolgt in get_snapshot() beim Abholen
         n = len(mono)
         with self._lock:
             end = self._write_pos + n
@@ -867,6 +859,12 @@ class AudioReceiver:
         except Exception:
             self._native_sr = SAMPLE_RATE
 
+        # Ringpuffer auf native SR-Größe anpassen
+        self._buf_size = int(self._buf_seconds * self._native_sr)
+        self._buffer   = np.zeros(self._buf_size, dtype=np.float32)
+        self._write_pos     = 0
+        self._total_written = 0
+
         # blocksize in nativen Samples — entspricht 1 MFSK-Symbol (256 @ 8kHz)
         from math import gcd
         g         = gcd(SAMPLE_RATE, self._native_sr)
@@ -901,18 +899,29 @@ class AudioReceiver:
 
     def get_snapshot(self, seconds: float = 6.0) -> np.ndarray:
         """
-        Gibt die letzten `seconds` Sekunden als Array zurück.
-        Nützlich zum Dekodieren eines kurz zuvor empfangenen Signals.
+        Gibt die letzten `seconds` Sekunden als Array zurück, resampelt auf 8000 Hz.
+        Resampling erfolgt hier (nicht im Callback) um Input-Overflow zu vermeiden.
         """
-        n = min(int(seconds * SAMPLE_RATE), self._buf_size)
+        n = min(int(seconds * self._native_sr), self._buf_size)
         with self._lock:
             wp = self._write_pos
             # Zirkulär lesen: von (wp - n) bis wp
             start = (wp - n) % self._buf_size
             if start < wp:
-                return self._buffer[start:wp].copy()
+                raw = self._buffer[start:wp].copy()
             else:
-                return np.concatenate([self._buffer[start:], self._buffer[:wp]])
+                raw = np.concatenate([self._buffer[start:], self._buffer[:wp]])
+
+        # Resampling auf 8000 Hz falls nötig
+        if self._native_sr != SAMPLE_RATE:
+            from math import gcd
+            from scipy.signal import resample_poly
+            g   = gcd(SAMPLE_RATE, self._native_sr)
+            up  = SAMPLE_RATE     // g
+            dn  = self._native_sr // g
+            raw = resample_poly(raw.astype(np.float64), up, dn).astype(np.float32)
+
+        return raw
 
     def __enter__(self):
         self.start()
