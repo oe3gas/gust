@@ -46,12 +46,18 @@ Gateway- und Monitor-Betrieb.
 
 ── Deduplication ─────────────────────────────────────────────────────
 
-  Schlüssel: (callsign, frame_type, payload_hash_16bit)
-  TTL:       DEDUP_TTL_S (Standard: 30 Sekunden)
+  Schlüssel: (channel, callsign, tx_start_s) — Sendezeitstempel,
+             Toleranz ±0,5 s (Snapshot-Jitter)
+  tx_start_s = tick_time - window_s + sync_offset_s
 
-  Derselbe Wetter-Frame von OE3GAS wird innerhalb von 30 Sekunden
-  nur einmal in den EventBus publiziert — unabhängig davon wie viele
-  Scan-Fenster ihn enthalten.
+  Duplikat = gleicher tx_start UND (gleicher Kanal ODER gleiches
+  Rufzeichen). Damit wird jede physikalische Sendung genau einmal
+  publiziert — egal in wie vielen Scan-Fenstern sie auftaucht —
+  und Dual-Kanal-Kopien (ADR-12) werden zu einem Event zusammen-
+  geführt. Inhaltsneutral: Emergency-Frames und QSO-Freitext mit
+  identischem Inhalt werden bei jeder NEUEN Sendung korrekt
+  durchgelassen (anderer tx_start).
+  Speicherbereinigung: Einträge älter als 30 s werden entfernt.
 
 ── Konfiguration (gateway.json) ──────────────────────────────────────
 
@@ -59,7 +65,7 @@ Gateway- und Monitor-Betrieb.
       "device":           null,     Audiogeräte-ID (null = Standard)
       "scan_interval_s":  2.0,      Sekunden zwischen Scan-Versuchen
       "window_s":         9.0,      Audiohistorie pro Versuch (>= MAX_FRAME_S + Intervall)
-      "dedup_ttl_s":      30,       Dedup-Fenster in Sekunden
+      "dedup_ttl_s":      30,       veraltet — wird ignoriert (zeitstempel-basierter Dedup)
       "enabled":          true      false = RX-Loop nicht starten
   }
 
@@ -82,7 +88,6 @@ Gateway- und Monitor-Betrieb.
 """
 
 import asyncio
-import hashlib
 import logging
 import sys
 import time
@@ -91,6 +96,8 @@ from datetime import datetime
 from typing import Optional, Union
 
 import numpy as np
+
+from gust_frame import N_CHANNELS
 
 log = logging.getLogger("gust.rx")
 
@@ -106,7 +113,8 @@ WINDOW_S         = 9.0    # Audiohistorie pro Versuch
                           # (9,0 >= 5,5 + 2,0 = 7,5 → Marge 1,5s). Zusammen mit der
                           # Fixed-Cadence-Schleife (Decode-Zeit bläht das Intervall nicht
                           # auf) ist damit jede Sendung in >= 1 Scan komplett enthalten.
-DEDUP_TTL_S      = 30     # Dedup-Cache TTL in Sekunden
+DEDUP_TTL_S      = 30     # veraltet — nur noch Signatur-Default (Dedup ist
+                          # zeitstempel-basiert, siehe _DedupCache)
 MIN_AUDIO_LEVEL  = 0.001  # Mindest-RMS um Stille zu überspringen
 
 
@@ -192,41 +200,68 @@ def _measure_audio_snr(audio: np.ndarray, f0_hz: float) -> float:
 
 class _DedupCache:
     """
-    Einfacher TTL-Cache für Frame-Deduplication.
+    Sendezeitstempel-basierter Dedup-Cache für Frame-Deduplication.
 
-    Schlüssel: (callsign: str, frame_type: int, payload_hash: str)
-    Wert:      Empfangszeitpunkt (float, time.monotonic())
+    Eintrag: (channel: int, callsign: str, tx_start_s: float)
+    tx_start_s = Beginn der Sendung (Preamble) auf der monotonen
+    Zeitachse:  tick_time - window_s + sync_offset_s.
+    Dieselbe Sendung hat in jedem Scan-Fenster denselben physikalischen
+    Startzeitpunkt → tx_start_s ist über alle Fenster stabil.
 
-    Veraltete Einträge werden beim nächsten lookup() bereinigt.
+    Duplikat-Kriterium: |Δ tx_start| < TOL_S  UND  (gleicher Kanal
+    ODER gleiches Rufzeichen).
+    - gleicher Kanal:     dieselbe Sendung in mehreren Scan-Fenstern
+    - gleiches Rufzeichen: Dual-Kanal-Kopien (ADR-12) starten im
+      selben Augenblick auf zwei Kanälen — eine Sendung, ein Event
+    Zwei verschiedene Stationen zur selben Zeit (verschiedene Kanäle,
+    verschiedene Rufzeichen) bleiben beide erhalten.
+
+    Distanzvergleich statt Runden auf ein 0,1-s-Raster: der Snapshot-
+    Jitter (Ringpuffer-Blockgranularität ~32 ms + Tick-Versatz) würde
+    an Rasterkanten sonst Duplikate durchlassen. TOL_S = 0,5 s ist
+    sicher — zwei verschiedene Sendungen auf demselben Kanal liegen
+    mindestens ~4 s (Framedauer) auseinander.
+
+    Vorteil gegenüber dem alten Inhalts-Schlüssel
+    (callsign, frame_type, payload_hash) + TTL:
+    - Emergency-Frames mit gleichem Inhalt werden bei jeder neuen
+      Sendung korrekt verarbeitet (verschiedene tx_start_s)
+    - Freitext-QSO: jede Sendung eindeutig durch Zeitstempel
+    - Stresstest: keine Unterdrückung legitimer Wiederholungen
+
+    Einträge werden nach CACHE_TTL_S bereinigt — reine Speicher-
+    bereinigung, nicht Teil der Dedup-Logik.
     """
 
-    def __init__(self, ttl_s: float = DEDUP_TTL_S):
-        self._ttl   = ttl_s
+    CACHE_TTL_S = 30.0   # Speicherbereinigung — nicht Dedup-Logik
+    TOL_S       = 0.5    # max. tx_start-Streuung derselben Sendung
+
+    def __init__(self):
+        # (channel, callsign, tx_start_s) → time.monotonic() (für Eviction)
         self._cache: dict[tuple, float] = {}
 
-    def is_duplicate(self, callsign: str, frame_type: int,
-                     payload_raw: bytes) -> bool:
+    def is_duplicate(self, channel: int, callsign: str,
+                     tx_start_s: float) -> bool:
         """
-        Gibt True zurück wenn dieser Frame innerhalb der TTL bereits gesehen wurde.
-        Registriert den Frame gleichzeitig (side-effect).
+        True wenn diese Sendung (Startzeitpunkt + Kanal/Rufzeichen)
+        bereits verarbeitet wurde.
+        Registriert sie andernfalls gleichzeitig (Side-Effect).
         """
         self._evict()
-        key = self._key(callsign, frame_type, payload_raw)
-        now = time.monotonic()
-        if key in self._cache:
-            return True
-        self._cache[key] = now
+        ch = int(channel)
+        cs = (callsign or "").upper()
+        t  = float(tx_start_s)
+        for (k_ch, k_cs, k_t) in self._cache:
+            if abs(k_t - t) < self.TOL_S and (k_ch == ch or k_cs == cs):
+                return True
+        self._cache[(ch, cs, round(t, 1))] = time.monotonic()
         return False
 
-    def _key(self, callsign: str, frame_type: int,
-             payload_raw: bytes) -> tuple:
-        h = hashlib.md5(payload_raw).hexdigest()[:8]
-        return (callsign.upper(), int(frame_type), h)
-
     def _evict(self):
+        """Alte Einträge bereinigen (Speicherverwaltung)."""
         now = time.monotonic()
         expired = [k for k, t in self._cache.items()
-                   if now - t > self._ttl]
+                   if now - t > self.CACHE_TTL_S]
         for k in expired:
             del self._cache[k]
 
@@ -252,7 +287,8 @@ class AudioRXLoop:
         event_bus:       EventBus-Instanz für Frame-Events
         scan_interval_s: Sekunden zwischen Scan-Versuchen
         window_s:        Audiohistorie (Ringpuffer-Snapshot) pro Versuch
-        dedup_ttl_s:     TTL des Dedup-Caches in Sekunden
+        dedup_ttl_s:     veraltet — wird ignoriert (zeitstempel-basierter
+                         Dedup); bleibt für gateway.json-Kompatibilität
         executor:        ThreadPoolExecutor (None = eigener mit 1 Worker)
     """
 
@@ -271,9 +307,11 @@ class AudioRXLoop:
         self._interval   = scan_interval_s
         self._window     = window_s
         self._force_sr   = force_samplerate
-        self._dedup      = _DedupCache(ttl_s=dedup_ttl_s)
+        # dedup_ttl_s: nicht mehr verwendet (zeitstempel-basierter Dedup) —
+        # bleibt in der Signatur für gateway.json-Kompatibilität erhalten
+        self._dedup      = _DedupCache()
         self._executor   = executor or ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="oe3rx"
+            max_workers=N_CHANNELS, thread_name_prefix="oe3rx"
         )
 
         self._muted      = False     # True während eigenem TX
@@ -322,11 +360,11 @@ class AudioRXLoop:
         Startet AudioReceiver, scannt periodisch, dekodiert im Executor.
         Läuft bis zur CancelledError (Strg+C / Daemon-Shutdown).
         """
-        print(f"{_ts()}  [RX] run() gestartet", flush=True)
+        log.debug("[RX] run() gestartet")
 
         try:
             from gust_audio import AudioReceiver
-            print(f"{_ts()}  [RX] gust_audio importiert ✓", flush=True)
+            log.debug("[RX] gust_audio importiert ✓")
         except Exception as e:
             print(f"{_ts()}  [RX] FEHLER gust_audio: {e}", flush=True)
             print(f"{_ts()}  [RX] Tipp: gust_audio.py mit Python-3.9-Version ersetzen", flush=True)
@@ -334,14 +372,14 @@ class AudioRXLoop:
 
         try:
             from gust_modulator import receive as _receive
-            print(f"{_ts()}  [RX] gust_modulator importiert ✓", flush=True)
+            log.debug("[RX] gust_modulator importiert ✓")
         except Exception as e:
             print(f"{_ts()}  [RX] FEHLER gust_modulator: {e}", flush=True)
             return
 
         try:
             from gust_eventbus import make_rx_frame_event, make_audio_level_event
-            print(f"{_ts()}  [RX] gust_eventbus importiert ✓", flush=True)
+            log.debug("[RX] gust_eventbus importiert ✓")
         except Exception as e:
             print(f"{_ts()}  [RX] FEHLER gust_eventbus: {e}", flush=True)
             return
@@ -352,17 +390,13 @@ class AudioRXLoop:
                 buffer_seconds   = max(self._window * 2, 30.0),
                 force_samplerate = self._force_sr,
             )
-            print(f"{_ts()}  [RX] AudioReceiver erstellt  Gerät={self._device}", flush=True)
+            log.debug("[RX] AudioReceiver erstellt  Gerät=%s", self._device)
         except Exception as e:
             print(f"{_ts()}  [RX] FEHLER AudioReceiver: {e}", flush=True)
             print(f"{_ts()}  [RX] Tipp: sounddevice installiert? Gerät-ID korrekt?", flush=True)
             return
 
-        print(
-            f"{_ts()}  [RX] Loop startet  Gerät={self._device or 'Standard'}"
-            f"  Interval={self._interval}s  Fenster={self._window}s",
-            flush=True,
-        )
+        # (früherer print() entfernt — log.info() unten ist die einzige Quelle)
         log.info(
             "[RX] Loop startet  |  Gerät: %s  |  Interval: %.1fs  |  Fenster: %.1fs",
             self._device or "Standard",
@@ -431,12 +465,13 @@ class AudioRXLoop:
                     log.debug("[RX] Level-Publisher: %s", e)
 
         try:
-            print(f"{_ts()}  [RX] receiver.start() wird aufgerufen ...", flush=True)
+            log.debug("[RX] receiver.start() wird aufgerufen ...")
             receiver.start()
-            print(f"{_ts()}  [RX] receiver.start() OK — warte {min(self._window, 3.0):.0f}s ...", flush=True)
+            log.debug("[RX] receiver.start() OK — warte %.0fs ...",
+                      min(self._window, 3.0))
             # Kurz warten damit der Puffer erste Samples enthält
             await asyncio.sleep(min(self._window, 3.0))
-            print(f"{_ts()}  [RX] Warten beendet — Scan-Loop startet", flush=True)
+            log.debug("[RX] Warten beendet — Scan-Loop startet")
 
             # Level-Publisher starten (parallel zum Scan-Loop)
             level_task = asyncio.create_task(_level_publisher(), name="rx_level")
@@ -478,109 +513,131 @@ class AudioRXLoop:
                     log.debug("[RX] Stille erkannt (RMS=%.5f) — Scan übersprungen", rms)
                     continue
 
-                # CPU-intensiven Decode im Thread-Pool ausführen
+                # CPU-intensiven Decode im Thread-Pool ausführen:
+                # alle N_CHANNELS Kanäle parallel im Direktmodus — identisch
+                # zur Strategie von gust_stress_decode.sliding_window_decode.
+                # (Breitband channel=None fand nur den stärksten SYNC pro
+                # Fenster → bei voller Kanalbelegung 7 von 8 Frames verloren.)
                 self._scan_count += 1
-                t0 = time.monotonic()
+                # tick_time VOR dem gather(): Referenzzeitpunkt des Snapshots
+                # für die tx_start-Berechnung — konsistent für alle 8 Kanäle.
+                tick_time = time.monotonic()
 
-                try:
-                    result = await loop.run_in_executor(
-                        self._executor,
-                        _receive,
-                        audio,
-                        None,   # channel=None → Breitband
-                        True,   # use_fec=True
-                        0.0,    # freq_offset=0.0 (Breitband erkennt selbst)
-                    )
-                except Exception as e:
-                    log.warning("[RX] Decode-Fehler: %s", e)
-                    continue
-                finally:
-                    self._last_scan_ms = (time.monotonic() - t0) * 1000
+                def _decode_channel(ch: int):
+                    """Einen Kanal dekodieren — läuft im ThreadPool."""
+                    try:
+                        return _receive(audio, ch, True, 0.0)
+                    except Exception as e:
+                        log.debug("[RX] Decode-Fehler Kanal %d: %s", ch, e)
+                        return None
 
-                self._last_result = result
+                futures = [
+                    loop.run_in_executor(self._executor, _decode_channel, ch)
+                    for ch in range(N_CHANNELS)
+                ]
+                results = await asyncio.gather(*futures, return_exceptions=True)
+                # Scan-Zeit = gesamter gather() (= langsamster Kanal)
+                self._last_scan_ms = (time.monotonic() - tick_time) * 1000
 
-                if not result.get("crc_ok"):
-                    sync_found = result.get("sync_found", False)
-                    if sync_found:
-                        # Frame-Struktur erkannt, aber CRC fehlgeschlagen
-                        self._no_sync_count = 0   # SYNC-Sequenz gefunden → Zähler reset
-                        try:
-                            from gust_frame import channel_frequency as _cf
-                            _ch  = result.get("detected_channel") or 2
-                            _f0  = _cf(_ch) + result.get("freq_offset_hz", 0)
-                        except Exception:
-                            _f0 = 900.0 + result.get("freq_offset_hz", 0)
-                        snr = _measure_audio_snr(audio, _f0)
-                        msg = (
-                            f"{_ts()}  [RX] ⚠ Frame identifiziert — CRC-Fehler  "
-                            f"(nicht dekodierbar)  "
-                            f"Kanal {result.get('detected_channel','?')}  "
-                            f"off={result.get('freq_offset_hz',0):+.1f}Hz  "
-                            f"Score={result.get('_sync_score',0):.3f}  "
-                            f"SNR≈{snr:+.1f}dB  {self._last_scan_ms:.0f}ms"
-                        )
-                        print(msg, flush=True)
-                        log.warning(msg)
-                    else:
-                        # Kein SYNC erkannt — Rauschen oder kein GUST-Signal
-                        self._no_sync_count += 1
-                        log.debug(
-                            "[RX] Scan #%d  %.0f ms  kein Frame erkannt",
-                            self._scan_count, self._last_scan_ms,
-                        )
-                        # Periodischer Heartbeat alle 30 Scans (~60s bei 2s-Intervall)
-                        if self._no_sync_count % 30 == 0:
-                            log.info(
-                                "[RX] %d Scans ohne Frame — kein GUST-Signal erkannt",
-                                self._no_sync_count,
+                decoded_this_tick = 0
+                sync_this_tick    = False
+
+                for ch, result in enumerate(results):
+                    if isinstance(result, Exception) or result is None:
+                        continue
+                    self._last_result = result
+                    if result.get("detected_channel") is None:
+                        result["detected_channel"] = ch
+
+                    if not result.get("crc_ok"):
+                        if result.get("sync_found", False):
+                            # Frame-Struktur erkannt, aber CRC fehlgeschlagen
+                            sync_this_tick = True
+                            try:
+                                from gust_frame import channel_frequency as _cf
+                                _f0 = _cf(ch) + result.get("freq_offset_hz", 0)
+                            except Exception:
+                                _f0 = 900.0 + result.get("freq_offset_hz", 0)
+                            snr = _measure_audio_snr(audio, _f0)
+                            msg = (
+                                f"{_ts()}  [RX] ⚠ Frame identifiziert — CRC-Fehler  "
+                                f"(nicht dekodierbar)  "
+                                f"Kanal {result.get('detected_channel','?')}  "
+                                f"off={result.get('freq_offset_hz',0):+.1f}Hz  "
+                                f"Score={result.get('_sync_score',0):.3f}  "
+                                f"SNR≈{snr:+.1f}dB  {self._last_scan_ms:.0f}ms"
                             )
-                    continue
+                            print(msg, flush=True)
+                            log.warning(msg)
+                        continue
 
-                # Frame dekodiert — SNR messen
-                try:
-                    from gust_frame import channel_frequency as _cf
-                    _ch  = result.get("detected_channel") or 2
-                    _f0  = _cf(_ch) + result.get("freq_offset_hz", 0)
-                except Exception:
-                    _f0 = 900.0 + result.get("freq_offset_hz", 0)
-                snr = _measure_audio_snr(audio, _f0)
-                result["_snr_db"] = snr
+                    # Frame dekodiert — SNR messen
+                    try:
+                        from gust_frame import channel_frequency as _cf
+                        _ch  = result.get("detected_channel", ch)
+                        _f0  = _cf(_ch) + result.get("freq_offset_hz", 0)
+                    except Exception:
+                        _f0 = 900.0 + result.get("freq_offset_hz", 0)
+                    snr = _measure_audio_snr(audio, _f0)
+                    result["_snr_db"] = snr
 
-                # Deduplication
-                callsign    = result.get("from",    "?")
-                frame_type  = result.get("type",     0)
-                payload_dec = result.get("payload_decoded", {})
-                try:
-                    payload_bytes = str(sorted(payload_dec.items())).encode()
-                except Exception:
-                    payload_bytes = str(payload_dec).encode()
+                    # Deduplication — Sendezeitstempel statt Inhalt:
+                    # dieselbe Sendung erscheint in mehreren Scan-Fenstern,
+                    # ihr SYNC liegt aber immer am selben Punkt der Zeitachse.
+                    # Dual-Kanal-Kopien (ADR-12) fängt das Rufzeichen-Kriterium.
+                    callsign   = result.get("from", "?")
+                    sync_off   = result.get("sync_offset_s") or 0.0
+                    tx_start_s = tick_time - self._window + sync_off
+                    # Sendezeitstempel ins Event übernehmen (monotone Zeit-
+                    # achse) — Basis für die Session-Auswertung im Web-UI
+                    # (gust_stress_decode.match_live_session).
+                    result["tx_start_s"] = tx_start_s
+                    if self._dedup.is_duplicate(
+                            result.get("detected_channel", ch),
+                            callsign, tx_start_s):
+                        self._dup_count += 1
+                        log.debug(
+                            "[RX] Duplikat unterdrückt: %s [%s]  Kanal %s  "
+                            "tx_start=%.1f",
+                            callsign, result.get("type_name", "?"),
+                            result.get("detected_channel", ch), tx_start_s,
+                        )
+                        continue
 
-                if self._dedup.is_duplicate(callsign, frame_type, payload_bytes):
-                    self._dup_count += 1
-                    log.debug(
-                        "[RX] Duplikat unterdrückt: %s [%s]",
-                        callsign, result.get("type_name", "?"),
+                    # Neuer Frame → ausgeben + EventBus
+                    self._rx_count += 1
+                    decoded_this_tick += 1
+                    msg = (
+                        f"{_ts()}  [RX] ✓ Frame #{self._rx_count}  "
+                        f"von {callsign:<8}  [{result.get('type_name','?'):<10}]  "
+                        f"Kanal {result.get('detected_channel','?')}  "
+                        f"off={result.get('freq_offset_hz',0):+.1f}Hz  "
+                        f"SNR={snr:+.1f}dB  "
+                        f"Score={result.get('_sync_score',0):.3f}  "
+                        f"{self._last_scan_ms:.0f}ms"
                     )
-                    continue
+                    print(msg, flush=True)
+                    log.info(msg)
 
-                # Neuer Frame → ausgeben + EventBus
-                self._rx_count += 1
-                self._no_sync_count = 0   # Erfolgreich dekodiert → Zähler reset
-                msg = (
-                    f"{_ts()}  [RX] ✓ Frame #{self._rx_count}  "
-                    f"von {callsign:<8}  [{result.get('type_name','?'):<10}]  "
-                    f"Kanal {result.get('detected_channel','?')}  "
-                    f"off={result.get('freq_offset_hz',0):+.1f}Hz  "
-                    f"SNR={snr:+.1f}dB  "
-                    f"Score={result.get('_sync_score',0):.3f}  "
-                    f"{self._last_scan_ms:.0f}ms"
-                )
-                print(msg, flush=True)
-                log.info(msg)
+                    if self._bus is not None:
+                        event = make_rx_frame_event(result)
+                        await self._bus.publish(event)
 
-                if self._bus is not None:
-                    event = make_rx_frame_event(result)
-                    await self._bus.publish(event)
+                # Statistik / Heartbeat — einmal pro Scan-Tick (nicht pro Kanal)
+                if decoded_this_tick or sync_this_tick:
+                    self._no_sync_count = 0
+                else:
+                    self._no_sync_count += 1
+                    log.debug(
+                        "[RX] Scan #%d  %.0f ms  kein Frame erkannt",
+                        self._scan_count, self._last_scan_ms,
+                    )
+                    # Periodischer Heartbeat alle 30 Scans (~60s bei 2s-Intervall)
+                    if self._no_sync_count % 30 == 0:
+                        log.info(
+                            "[RX] %d Scans ohne Frame — kein GUST-Signal erkannt",
+                            self._no_sync_count,
+                        )
 
         except asyncio.CancelledError:
             print(f"{_ts()}  [RX] Loop beendet (CancelledError)", flush=True)

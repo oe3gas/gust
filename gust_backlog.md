@@ -174,6 +174,35 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | P8-06 | 🟡 | research | Kanalplan vs. SSB-Passband | Entschieden: 8 Kanäle 600–2600 Hz, v0.5. Umgesetzt in P9-01. | ✅ |
 | P8-07 | 🟡 | feature | Docker-Deployment | `Dockerfile`, `docker-compose.yml`, `docker-entrypoint.sh`, `.dockerignore` im Repo-Root. Simulator-Modus out-of-the-box, Rufzeichen per `GUST_CALLSIGN`-Umgebungsvariable. Healthcheck auf `/api/status`. | ✅ |
 | P8-08 | 🟢 | docs | Docker RPi Audio-Passthrough | Anleitung für `--device /dev/snd` und USB-Audio in Docker auf Raspberry Pi ergänzen (für Hardware-TX im Container-Betrieb). | 🔲 |
+| P8-10 | 🟢 | research | FEC-Backend-Abstraktion + LDPC-Evaluierung | Flanschbares FEC-Modul, RS(255,223) bleibt produktiver Default. Nicht vor v1.0 (Protokollbruch). Details siehe unten; ADR-25. | 🔲 Phase 8/9 |
+
+### P8-10: FEC-Backend-Abstraktion + LDPC-Evaluierung
+
+**Ziel:** LDPC als Alternative zu RS(255,223) evaluieren ohne
+bestehenden Code zu riskieren. Flanschbares Modul — RS bleibt
+produktiver Default.
+
+**Voraussetzung:** Stabile On-Air-Operation auf RS(255,223) Basis.
+Nicht vor v1.0.
+
+**Schritte:**
+1. `gust_fec.py` mit `FECBackend`-Interface erstellen
+   (`encode()`, `decode()`, `overhead: int`)
+2. `ReedSolomonFEC(FECBackend)` als Wrapper um bestehenden RS-Code
+3. `gust_ldpc.py` mit `LDPCFecBackend` implementieren
+4. `gateway.json` Parameter `"fec": "rs"|"ldpc"` ergänzen
+5. Stresstest gegen beide Backends vergleichen (Schicht 3+4)
+6. Soft-decision Input in `_fft_detect_symbol()` evaluieren
+   (Log-Likelihood-Ratios statt Hard-Decisions)
+
+**Nicht umsetzen vor v1.0** — erfordert Protokollbruch +
+Frame-Header-Versionierung.
+
+**Wichtig:** Nicht "mehr Parität bei RS" — das erhöht die Sendedauer
+linear (Shortened RS). Stattdessen kürzere Codes oder anderen
+FEC-Algorithmus. Siehe ADR-25 und gust_knowledge.md §22.
+
+**Referenz:** ADR-25, gust_knowledge.md §22
 
 ---
 
@@ -184,7 +213,7 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | BUG-01 | 🟡 | bug | Rufzeichen > 6 Zeichen werden gekürzt | VK2XX/P → VK2XX/ — Suffix /P geht verloren. Fix: 1-Byte-Suffix-Feld | ⏸ Phase 8 |
 | BUG-02 | 🟢 | bug | inspectrum Frequenzachse verschoben | ~600 Hz Offset bei 8 kHz SR — Darstellungsartefakt, keine Auswirkung | ⏸ |
 | BUG-03 | 🟢 | bug | CF32-Export zeigt Rest-Spiegelbild | Randeffekt durch Stille-Abschnitte nach Hilbert-Transform | ⏸ |
-| BUG-04 | 🟡 | refactor | RS-FEC ineffizient für kurze Frames | RS(255,223): immer 32 Byte Overhead. RS(31,15) wäre effizienter | 🔲 Phase 8 |
+| BUG-04 | 🟡 | refactor | RS-FEC ineffizient für kurze Frames | RS(255,223): immer 32 Byte Overhead. RS(31,15) wäre effizienter. **Hinweis (Juni 2026):** mehr Parität ist keine Option — RS(255,191) evaluiert und verworfen (+51–67 % Airtime, ADR-25); nur kürzere Codes weiterverfolgen | 🔲 Phase 8 |
 | BUG-05 | 🟢 | refactor | asyncio.get_event_loop() deprecated | Python 3.10+: auf get_running_loop() umstellen. **Fix (Juni 2026):** alle Vorkommen in `gust.py` (4 Stellen) ersetzt. | ✅ |
 | BUG-06 | 🟡 | bug | SNR-Schätzer falsch an unterer Bandkante | Fix: adaptives Rauschband beidseitig mit 80 Hz Guard. | ✅ |
 | BUG-07 | 🟢 | research | Simplex-Fenstertiming-Miss | Fix: Fixed-Cadence-Scheduling + Fenster 9 s. Simulation: 10,55% → 0% Miss. | ✅ |
@@ -328,8 +357,21 @@ Dokumentiert in `gust_knowledge.md` §20.
 PortAudio und `sounddevice` sind dort schwer zu kompilieren. `slim` ist kompakt
 genug (~180 MB Image) und vermeidet Kompatibilitätsprobleme mit nativen Libs.
 
+### ADR-25: RS(255,223) bleibt — kein FEC-Upgrade auf RS(255,191) ✅ (Juni 2026)
+Als Reaktion auf den Stresstest-FEC-Cliff bei ~−12 dB (Mehrkanal, Schicht 4) wurde
+RS(255,191) (64 Byte Parität, 32 korrigierbare Byte-Fehler) evaluiert und **verworfen**.
+GUST nutzt shortened RS: übertragen wird `Payload + 8 Header + RS_OVERHEAD`, nie der
+volle 255-Byte-Block — die +32 Paritätsbytes kosten +51–67 % Sendezeit je Frame-Typ
+(WEATHER 4,86 s → 7,62 s) für nur ~3–5 dB Cliff-Verschiebung. Folgekosten: längste
+Frames ~8,1 s verletzen die Vollfenster-Garantie → `MAX_FRAME_S`/`WINDOW_S` müssten
+auf ~8,5/≥ 11 s wachsen (mehr Latenz, mehr Contention, BUG-08). Kurze Aussendedauer
+ist Kern-Designziel (Telemetrie/Notfunk). Der Cliff ist zudem ein Mehrkanal-Artefakt
+(1/8-Amplitude = −18 dB/Kanal); für Einzel-TX gilt T-10.2 (≤ 10 dB). Falls FEC-Tuning
+nötig wird: kürzere Codes (RS(31,15)/RS(63,31), BUG-04), nicht mehr Parität.
+Analyse: `gust_knowledge.md` §22, Methodik: `stresstest.md` Schicht 4.
+
 ---
 
 *Dokument: gust_backlog.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — BUG-13–17 TRX-Profil/Tune/rigctld-Fixes · ADR-21–24 · Docker-Deployment (P8-07) · requirements.txt-Fix (aiohttp)*
+*Stand: Juni 2026 — BUG-13–17 TRX-Profil/Tune/rigctld-Fixes · ADR-21–25 · Docker-Deployment (P8-07) · requirements.txt-Fix (aiohttp) · RS(255,191) verworfen (ADR-25)*

@@ -136,6 +136,10 @@ _HTML_UI = r"""<!DOCTYPE html>
 [data-theme="light"] #ws-indicator.error     { box-shadow: none; }
 /* Light-Theme: bold für bessere Lesbarkeit auf hellem Hintergrund */
 [data-theme="light"] body { font-weight: bold; }
+/* Light-Theme: gefüllte (primäre) Buttons brauchen weißen Text auf Akzentblau */
+[data-theme="light"] .btn:not(.secondary):not(.btn-secondary) {
+  color: #ffffff !important;
+}
 [data-theme="light"] .tx-prio-info,
 [data-theme="light"] .ch-freq,
 [data-theme="light"] .ch-time,
@@ -629,12 +633,27 @@ h2:first-child { margin-top: 0; }
   <button onclick="switchTab('inbox',this)"><span data-i18n="nav.inbox">💬 Kommunikation</span> <span id="inbox-badge" class="inbox-badge hidden">0</span></button>
   <button onclick="switchTab('status',this)" data-i18n="nav.status">⚙ Status &amp; Config</button>
   <button onclick="switchTab('log',this)" data-i18n="nav.log">🗒 Log</button>
+  <button onclick="switchTab('stresstest',this)" data-i18n="nav.stresstest">🧪 Stresstest</button>
 </nav>
 
 <main>
 
 <!-- ══════════════════════════════════════════════════════ TAB: MONITOR -->
 <div id="tab-monitor" class="tab-panel active">
+
+  <!-- Sub-Tab-Leiste: Liste / Swimlane -->
+  <div id="monitor-subtabs"
+       style="display:flex;gap:6px;margin-bottom:14px;">
+    <button id="mon-btn-list"
+            class="btn active"
+            onclick="monSwitchTab('list')">📋 Liste</button>
+    <button id="mon-btn-swimlane"
+            class="btn secondary"
+            onclick="monSwitchTab('swimlane')">📡 Swimlane</button>
+  </div>
+
+  <!-- ── Sub-Panel: Listen-Ansicht (bisheriger Monitor-Inhalt) ── -->
+  <div id="mon-panel-list">
   <h2 data-i18n="monitor.audio_in">Audio-Eingang (RX)</h2>
   <div id="audio-meter" class="nosig">
     <div class="am-hdr">
@@ -680,6 +699,72 @@ h2:first-child { margin-top: 0; }
   <div id="rx-feed">
     <div style="color:var(--text2);padding:8px;" data-i18n="monitor.feed.empty">Warte auf RX-Frames …</div>
   </div>
+  </div><!-- /mon-panel-list -->
+
+  <!-- ── Sub-Panel: Swimlane (Live-Visualisierung) ── -->
+  <div id="mon-panel-swimlane" style="display:none">
+
+    <!-- Toolbar -->
+    <div style="display:flex;gap:12px;align-items:center;
+                flex-wrap:wrap;margin-bottom:10px">
+
+      <!-- Zeitfenster -->
+      <label style="color:var(--text2);font-size:var(--fs-sm)">
+        Zeitfenster:
+        <select id="sl-window" onchange="slSetWindow(this.value)"
+                style="margin-left:4px;background:var(--bg2);
+                       color:var(--text);border:1px solid var(--border);
+                       border-radius:4px;padding:2px 6px">
+          <option value="60">60 s</option>
+          <option value="120" selected>120 s</option>
+          <option value="300">300 s</option>
+          <option value="600">600 s</option>
+        </select>
+      </label>
+
+      <!-- Pixel pro Sekunde -->
+      <label style="color:var(--text2);font-size:var(--fs-sm)">
+        Zoom:
+        <select id="sl-zoom" onchange="slSetZoom(this.value)"
+                style="margin-left:4px;background:var(--bg2);
+                       color:var(--text);border:1px solid var(--border);
+                       border-radius:4px;padding:2px 6px">
+          <option value="3">3 px/s</option>
+          <option value="5" selected>5 px/s</option>
+          <option value="8">8 px/s</option>
+          <option value="12">12 px/s</option>
+        </select>
+      </label>
+
+      <!-- Pause/Resume -->
+      <button id="sl-pause-btn" class="btn"
+              onclick="slTogglePause()"
+              style="min-width:90px">⏸ Pause</button>
+
+      <!-- PNG Export -->
+      <button class="btn secondary"
+              onclick="slExport()">⬇ PNG</button>
+
+      <!-- Frame-Zähler -->
+      <span id="sl-counter"
+            style="color:var(--text2);font-size:var(--fs-xs);
+                   margin-left:auto">0 Frames</span>
+    </div>
+
+    <!-- Canvas-Container mit horizontalem Scroll falls nötig -->
+    <div id="sl-container"
+         style="overflow-x:auto;overflow-y:hidden;
+                background:#0D1117;border-radius:6px;
+                border:1px solid var(--border)">
+      <canvas id="sl-canvas"></canvas>
+    </div>
+
+    <!-- Legende -->
+    <div id="sl-legend"
+         style="display:flex;flex-wrap:wrap;gap:8px;
+                margin-top:8px;font-size:var(--fs-xs)"></div>
+
+  </div><!-- /mon-panel-swimlane -->
 </div>
 
 <!-- ══════════════════════════════════════════════════════ TAB: SENDEN -->
@@ -1221,6 +1306,70 @@ h2:first-child { margin-top: 0; }
 
 </div>
 
+<!-- ═══════════════ TAB: STRESSTEST (Session-Recorder) ═══════════════ -->
+<div id="tab-stresstest" class="tab-panel">
+  <h3 style="margin-bottom:6px;font-size:var(--fs-sm);text-transform:uppercase;
+             letter-spacing:1px;color:var(--text2);" data-i18n="stresstest.title">🧪 Stresstest-Session</h3>
+  <p style="color:var(--text2);font-size:var(--fs-sm);margin-bottom:14px;" data-i18n="stresstest.desc">
+    WAV-Datei via VAC abspielen → Session aufzeichnen → Ground-Truth-CSV auswerten.
+  </p>
+
+  <!-- Status-Anzeige -->
+  <div id="st-status-bar" style="
+      padding:8px 14px;border-radius:6px;margin-bottom:14px;
+      background:var(--bg2);font-size:var(--fs-sm);
+      border-left:4px solid var(--accent)">
+    <span id="st-state-label">Bereit</span> &nbsp;·&nbsp;
+    <span id="st-frame-count">0 Frames</span>
+    <span id="st-duration" style="margin-left:8px;color:var(--text2)"></span>
+  </div>
+
+  <!-- Steuerung -->
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+    <button id="st-btn-start" class="btn" onclick="stSession('start')">
+      ▶ Session starten
+    </button>
+    <button id="st-btn-stop" class="btn secondary" onclick="stSession('stop')" disabled>
+      ■ Session stoppen
+    </button>
+  </div>
+
+  <!-- CSV-Upload + Auswertung -->
+  <div id="st-evaluate-box" style="display:none">
+    <h4 style="margin-bottom:8px">Ground-Truth-CSV auswerten</h4>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <input type="file" id="st-csv-input" accept=".csv"
+             style="flex:1;min-width:200px">
+      <button class="btn" onclick="stEvaluate()">Auswerten</button>
+    </div>
+  </div>
+
+  <!-- Report -->
+  <div id="st-report-box" style="display:none;margin-top:18px">
+    <h4>Auswertungsbericht</h4>
+    <div id="st-report-summary" style="
+        background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+        padding:14px;margin:8px 0 12px 0;font-size:var(--fs-sm)">
+    </div>
+    <div id="st-missed-box" style="display:none">
+      <h4 style="margin-bottom:6px;color:var(--orange)">Fehlende Frames</h4>
+      <table id="st-missed-table" style="width:100%;font-size:var(--fs-xs);border-collapse:collapse">
+        <thead><tr style="border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:4px 8px">Kanal</th>
+          <th style="text-align:left;padding:4px 8px">Typ</th>
+          <th style="text-align:left;padding:4px 8px">Rufzeichen</th>
+          <th style="text-align:left;padding:4px 8px">@Zeit</th>
+        </tr></thead>
+        <tbody id="st-missed-tbody"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn secondary" onclick="stDownload('json')">⬇ JSON</button>
+      <button class="btn secondary" onclick="stDownload('csv')">⬇ CSV</button>
+    </div>
+  </div>
+</div>
+
 </main><!-- /main -->
 
 <script>
@@ -1399,6 +1548,7 @@ function switchTab(name, btn) {
     switchCfgTab(savedSub, subBtn || document.querySelector('.cfg-subnav button'));
   }
   if (name === 'tx')     fetchTxQueue();
+  if (name === 'stresstest') stUpdateStatus();
   if (name === 'inbox') {
     // Tab geöffnet → alles als gelesen markieren, Badge zurücksetzen
     state.inbox.forEach(m => m.read = true);
@@ -3213,7 +3363,7 @@ function connectWsRx() {
   state.wsRx.onmessage = (evt) => {
     try {
       const msg = JSON.parse(evt.data);
-      if (msg.type === 'rx_frame')       appendRxFrame(msg.data);
+      if (msg.type === 'rx_frame')     { appendRxFrame(msg.data); slAddFrame(msg.data); }
       if (msg.type === 'status')         applyStatusPush(msg.data);
       if (msg.type === 'rx_audio_level') updateAudioMeter(msg.data);
       if (msg.type === 'tx_done')      { state.isSending = false; _setOnAir(false); if (state._txDoneResolve) { const _r = state._txDoneResolve; state._txDoneResolve = null; _r(); } log2ui('INFO', t('tx.done') + ' ' + (msg.data?.type_name||'?')); fetchTxQueue(); appendTxDone(msg.data || {}); }
@@ -3612,6 +3762,472 @@ function fmtTs(ts) {
   return new Date(ts * 1000).toLocaleTimeString('de-AT');
 }
 
+// ═══════════════ STRESSTEST SESSION (Session-Recorder) ════════════════
+let stPolling = null;
+
+async function stSession(action) {
+  let data;
+  try {
+    data = await apiFetch('/api/session/' + action, {method:'POST'});
+  } catch(e) {
+    log2ui('ERROR', 'Session: ' + e.message);
+    return;
+  }
+  if (!data.ok) { alert('Fehler: ' + data.error); return; }
+  stUpdateStatus();
+  if (action === 'stop') {
+    document.getElementById('st-evaluate-box').style.display = '';
+    if (stPolling) { clearInterval(stPolling); stPolling = null; }
+  } else {
+    document.getElementById('st-report-box').style.display = 'none';
+    if (stPolling) clearInterval(stPolling);
+    stPolling = setInterval(stUpdateStatus, 2000);
+  }
+}
+
+async function stUpdateStatus() {
+  let d;
+  try {
+    d = await apiFetch('/api/session/status');
+  } catch(e) { return; }
+  const stateLabel = {idle:'Bereit', recording:'⏺ Aufnahme läuft', done:'Gestoppt'}[d.state] || d.state;
+  document.getElementById('st-state-label').textContent = stateLabel;
+  document.getElementById('st-frame-count').textContent = d.frame_count + ' Frames';
+  const dur = document.getElementById('st-duration');
+  if (d.started_at) {
+    const end = d.stopped_at || (Date.now() / 1000);
+    dur.textContent = 'Dauer: ' + Math.round(end - d.started_at) + ' s';
+  } else {
+    dur.textContent = '';
+  }
+  // Buttons
+  document.getElementById('st-btn-start').disabled = (d.state === 'recording');
+  document.getElementById('st-btn-stop').disabled  = (d.state !== 'recording');
+  // Evaluate-Box: nach Stop zeigen
+  if (d.state === 'done') {
+    document.getElementById('st-evaluate-box').style.display = '';
+    if (stPolling) { clearInterval(stPolling); stPolling = null; }
+  }
+  // Report (überlebt Seiten-Reload — kommt aus /api/session/status mit)
+  if (d.report) stShowReport(d.report);
+}
+
+async function stEvaluate() {
+  const input = document.getElementById('st-csv-input');
+  if (!input.files.length) { alert('Bitte eine CSV-Datei auswählen.'); return; }
+  const form = new FormData();
+  form.append('csv', input.files[0]);
+  let data;
+  try {
+    data = await apiFetch('/api/session/evaluate', {method:'POST', body:form});
+  } catch(e) {
+    log2ui('ERROR', 'Session-Auswertung: ' + e.message);
+    return;
+  }
+  if (!data.ok) { alert('Auswertungsfehler: ' + data.error); return; }
+  stShowReport(data.report);
+}
+
+function stShowReport(report) {
+  if (!report) return;
+  const box = document.getElementById('st-report-box');
+  box.style.display = '';
+  const passColor = report.pass ? 'var(--green)' : 'var(--orange)';
+  document.getElementById('st-report-summary').innerHTML =
+    `<div style="font-size:1.3em;font-weight:bold;color:${passColor};margin-bottom:8px">` +
+    `${report.decode_rate.toFixed(1)} % ` +
+    `<span style="font-size:0.7em">${report.pass ? '✓ PASS (≥80%)' : '✗ FAIL (<80%)'}</span></div>` +
+    `Erwartet: ${report.n_expected} &nbsp;|&nbsp; ` +
+    `Gefunden: ${report.n_found} &nbsp;|&nbsp; ` +
+    `Gematcht: ${report.n_matched} &nbsp;|&nbsp; ` +
+    `Fehlend: <b>${report.n_missed}</b> &nbsp;|&nbsp; ` +
+    `Überzählig: ${report.n_extra}` +
+    (report.n_dual_bonus ? ` &nbsp;|&nbsp; Dual-Bonus: ${report.n_dual_bonus}` : '') +
+    (report.session_duration_s ? `<div style="margin-top:6px;color:var(--text2)">Session-Dauer: ${report.session_duration_s} s</div>` : '');
+
+  // Fehlende Frames Tabelle
+  const missedBox = document.getElementById('st-missed-box');
+  if (report.missed && report.missed.length > 0) {
+    missedBox.style.display = '';
+    const tbody = document.getElementById('st-missed-tbody');
+    tbody.innerHTML = '';
+    for (const m of report.missed) {
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid var(--border)';
+      let start = 0;
+      try { start = parseFloat(m.start_s || 0); } catch(e){}
+      tr.innerHTML =
+        `<td style="padding:3px 8px">ch${m.channel ?? '?'}</td>` +
+        `<td style="padding:3px 8px">${m.frame_type ?? '?'}</td>` +
+        `<td style="padding:3px 8px">${m.callsign ?? '?'}</td>` +
+        `<td style="padding:3px 8px">@${start.toFixed(2)}s</td>`;
+      tbody.appendChild(tr);
+    }
+  } else {
+    missedBox.style.display = 'none';
+  }
+}
+
+function stDownload(fmt) {
+  let url = '/api/session/download?format=' + fmt;
+  const apiKey = document.querySelector('meta[name="api-key"]')?.content;
+  if (apiKey) url += '&api_key=' + encodeURIComponent(apiKey);
+  window.location.href = url;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SWIMLANE — Konstanten & State
+// ═══════════════════════════════════════════════════════════
+
+const SL_COLORS = {
+  WEATHER:      '#4A90D9',
+  POSITION:     '#27AE60',
+  EMERG_BEACON: '#E74C3C',
+  EMERG_RSRC:   '#E67E22',
+  STATION_TLM:  '#8E44AD',
+  TEXT:         '#F39C12',
+  CQ:           '#1ABC9C',
+};
+const SL_DEFAULT_COLOR = '#95A5A6';
+const SL_BG_LANES      = ['#1A1A2E', '#16213E'];
+const SL_BACKGROUND    = '#0D1117';
+const SL_GRID_COLOR    = 'rgba(255,255,255,0.55)';
+const SL_GRID_MINOR    = 'rgba(255,255,255,0.18)';
+const SL_N_CHANNELS    = 8;
+const SL_MAX_CANVAS_H  = 4000;   // Sicherheitsnetz (600s × 12px/s = 7200px)
+
+// Kanalfrequenzen (600 Hz + ch * 250 Hz, Kanalplan v0.5)
+const SL_CH_FREQ = Array.from({length: SL_N_CHANNELS},
+                               (_, i) => 600 + i * 250);
+
+const sl = {
+  inited:      false,       // Guard: slInit() nur einmal (RAF-Loop!)
+  frames:      [],          // alle empfangenen Frames
+  windowS:     120,         // sichtbares Zeitfenster in Sekunden
+  pxPerSec:    5,           // Pixel pro Sekunde
+  paused:      false,
+  animFrame:   null,
+  txT0:        null,        // rawT des ersten Frames (Nullpunkt der Zeitachse)
+  tLast:       null,        // rawT des zuletzt empfangenen Frames ("jetzt")
+  laneW:       0,           // Breite einer Swimlane in Pixel (berechnet)
+  canvasW:     0,
+  canvasH:     0,
+};
+
+// ═══════════════════════════════════════════════════════════
+// SWIMLANE — Monitor-Sub-Tabs (Liste / Swimlane)
+// ═══════════════════════════════════════════════════════════
+
+function monSwitchTab(which) {
+  const isList = which === 'list';
+  document.getElementById('mon-panel-list').style.display =
+    isList ? '' : 'none';
+  document.getElementById('mon-panel-swimlane').style.display =
+    isList ? 'none' : '';
+  document.getElementById('mon-btn-list').className =
+    isList ? 'btn active' : 'btn secondary';
+  document.getElementById('mon-btn-swimlane').className =
+    isList ? 'btn secondary' : 'btn active';
+  if (!isList) slInit();  // Canvas initialisieren beim ersten Öffnen
+}
+
+// ═══════════════════════════════════════════════════════════
+// SWIMLANE — Initialisierung
+// ═══════════════════════════════════════════════════════════
+
+function slInit() {
+  if (sl.inited) { slResize(); slDraw(); return; }   // idempotent
+  sl.inited = true;
+  slBuildLegend();
+  slResize();
+  window.addEventListener('resize', slResize);
+  slLoop();
+}
+
+function slResize() {
+  const container = document.getElementById('sl-container');
+  const canvas    = document.getElementById('sl-canvas');
+  if (!canvas) return;
+
+  // Breite: Container-Breite, mind. 8 * 80px
+  const containerW = container.clientWidth || 800;
+  sl.canvasW = Math.max(containerW, SL_N_CHANNELS * 80);
+  sl.laneW   = sl.canvasW / SL_N_CHANNELS;
+
+  // Höhe: Zeitfenster * px/s, gekappt (Browser-Canvas-Limit)
+  sl.canvasH = Math.min(sl.windowS * sl.pxPerSec, SL_MAX_CANVAS_H);
+
+  canvas.width  = sl.canvasW;
+  canvas.height = sl.canvasH;
+}
+
+function slBuildLegend() {
+  const el = document.getElementById('sl-legend');
+  if (!el) return;
+  el.innerHTML = Object.entries(SL_COLORS).map(([t, c]) =>
+    `<span style="display:flex;align-items:center;gap:4px">
+       <span style="width:12px;height:12px;border-radius:2px;
+                    background:${c};display:inline-block"></span>
+       <span style="color:var(--text2)">${t}</span>
+     </span>`
+  ).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// SWIMLANE — Frame empfangen (aus dem /ws/rx-Handler)
+// ═══════════════════════════════════════════════════════════
+
+function slAddFrame(data) {
+  // Zeitbezug: tx_start_s bevorzugen (physikalischer Sendezeitpunkt,
+  // monotone Daemon-Zeit), Fallback auf ts (Unix-Decode-Zeitpunkt)
+  const rawT = (data.tx_start_s != null)
+    ? data.tx_start_s
+    : (data.ts || Date.now() / 1000);
+
+  // Nullpunkt beim ersten Frame setzen; tLast = "jetzt" auf der
+  // Frame-Zeitachse (eine Quelle — kein Mix aus monotoner Server-
+  // Zeit und Browser-Wanduhr)
+  if (sl.txT0 === null) sl.txT0 = rawT;
+  sl.tLast = rawT;
+
+  const startS   = rawT - sl.txT0;
+  const ch       = (data.channel != null)
+    ? parseInt(data.channel)
+    : (data.detected_channel != null ? parseInt(data.detected_channel) : 0);
+  const ftype    = data.type_name || '?';
+  const callsign = data.from || '?';
+
+  // Frame-Dauer: aus data.duration_s oder Schätzung ~5s (typische
+  // GUST-Framedauer; duration_s ist im rx_frame-Event nicht enthalten)
+  const durS = data.duration_s || 5.0;
+
+  sl.frames.push({ startS, durS, ch, ftype, callsign });
+
+  // History begrenzen: Frames älter als windowS * 3 entfernen
+  if (sl.frames.length > 500) {
+    const nowS   = sl.tLast - sl.txT0;
+    const cutoff = nowS - sl.windowS * 3;
+    sl.frames = sl.frames.filter(f => f.startS > cutoff);
+  }
+
+  // Frame-Zähler aktualisieren
+  const counter = document.getElementById('sl-counter');
+  if (counter) counter.textContent = sl.frames.length + ' Frames';
+}
+
+// ═══════════════════════════════════════════════════════════
+// SWIMLANE — Zeichnen
+// ═══════════════════════════════════════════════════════════
+
+function slRoundRectPath(ctx, x, y, w, h, r) {
+  // roundRect mit Fallback für ältere Browser
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+  else               ctx.rect(x, y, w, h);
+}
+
+function slDraw() {
+  const canvas = document.getElementById('sl-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const W   = sl.canvasW;
+  const H   = sl.canvasH;
+  const lW  = sl.laneW;
+  const pps = sl.pxPerSec;
+
+  // Theme erkennen — Swimlane-Farben sind theme-sensitiv (Fix 4)
+  const isLight = document.documentElement
+    .getAttribute('data-theme') === 'light';
+
+  // "Jetzt" = Zeit des zuletzt empfangenen Frames relativ zum ersten.
+  // Bewusst KEINE Browser-Wanduhr: startS basiert auf der monotonen
+  // Server-Zeit (tx_start_s) — beide Achsen müssen identisch sein.
+  // Ohne neue Frames friert die Anzeige ein (gewollt).
+  const nowS = sl.tLast !== null
+    ? (sl.tLast - sl.txT0)
+    : 0;
+
+  // Oberkante des sichtbaren Fensters (älteste sichtbare Zeit)
+  const topS = Math.max(0, nowS - sl.windowS);
+
+  // Hintergrund
+  ctx.fillStyle = isLight ? '#f0f4f8' : SL_BACKGROUND;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Swimlane-Hintergründe ────────────────────────────────
+  const laneBg = isLight
+    ? ['#dde8f5', '#e8f0f8']   // helle Blautöne
+    : SL_BG_LANES;
+  for (let ch = 0; ch < SL_N_CHANNELS; ch++) {
+    ctx.fillStyle = laneBg[ch % 2];
+    ctx.fillRect(ch * lW, 0, lW, H);
+  }
+
+  // ── Zeitraster (t=0 oben, Zeit wächst nach unten) ────────
+  const firstGrid = Math.ceil(topS / 5) * 5;
+  for (let t = firstGrid; t <= topS + sl.windowS + 5; t += 5) {
+    const yPos = (t - topS) * pps;
+    if (yPos < 0 || yPos > H) continue;
+    const is10 = (Math.round(t) % 10 === 0);
+    ctx.strokeStyle = is10
+      ? (isLight ? 'rgba(0,0,0,0.45)' : SL_GRID_COLOR)
+      : (isLight ? 'rgba(0,0,0,0.18)' : SL_GRID_MINOR);
+    ctx.lineWidth   = is10 ? 1.0 : 0.4;
+    ctx.beginPath();
+    ctx.moveTo(0, yPos);
+    ctx.lineTo(W, yPos);
+    ctx.stroke();
+
+    // Zeitstempel-Label an der Linie
+    if (is10) {
+      ctx.fillStyle = isLight
+        ? 'rgba(0,0,0,0.80)'
+        : 'rgba(255,255,255,0.92)';
+      ctx.font      = 'bold 11px monospace';
+      ctx.fillText(`${Math.round(t)}s`, 3, yPos - 3);
+    }
+  }
+
+  // ── Swimlane-Trennlinien (vertikal) ──────────────────────
+  for (let ch = 0; ch <= SL_N_CHANNELS; ch++) {
+    const isEdge = (ch === 0 || ch === SL_N_CHANNELS);
+    ctx.strokeStyle = isLight
+      ? (isEdge ? 'rgba(0,0,0,0.6)'      : 'rgba(0,0,0,0.3)')
+      : (isEdge ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.55)');
+    ctx.lineWidth = isEdge ? 2.0 : 1.2;
+    ctx.beginPath();
+    ctx.moveTo(ch * lW, 0);
+    ctx.lineTo(ch * lW, H);
+    ctx.stroke();
+  }
+
+  // ── Frames zeichnen ──────────────────────────────────────
+  const pad = 3;  // px Abstand Block zu Lane-Rand
+
+  for (const f of sl.frames) {
+    // Y-Position: t=0 oben, Zeit wächst nach unten
+    const yTop = (f.startS - topS) * pps;
+    const yH   = Math.max(f.durS * pps, 18);  // Mindesthöhe 18px
+
+    // Außerhalb des sichtbaren Bereichs überspringen
+    if (yTop + yH < 0 || yTop > H) continue;
+    if (f.ch < 0 || f.ch >= SL_N_CHANNELS) continue;
+
+    const xLeft = f.ch * lW + pad;
+    const bW    = lW - 2 * pad;
+    const color = SL_COLORS[f.ftype] || SL_DEFAULT_COLOR;
+
+    // Block mit abgerundeten Ecken
+    const r = 4;
+    ctx.fillStyle   = color;
+    ctx.globalAlpha = 0.90;
+    slRoundRectPath(ctx, xLeft, yTop, bW, yH, r);
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+
+    // Rahmen
+    ctx.strokeStyle = isLight
+      ? 'rgba(0,0,0,0.35)'
+      : 'rgba(255,255,255,0.6)';
+    ctx.lineWidth   = 0.7;
+    slRoundRectPath(ctx, xLeft, yTop, bW, yH, r);
+    ctx.stroke();
+
+    // Text nur wenn Block groß genug
+    if (yH >= 20) {
+      ctx.textAlign    = 'center';
+      ctx.fillStyle    = 'white';
+      const cx = xLeft + bW / 2;
+      const cy = yTop  + yH / 2;
+
+      if (yH >= 32) {
+        // Rufzeichen + Typ
+        ctx.font = 'bold 9px sans-serif';
+        ctx.fillText(f.callsign, cx, cy - 4);
+        ctx.font      = '7px sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.80)';
+        const short = f.ftype.length > 10
+          ? f.ftype.slice(0, 10) : f.ftype;
+        ctx.fillText(short, cx, cy + 7);
+      } else {
+        // Nur Rufzeichen
+        ctx.font = 'bold 8px sans-serif';
+        ctx.fillText(f.callsign, cx, cy + 3);
+      }
+    }
+  }
+
+  // ── "Jetzt"-Linie (roter Strich am unteren Rand) ─────────
+  // Rot funktioniert in beiden Themes.
+  ctx.strokeStyle = 'rgba(255,80,80,0.8)';
+  ctx.lineWidth   = 1.5;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.moveTo(0, H - 2);
+  ctx.lineTo(W, H - 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ── Kanal-Header (ZULETZT: immer oben sichtbar, über Frames) ──
+  for (let ch = 0; ch < SL_N_CHANNELS; ch++) {
+    const x = ch * lW;
+    // Hintergrund-Balken (halbtransparent, überdeckt Frame-Oberkanten)
+    ctx.fillStyle = isLight
+      ? 'rgba(240,244,248,0.90)'
+      : 'rgba(13,17,23,0.82)';
+    ctx.fillRect(x + 1, 0, lW - 2, 34);
+    // Text
+    const cx = x + lW / 2;
+    ctx.fillStyle = isLight ? '#1f2328' : '#ffffff';
+    ctx.font      = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`CH ${ch}`, cx, 15);
+    ctx.font      = '9px sans-serif';
+    ctx.fillStyle = isLight
+      ? 'rgba(31,35,40,0.65)'
+      : 'rgba(255,255,255,0.70)';
+    ctx.fillText(`${SL_CH_FREQ[ch]} Hz`, cx, 27);
+  }
+
+  ctx.textAlign = 'left';  // Reset
+}
+
+// ═══════════════════════════════════════════════════════════
+// SWIMLANE — Render-Loop & Steuerung
+// ═══════════════════════════════════════════════════════════
+
+function slLoop() {
+  if (!sl.paused) slDraw();
+  sl.animFrame = requestAnimationFrame(slLoop);
+}
+
+function slSetWindow(val) {
+  sl.windowS = parseInt(val);
+  slResize();
+}
+
+function slSetZoom(val) {
+  sl.pxPerSec = parseInt(val);
+  slResize();
+}
+
+function slTogglePause() {
+  sl.paused = !sl.paused;
+  const btn = document.getElementById('sl-pause-btn');
+  if (btn) btn.textContent = sl.paused ? '▶ Resume' : '⏸ Pause';
+}
+
+function slExport() {
+  const canvas = document.getElementById('sl-canvas');
+  if (!canvas) return;
+  const a = document.createElement('a');
+  a.download = 'gust_swimlane_' +
+    new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+
 // ═══════════════════════════ INIT ═════════════════════════════
 (async function init() {
   // Sprache laden (vor allem anderen, damit UI sofort lokalisiert ist)
@@ -3734,6 +4350,14 @@ class WebServer:
         # Wird hier getrackt, weil das TX-Gateway keine RX-Frames sieht.
         self._last_rx_ts: Optional[float] = None
 
+        # ── Session-Recorder (Stresstest-Auswertung) ─────────────────
+        # Zustand: "idle" | "recording" | "done"
+        self._session_state: str = "idle"
+        self._session_frames: list = []         # akkumulierte rx_frame-Dicts
+        self._session_start_ts: Optional[float] = None
+        self._session_stop_ts: Optional[float] = None
+        self._session_report: Optional[dict] = None   # letzter Auswertungs-Report
+
         # Aktive WebSocket-Verbindungen
         self._ws_rx_clients: Set[web.WebSocketResponse] = set()
         self._ws_log_clients: Set[web.WebSocketResponse] = set()
@@ -3827,6 +4451,11 @@ class WebServer:
         app.router.add_post("/api/hamlib/force_restart", self._handle_hamlib_force_restart)
         app.router.add_post("/api/tx/tune",          self._handle_tx_tune)
         app.router.add_post("/api/tx/tune_stop",     self._handle_tx_tune_stop)
+        app.router.add_post("/api/session/start",    self._handle_session_start)
+        app.router.add_post("/api/session/stop",     self._handle_session_stop)
+        app.router.add_get ("/api/session/status",   self._handle_session_status)
+        app.router.add_post("/api/session/evaluate", self._handle_session_evaluate)
+        app.router.add_get ("/api/session/download", self._handle_session_download)
         app.router.add_get("/ws/rx",  self._handle_ws_rx)
         app.router.add_get("/ws/log", self._handle_ws_log)
         return app
@@ -5014,6 +5643,186 @@ class WebServer:
             log.warning("[rigctld] %s", msg)
             return web.json_response({"ok": False, "message": msg})
 
+    # ── SESSION-RECORDER (Stresstest-Auswertung) ──────────────────────
+    # Auth: läuft wie alle /api/-Routen über _auth_middleware (api_key).
+
+    async def _handle_session_start(self, _request: web.Request) -> web.Response:
+        """POST /api/session/start — Session starten."""
+        if self._session_state == "recording":
+            return web.json_response({"ok": False, "error": "Session läuft bereits"})
+        self._session_state    = "recording"
+        self._session_frames   = []
+        self._session_start_ts = time.time()
+        self._session_stop_ts  = None
+        self._session_report   = None
+        log.info("Session-Recorder gestartet.")
+        self._publish_log("INFO", "Session-Recorder gestartet — Frames werden aufgezeichnet.")
+        return web.json_response({"ok": True, "started_at": self._session_start_ts})
+
+    async def _handle_session_stop(self, _request: web.Request) -> web.Response:
+        """POST /api/session/stop — Session stoppen."""
+        if self._session_state != "recording":
+            return web.json_response({"ok": False, "error": "Keine aktive Session"})
+        self._session_state   = "done"
+        self._session_stop_ts = time.time()
+        n = len(self._session_frames)
+        log.info("Session-Recorder gestoppt. %d Frames aufgezeichnet.", n)
+        self._publish_log("INFO", f"Session-Recorder gestoppt — {n} Frames aufgezeichnet.")
+        return web.json_response({
+            "ok":          True,
+            "frame_count": n,
+            "stopped_at":  self._session_stop_ts,
+            "duration_s":  round(self._session_stop_ts - self._session_start_ts, 1),
+        })
+
+    async def _handle_session_status(self, _request: web.Request) -> web.Response:
+        """GET /api/session/status — aktueller Zustand (inkl. Report falls vorhanden)."""
+        return web.json_response({
+            "state":       self._session_state,
+            "frame_count": len(self._session_frames),
+            "started_at":  self._session_start_ts,
+            "stopped_at":  self._session_stop_ts,
+            "has_report":  self._session_report is not None,
+            "report":      self._session_report,
+        })
+
+    async def _handle_session_evaluate(self, request: web.Request) -> web.Response:
+        """
+        POST /api/session/evaluate
+        multipart/form-data: Feld "csv" = Ground-Truth-CSV von gust_stresstest.py
+        Führt match_live_session() durch und speichert den Report.
+        """
+        if self._session_state not in ("done", "recording"):
+            return web.json_response(
+                {"ok": False,
+                 "error": "Keine Session vorhanden (zuerst starten und stoppen)"})
+        if not self._session_frames:
+            return web.json_response(
+                {"ok": False, "error": "Session enthält keine Frames"})
+
+        # CSV aus Upload lesen
+        try:
+            reader = await request.multipart()
+            csv_bytes = None
+            async for field in reader:
+                if field.name == "csv":
+                    csv_bytes = await field.read(decode=True)
+                    break
+            if csv_bytes is None:
+                return web.json_response(
+                    {"ok": False, "error": "Kein CSV-Feld im Upload"})
+        except Exception as e:
+            return web.json_response(
+                {"ok": False, "error": f"Upload-Fehler: {e}"})
+
+        # CSV temporär in Datei schreiben (load_csv_log erwartet Pfad)
+        import tempfile, os
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".csv", prefix="gust_session_")
+        try:
+            with os.fdopen(tmp_fd, "wb") as fh:
+                fh.write(csv_bytes)
+            # Auswertung
+            from gust_stress_decode import match_live_session
+            report = match_live_session(self._session_frames, tmp_path)
+            # Nur JSON-serialisierbare Felder übernehmen (matched enthält
+            # (found, expected)-Tupel — für die Anzeige nicht nötig)
+            report_json = {
+                "n_expected":   report["n_expected"],
+                "n_found":      report["n_found"],
+                "n_matched":    report["n_matched"],
+                "n_missed":     report["n_missed"],
+                "n_extra":      report["n_extra"],
+                "n_dual_bonus": report["n_dual_bonus"],
+                "decode_rate":  round(report["decode_rate"] * 100.0, 1),
+                "pass":         report["decode_rate"] >= 0.80,
+                "missed":       report["missed"],
+                "extra":        [
+                    {"channel": f["channel"], "frame_type": f["frame_type"],
+                     "callsign": f["callsign"], "start_s": round(f["start_s"], 2)}
+                    for f in report["extra"]
+                ],
+                "session_duration_s": round(
+                    (self._session_stop_ts or time.time()) - self._session_start_ts, 1
+                ) if self._session_start_ts else None,
+                "frame_count": len(self._session_frames),
+            }
+            self._session_report = report_json
+            self._publish_log(
+                "INFO" if report_json["pass"] else "WARNING",
+                f"Session-Auswertung: {report_json['decode_rate']:.1f} % "
+                f"({report_json['n_matched']}/{report_json['n_expected']} Frames) "
+                f"{'✓ PASS' if report_json['pass'] else '✗ FAIL'}"
+            )
+            return web.json_response({"ok": True, "report": report_json})
+        except Exception as e:
+            log.exception("Session-Auswertung Fehler")
+            return web.json_response({"ok": False, "error": str(e)})
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    async def _handle_session_download(self, request: web.Request) -> web.Response:
+        """
+        GET /api/session/download?format=json|csv
+        Lädt die aufgezeichneten Session-Frames oder den Report herunter.
+        format=json  → alle aufgezeichneten rx_frame-Dicts + Report (falls vorhanden)
+        format=csv   → aufgezeichnete Frames als CSV (gleiche Felder wie Ergebnis-CSV)
+        """
+        if not self._session_frames:
+            return web.json_response(
+                {"ok": False, "error": "Keine Session-Daten vorhanden"})
+
+        fmt = request.rel_url.query.get("format", "json")
+        ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        if fmt == "csv":
+            import io
+            import csv as csvmod
+            buf = io.StringIO()
+            fields = ["nr", "ts", "start_s", "channel", "frame_type",
+                      "callsign", "freq_offset_hz"]
+            session_start = min(
+                (f.get("ts", 0.0) for f in self._session_frames), default=0.0)
+            w = csvmod.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+            w.writeheader()
+            for i, f in enumerate(self._session_frames, start=1):
+                ch = f.get("channel")
+                if ch is None:
+                    ch = f.get("detected_channel", -1)
+                w.writerow({
+                    "nr":            i,
+                    "ts":            round(f.get("ts", 0.0), 3),
+                    "start_s":       round(float(f.get("ts", 0.0)) - session_start, 3),
+                    "channel":       int(ch) if ch is not None else -1,
+                    "frame_type":    f.get("type_name", ""),
+                    "callsign":      f.get("from", ""),
+                    "freq_offset_hz": 0.0,
+                })
+            content = buf.getvalue().encode("utf-8")
+            return web.Response(
+                body=content,
+                content_type="text/csv",
+                headers={"Content-Disposition":
+                         f'attachment; filename="gust_session_{ts_str}.csv"'},
+            )
+        else:
+            payload = {
+                "session_start": self._session_start_ts,
+                "session_stop":  self._session_stop_ts,
+                "frame_count":   len(self._session_frames),
+                "report":        self._session_report,
+                "frames":        self._session_frames,
+            }
+            content = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+            return web.Response(
+                body=content,
+                content_type="application/json",
+                headers={"Content-Disposition":
+                         f'attachment; filename="gust_session_{ts_str}.json"'},
+            )
+
     async def _handle_tx_tune(self, _request: web.Request) -> web.Response:
         """POST /api/tx/tune — 1000-Hz-Sinuston mit PTT, fix 15 Sekunden."""
         if self._gateway is None:
@@ -5268,6 +6077,9 @@ class WebServer:
                     if "ts" not in data:
                         data = {**data, "ts": event.get("ts", _time.time())}
                     await self.broadcast_rx_frame(data)
+                    # Session-Recorder: Frame aufzeichnen wenn aktiv
+                    if self._session_state == "recording":
+                        self._session_frames.append(dict(data))
                     self._publish_log("INFO",
                         f"RX: {data.get('from','?')} [{data.get('type_name','?')}] "
                         f"Kanal {data.get('channel','?')}")

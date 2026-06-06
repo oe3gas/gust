@@ -25,8 +25,9 @@ from gust_frame import assign_channel, EVTYPE_OTHER
 _TYPE_NAMES = {
     0x01: "WEATHER",
     0x02: "POSITION",
-    0x03: "SENSOR",
+    0x03: "STATION_TLM",
     0x20: "EMERG_BEACON",
+    0x30: "SENSOR",
     0x40: "TEXT",
     0x41: "CQ",
 }
@@ -36,6 +37,16 @@ _SIM_CALLS = [
     "OE1XTU", "OE2HRX", "OE3GAS", "OE3QOF", "OE4CMF",
     "OE5KCB", "OE6KPF", "OE7DOE", "OE8RSJ", "OE9MQR",
 ]
+
+# ── Demo-Pool für Multi-Station-Betrieb (sim_cfg["multi_station"]) ──────────
+DEMO_CALLSIGNS = [
+    "OE3GAS",   # Heimatstation (immer dabei)
+    "OE1XTU", "OE3GAT", "OE5RFP", "OE4XLC",
+    "OE7DBH", "OE2XGR", "OE9XPI", "OE1KFR",
+]
+
+# Stationen ohne Positions-Frames (reine Telemetrie-Stationen)
+_NO_POSITION_CALLS = {"OE1KFR"}
 
 
 def _make_weather(callsign: str, channel: int) -> dict:
@@ -113,6 +124,26 @@ def _make_text(callsign: str, channel: int) -> dict:
     }
 
 
+def _make_station_tlm(callsign: str, channel: int) -> dict:
+    # Feldnamen identisch zu gust_frame.decode_station_tlm() (Frame 0x03)
+    return {
+        "frame_type": 0x03,
+        "type_name":  "STATION_TLM",
+        "from":       callsign,
+        "channel":    channel,
+        "snr_db":     round(random.uniform(8.0, 22.0), 1),
+        "freq_offset_hz": round(random.uniform(-20.0, 20.0), 1),
+        "data": {
+            "voltage_v":  round(random.uniform(11.8, 14.2), 2),
+            "current_ma": random.randint(150, 900),
+            "temp_c":     round(random.uniform(15.0, 55.0), 1),
+            "cpu_pct":    random.randint(3, 60),
+            "uptime_min": random.randint(10, 9999),
+            "flags":      0,
+        },
+    }
+
+
 def _make_emergency(callsign: str, channel: int,
                     lat: float, lon: float) -> dict:
     return {
@@ -160,6 +191,12 @@ class SimAdapter:
         emergency_enabled    (Standard: False)
         lat, lon, alt_m      (Standard: Wien)
         drift                (Standard: False)
+        multi_station        (Standard: False) — mehrere fiktive Stationen
+                             auf ihren deterministischen Kanälen, zufällige
+                             Intervalle 20–60 s, gemischte Frame-Typen
+        callsigns            Liste der Stationen für multi_station
+                             (Standard: DEMO_CALLSIGNS); aktiviert
+                             multi_station implizit
     """
 
     def __init__(self, sim_cfg: dict, callsign: str = "OE3GAS") -> None:
@@ -180,21 +217,78 @@ class SimAdapter:
         self._emerg_iv    = sim_cfg.get("emergency_interval_s", 600.0) if self._emerg else None
 
         now = time.monotonic()
+
+        # ── Multi-Station-Demo (belebtes Netz: alle Kanäle aktiv) ─────
+        cs_list = sim_cfg.get("callsigns")
+        self._multi = bool(sim_cfg.get("multi_station")) \
+            or isinstance(cs_list, list)
+        self._stations: list = []
+        if self._multi:
+            calls = (list(cs_list) if isinstance(cs_list, list) and cs_list
+                     else list(DEMO_CALLSIGNS))
+            if callsign not in calls:
+                calls.insert(0, callsign)   # Heimatstation immer dabei
+            # Genau eine Station darf Emergency senden (wenn aktiviert)
+            emerg_station = calls[-1] if self._emerg else None
+            for c in calls:
+                ci = assign_channel(c)
+                ch = ci[0] if isinstance(ci, (tuple, list)) else int(ci)
+                self._stations.append({
+                    "call":     c,
+                    "channel":  ch,
+                    "next_due": now + random.uniform(2.0, 25.0),
+                    "emerg":    (c == emerg_station),
+                })
+
         # Beim Start sofort den ersten Frame fällig machen
+        # (Einzelstation-Modus — bei multi_station übernimmt _stations)
         self._next: dict[str, float] = {}
-        if self._weather_iv:
-            self._next["weather"]  = now + 5.0
-        if self._position_iv:
-            self._next["position"] = now + 10.0
-        if self._text_iv:
-            self._next["text"]     = now + 20.0
-        if self._emerg_iv:
-            self._next["emerg"]    = now + 30.0
+        if not self._multi:
+            if self._weather_iv:
+                self._next["weather"]  = now + 5.0
+            if self._position_iv:
+                self._next["position"] = now + 10.0
+            if self._text_iv:
+                self._next["text"]     = now + 20.0
+            if self._emerg_iv:
+                self._next["emerg"]    = now + 30.0
+
+    def _make_station_frame(self, st: dict) -> dict:
+        """Zufälligen Frame-Typ für eine Multi-Station-Demo-Station wählen."""
+        c, ch = st["call"], st["channel"]
+        choices = [("weather", 40)]
+        if c not in _NO_POSITION_CALLS:
+            choices.append(("position", 30))
+        choices.append(("text", 15))
+        choices.append(("tlm", 10))
+        if st["emerg"]:
+            choices.append(("emerg", 5))
+        kinds, weights = zip(*choices)
+        kind = random.choices(kinds, weights=weights, k=1)[0]
+        if kind == "weather":
+            return _make_weather(c, ch)
+        if kind == "position":
+            return _make_position(c, ch, self._lat, self._lon,
+                                  self._alt_m, True)
+        if kind == "text":
+            return _make_text(c, ch)
+        if kind == "tlm":
+            return _make_station_tlm(c, ch)
+        return _make_emergency(c, ch, self._lat, self._lon)
 
     def read_all_due(self) -> list:
         """Gibt alle jetzt fälligen Frames zurück und plant den nächsten Zeitpunkt."""
         now    = time.monotonic()
         frames = []
+
+        # ── Multi-Station-Modus ───────────────────────────────────────
+        if self._multi:
+            for st in self._stations:
+                if now < st["next_due"]:
+                    continue
+                frames.append(self._make_station_frame(st))
+                st["next_due"] = now + random.uniform(20.0, 60.0)
+            return frames
 
         if "weather" in self._next and now >= self._next["weather"]:
             frames.append(_make_weather(self._callsign, self._channel))
@@ -221,10 +315,12 @@ class SimAdapter:
 
     def next_due_in(self) -> Optional[float]:
         """Sekunden bis zum nächsten fälligen Frame (None wenn nichts geplant)."""
-        if not self._next:
+        pending = list(self._next.values()) \
+                + [st["next_due"] for st in self._stations]
+        if not pending:
             return None
         now = time.monotonic()
-        soonest = min(self._next.values()) - now
+        soonest = min(pending) - now
         return max(0.0, soonest)
 
 

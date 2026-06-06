@@ -1006,6 +1006,97 @@ dort läuft Audio über USB-Device-Passthrough mit `--device /dev/snd`.
 
 ---
 
+## 22. Lesson Learned: Shortened RS und FEC-Trade-off (Juni 2026)
+
+### Ausgangslage
+
+SNR-Sweep-Stresstest (Schicht 4) zeigte FEC-Cliff bei ~−12 dB
+(Mehrkanal, 8 Kanäle gleichzeitig). Als Verbesserungsmaßnahme wurde
+RS(255,223) → RS(255,191) evaluiert (32 → 64 Byte Overhead,
+16 → 32 korrigierbare Byte-Fehler).
+
+### Der Denkfehler: Annahme eines fixen 255-Byte-Blocks
+
+Die fehlerhafte Annahme war: "Der RS-Block ist immer 255 Byte groß —
+mehr Overhead bedeutet nur eine andere interne Aufteilung, die
+Sendedauer bleibt konstant."
+
+Das gilt für **full-length RS** wo tatsächlich immer 255 Byte
+übertragen werden. GUST verwendet aber **shortened RS**.
+
+### Was Shortened RS tatsächlich überträgt
+
+Bei shortened RS wird nur so viel übertragen wie nötig:
+
+```
+Übertragene Bytes = Payload + 8 (Header: TYPE+CHANNEL+FROM+CRC) + RS_OVERHEAD
+```
+
+Beispiel WEATHER-Frame (14 Byte Payload, vgl. §5):
+
+```
+RS(255,223): 14 + 8 + 32 = 54 Byte übertragen  → 4,86 s Sendedauer
+RS(255,191): 14 + 8 + 64 = 86 Byte übertragen  → 7,62 s Sendedauer
+```
+
+Das ist +59 % mehr Bytes — und damit +57 % mehr Sendezeit
+(der fixe SYNC-Anteil dämpft die Verlängerung minimal).
+
+### Auswirkung auf alle Frame-Typen
+
+Sendedauer = (⌈Bytes·8/3⌉ + 8 SYNC) × 32 ms:
+
+| Frame-Typ    | Payload | RS(255,223)     | RS(255,191)     | Verlängerung |
+|---|---|---|---|---|
+| CQ           |  5 Byte | 45 B → 4,10 s | 77 B → 6,85 s |    +67 %     |
+| EMERG_RSRC   |  8 Byte | 48 B → 4,35 s | 80 B → 7,10 s |    +63 %     |
+| STATION_TLM  | 10 Byte | 50 B → 4,54 s | 82 B → 7,26 s |    +60 %     |
+| WEATHER      | 14 Byte | 54 B → 4,86 s | 86 B → 7,62 s |    +57 %     |
+| POSITION     | 18 Byte | 58 B → 5,22 s | 90 B → 7,94 s |    +52 %     |
+| EMERG_BEACON | 20 Byte | 60 B → 5,38 s | 92 B → 8,13 s |    +51 %     |
+| TEXT         | 20 Byte | 60 B → 5,38 s | 92 B → 8,13 s |    +51 %     |
+
+(8,13 s für TEXT unter RS(255,191) im Stresstest vom 06.06.2026 gemessen ✓)
+
+Folgewirkung: Die längsten Frames (~8,1 s) verletzen die
+Vollfenster-Garantie aus §16 (`WINDOW_S 9,0 ≥ MAX_FRAME_S 5,5 + 2,0`) —
+ein RS-Upgrade müsste `MAX_FRAME_S` auf ~8,5 und `WINDOW_S` auf ≥ 11 s
+anheben. Im Stresstest brach die Dekodierrate ohne diese Anpassung
+von 87,5 % auf 25 % ein (mit 12-s-Fenster: 81,2 %).
+
+### Bewertung und Entscheidung
+
+Der Trade-off ist eindeutig ungünstig:
+
+- **Kosten:** +51–67 % längere Aussendedauer je Frame-Typ,
+  dazu größere RX-Fenster (mehr Latenz, mehr Contention pro Fenster, BUG-08)
+- **Nutzen:** ~3–5 dB bessere SNR-Schwelle (synthetischer Stresstest)
+
+Die kurze Aussendedauer ist eine **Kerneigenschaft von GUST** —
+kompakte Frames für Telemetrie und Notfunk sind das zentrale Design-Ziel.
+Eine um 50–70 % längere Sendezeit für eine marginale FEC-Verbesserung
+stellt dieses Ziel in Frage.
+
+**Entscheidung: RS(255,223) bleibt. Kein FEC-Upgrade.**
+
+### Was der Stresstest-Cliff tatsächlich bedeutet
+
+Der FEC-Cliff bei −12 dB im Mehrkanal-Stresstest ist kein Defekt,
+sondern ein korrekter Messwert unter spezifischen Bedingungen:
+8 gleichzeitige Kanäle, je ×(1/8) Amplitude → effektiv −18 dB
+weniger SNR pro Kanal als bei Einzel-TX. Der On-Air-Test T-10.2
+(Einzel-TX) zeigte ≤ 10 dB Schwelle — das ist der relevante Wert
+für den Realbetrieb.
+
+### Merksatz
+
+> **Bei shortened RS skaliert die Sendedauer linear mit dem
+> RS-Overhead.** Kleine Payloads (< 50 Byte) profitieren nicht
+> von der 255-Byte-Block-Effizienz — jedes zusätzliche
+> Paritätsbyte kostet direkt Airtime.
+
+---
+
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
 *Stand: Juni 2026 — Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Connector-Konzept · Microham-Konfiguration · Docker-Deployment*

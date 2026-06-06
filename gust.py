@@ -179,9 +179,35 @@ class _GustStreamHandler(logging.StreamHandler):
     dort "" zurück (Seiteneffekt: _StatusLine.write() malt die \r-Zeile),
     aber StreamHandler.emit() würde sonst "" + "\n" schreiben — eine
     Leerzeile nach dem \r, die die überschreibende Statuszeile zerstört.
+
+    Quiet-Mode (Standard, ohne --verbose): Meldungen unter `display_level`
+    werden unterdrückt — AUSSER betriebsrelevante Events (TX ▶, RX ◀,
+    DRY-RUN, RX-Heartbeat, Web-Server-Start), die immer sichtbar bleiben.
+    Wichtig: Die Filterung passiert hier im Handler (nicht am Root-Logger),
+    damit INFO-Records weiterhin den EventBusLogHandler für /ws/log erreichen.
+    `display_level` wird von setup_logging() gesetzt:
+    DEBUG (--verbose, alles sichtbar) oder WARNING (Quiet-Mode).
     """
+    display_level = logging.DEBUG   # Default: alles durchlassen
+
+    @staticmethod
+    def _is_operational(record: logging.LogRecord) -> bool:
+        """Betriebsrelevante Meldungen, die im Quiet-Mode sichtbar bleiben."""
+        msg = record.getMessage()
+        return (
+            "gesendet auf Kanal" in msg       # TX ▶ (gust.gateway)
+            or "[RX] ✓ Frame" in msg          # RX ◀ dekodierter Frame
+            or "DRY-RUN" in msg               # DRY (TX ohne Audio/PTT)
+            or "Scans ohne Frame" in msg      # RX-Heartbeat (Statuszeile)
+            or "Web-Server gestartet" in msg  # einmalige Startmeldung
+        )
+
     def emit(self, record: logging.LogRecord) -> None:
         try:
+            # Quiet-Mode: unterhalb display_level nur betriebsrelevante Events
+            if record.levelno < self.display_level \
+                    and not self._is_operational(record):
+                return
             msg = self.format(record)
             if not msg:
                 return
@@ -287,11 +313,18 @@ def setup_logging(verbose: bool, bus: Optional[EventBus] = None) -> None:
     """
     Python-Logging konfigurieren.
     - Farbiger GustFormatter für Terminal-Ausgabe
+    - Quiet-Mode (Standard): Konsole zeigt nur TX/RX/DRY/Heartbeat/Warnungen;
+      --verbose zeigt alles (DEBUG aufwärts)
     - aiohttp.access auf WARNING → kein HTTP-Poll-Spam
     - aiohttp.server auf WARNING → kein Connection-Spam
     - Optionaler EventBus-Handler für Web-GUI /ws/log
     """
+    # Root-Logger bleibt auch im Quiet-Mode auf INFO: die Records müssen
+    # den _GustStreamHandler (Allowlist TX/RX) und den EventBusLogHandler
+    # (/ws/log im Web-UI) erreichen. Die Konsolen-Reduktion macht
+    # _GustStreamHandler.display_level — NICHT der Logger-Level.
     level = logging.DEBUG if verbose else logging.INFO
+    display_level = logging.DEBUG if verbose else logging.WARNING
 
     # Root-Logger: GustFormatter auf stderr
     root = logging.getLogger()
@@ -301,6 +334,7 @@ def setup_logging(verbose: bool, bus: Optional[EventBus] = None) -> None:
         handler = _GustStreamHandler(sys.stderr)
         handler.setFormatter(GustFormatter())
         handler.addFilter(_SkipEmptyFilter())
+        handler.display_level = display_level
         root.addHandler(handler)
     else:
         # basicConfig wurde bereits aufgerufen — Handler ersetzen
@@ -308,6 +342,7 @@ def setup_logging(verbose: bool, bus: Optional[EventBus] = None) -> None:
         handler = _GustStreamHandler(sys.stderr)
         handler.setFormatter(GustFormatter())
         handler.addFilter(_SkipEmptyFilter())
+        handler.display_level = display_level
         root.addHandler(handler)
 
     # aiohttp-Spam unterdrücken
@@ -421,6 +456,15 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
         sim_cfg = cfg["source"].get("sim", {})
         sim_cfg.setdefault("lat",   cfg["source"].get("lat",   48.2082))
         sim_cfg.setdefault("lon",   cfg["source"].get("lon",   16.3738))
+        # Multi-Station-Demo: belebtes Netz auf allen 8 Kanälen.
+        # setdefault → gateway.json kann mit "multi_station": false /
+        # eigener "callsigns"-Liste übersteuern.
+        sim_cfg.setdefault("multi_station", True)
+        sim_cfg.setdefault("callsigns", [
+            cfg["callsign"],
+            "OE1XTU", "OE3GAT", "OE5RFP", "OE4XLC",
+            "OE7DBH", "OE2XGR", "OE9XPI", "OE1KFR",
+        ])
         adapter = SimAdapter(sim_cfg, callsign=cfg["callsign"])
         source_label = "SimAdapter"
     else:
@@ -454,10 +498,13 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
     # damit Frequenz-Polling, PTT und Profil-Wechsel ab dem ersten Moment
     # funktionieren. Handle → server._rigctld_proc damit _managed_rigctld_pid()
     # den Prozess kennt und kein Konflikt-Dialog erscheint.
+    # Im --sim-Modus wird kein TX ausgeführt und kein Funkgerät benötigt —
+    # rigctld-Start wäre sinnlos und erzeugt Fehlermeldungen ohne Gerät.
     _audio_cfg = cfg.get("audio", {})
     if (_audio_cfg.get("ptt_backend") == "hamlib"
             and cfg.get("rigctld", {}).get("auto_start", False)
-            and not dry_run):
+            and not dry_run
+            and not use_sim):
         try:
             from gust_audio import ensure_rigctld_running
             _loop = asyncio.get_running_loop()
@@ -498,6 +545,8 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
         while True:
             # Fällige Frames vom Adapter holen und in den Bus publishen
             for frame in adapter.read_all_due():
+                # Sendezeitstempel wie bei echten RX-Frames (Swimlane/Session)
+                frame["tx_start_s"] = time.monotonic()
                 event = make_rx_frame_event(frame)
                 await bus.publish(event)
                 log.info("SIM-TX: [P%d] %s von %s",
@@ -998,7 +1047,7 @@ Beispiele:
     parser.add_argument("--version", action="version", version=f"GUST {VERSION}")
 
     sub = parser.add_subparsers(dest="cmd", metavar="SUBCOMMAND")
-    sub.required = True
+    sub.required = False   # kein Subcommand → daemon (siehe main())
 
     # Hilfs-Funktion: --device/--level zu einem Subparser hinzufügen
     def _add_audio_args(p):
@@ -1101,12 +1150,17 @@ Beispiele:
 def main() -> None:
     parser = build_parser()
 
-    # No-Args-Hint — vor parse_args(), damit Sub-Required nicht zuerst greift
     if len(sys.argv) == 1:
-        print("Verwendung: python gust.py -h  oder  --help  für Parameterübersicht")
-        sys.exit(0)
+        # Kein Subcommand → daemon starten (Standardverhalten)
+        sys.argv.append("daemon")
 
     args   = parser.parse_args()
+
+    # Nur globale Flags ohne Subcommand (z.B. `gust.py --sim`) → ebenfalls daemon.
+    # Daemon-spezifische Attribute (--port/--frames/--interval) fehlen dann;
+    # der Dispatch unten greift überall via hasattr/getattr darauf zu.
+    if args.cmd is None:
+        args.cmd = "daemon"
 
     # Logging früh initialisieren (ohne Bus, wird bei daemon/rx neu gesetzt)
     setup_logging(args.verbose)
