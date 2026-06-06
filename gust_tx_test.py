@@ -122,7 +122,7 @@ def load_gateway_config(path: str = GATEWAY_JSON) -> dict:
         print(f"[Warnung] {path} konnte nicht gelesen werden: {e}", flush=True)
         return defaults
 
-    audio = cfg.get("audio") or {}
+    audio = cfg.get("tx_audio") or cfg.get("audio") or {}
 
     if cfg.get("callsign"):
         defaults["callsign"] = str(cfg["callsign"]).upper().strip()

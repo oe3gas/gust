@@ -184,7 +184,8 @@ class TxGateway:
         self._dry_run    = dry_run
 
         self._callsign   = cfg.get("callsign", "OE3GAS")
-        self._audio_cfg  = cfg.get("audio", {})
+        # Neues Format "tx_audio", Fallback altes "audio"
+        self._audio_cfg  = cfg.get("tx_audio") or cfg.get("audio") or {}
 
         gw_cfg           = cfg.get("gateway", {})
         self._min_tx_gap = float(gw_cfg.get("min_tx_gap_s", 10))

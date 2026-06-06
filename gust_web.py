@@ -1031,6 +1031,16 @@ h2:first-child { margin-top: 0; }
           <option value="hamlib">hamlib</option>
         </select>
       </div>
+      <div class="audio-cfg-row">
+        <label>Deep Decoding</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="cfg-deep-decode" data-saved="0"
+                 style="accent-color:var(--accent)">
+          <span style="color:var(--text2);font-size:var(--fs-xs)">
+            Größere Fenster — liefert verpasste Frames mit ~15s Verzögerung nach
+          </span>
+        </label>
+      </div>
       <div class="audio-cfg-note" data-i18n-html="cfg.audio.info.html">
         <b>TX-Wechsel</b> wirkt sofort beim nächsten Sendevorgang.
         <b>RX-Wechsel</b> erfordert einen Neustart des Daemons —
@@ -1079,6 +1089,125 @@ h2:first-child { margin-top: 0; }
       </div>
       <div id="trx-profile-active" style="font-size:var(--fs-xs);color:var(--text2);
            margin-bottom:10px;display:none;">
+      </div>
+
+      <!-- ── Profil bearbeiten / neu anlegen ── -->
+      <div style="margin-top:16px;border-top:1px solid var(--border);
+                  padding-top:14px;margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;
+                    align-items:center;margin-bottom:10px">
+          <span style="font-weight:600;color:var(--text)">
+            Profil bearbeiten / Neu anlegen
+          </span>
+          <button class="btn secondary" onclick="trxNewProfile()"
+                  style="font-size:var(--fs-sm)">+ Neu</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;
+                    gap:8px 16px">
+
+          <label style="color:var(--text2);font-size:var(--fs-sm)">
+            Profilname
+            <input id="trx-edit-name" type="text" placeholder="z.B. IC-7610"
+                   style="display:block;width:100%;margin-top:3px;
+                          background:var(--bg2);color:var(--text);
+                          border:1px solid var(--border);border-radius:4px;
+                          padding:4px 8px">
+          </label>
+
+          <label style="color:var(--text2);font-size:var(--fs-sm)">
+            Rig-Modell (Hamlib-ID)
+            <input id="trx-edit-rigmodel" type="number" placeholder="3078"
+                   style="display:block;width:100%;margin-top:3px;
+                          background:var(--bg2);color:var(--text);
+                          border:1px solid var(--border);border-radius:4px;
+                          padding:4px 8px">
+          </label>
+
+          <label style="color:var(--text2);font-size:var(--fs-sm)">
+            COM-Port
+            <input id="trx-edit-device" type="text" placeholder="COM11"
+                   style="display:block;width:100%;margin-top:3px;
+                          background:var(--bg2);color:var(--text);
+                          border:1px solid var(--border);border-radius:4px;
+                          padding:4px 8px">
+          </label>
+
+          <label style="color:var(--text2);font-size:var(--fs-sm)">
+            Baudrate
+            <select id="trx-edit-baud"
+                    style="display:block;width:100%;margin-top:3px;
+                           background:var(--bg2);color:var(--text);
+                           border:1px solid var(--border);border-radius:4px;
+                           padding:4px 8px">
+              <option value="4800">4800</option>
+              <option value="9600">9600</option>
+              <option value="19200" selected>19200</option>
+              <option value="38400">38400</option>
+              <option value="57600">57600</option>
+            </select>
+          </label>
+
+          <label style="color:var(--text2);font-size:var(--fs-sm)">
+            TX-Audiogerät (ID)
+            <input id="trx-edit-tx-dev" type="number" placeholder="14"
+                   style="display:block;width:100%;margin-top:3px;
+                          background:var(--bg2);color:var(--text);
+                          border:1px solid var(--border);border-radius:4px;
+                          padding:4px 8px">
+          </label>
+
+          <label style="color:var(--text2);font-size:var(--fs-sm)">
+            RX-Audiogerät (ID, leer = wie TX)
+            <input id="trx-edit-rx-dev" type="number" placeholder="2"
+                   style="display:block;width:100%;margin-top:3px;
+                          background:var(--bg2);color:var(--text);
+                          border:1px solid var(--border);border-radius:4px;
+                          padding:4px 8px">
+          </label>
+
+          <label style="color:var(--text2);font-size:var(--fs-sm)">
+            PTT-Delay ms
+            <input id="trx-edit-ptt-delay" type="number"
+                   value="250" min="0" max="2000"
+                   style="display:block;width:100%;margin-top:3px;
+                          background:var(--bg2);color:var(--text);
+                          border:1px solid var(--border);border-radius:4px;
+                          padding:4px 8px">
+          </label>
+
+          <label style="color:var(--text2);font-size:var(--fs-sm)">
+            TX-Pegel (1–100)
+            <input id="trx-edit-level" type="number"
+                   value="30" min="1" max="100"
+                   style="display:block;width:100%;margin-top:3px;
+                          background:var(--bg2);color:var(--text);
+                          border:1px solid var(--border);border-radius:4px;
+                          padding:4px 8px">
+          </label>
+
+          <label style="color:var(--text2);font-size:var(--fs-sm);
+                        grid-column:span 2">
+            Notiz / Kommentar (optional)
+            <input id="trx-edit-comment" type="text"
+                   placeholder="z.B. ACC-Eingang, Pegel 40%"
+                   style="display:block;width:100%;margin-top:3px;
+                          background:var(--bg2);color:var(--text);
+                          border:1px solid var(--border);border-radius:4px;
+                          padding:4px 8px">
+          </label>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn" onclick="trxSaveProfile()"
+                  style="flex:1">💾 Profil speichern</button>
+          <button class="btn secondary" onclick="trxDeleteProfile()"
+                  id="trx-delete-btn"
+                  style="color:var(--red)">🗑 Löschen</button>
+        </div>
+        <div id="trx-edit-msg"
+             style="font-size:var(--fs-sm);margin-top:6px;
+                    color:var(--text2);min-height:1.2em"></div>
       </div>
       <div class="hamlib-status-row" id="hamlib-status-row" style="display:none;margin-bottom:12px;">
         <div class="hamlib-status-dot" id="hamlib-status-dot"></div>
@@ -1152,6 +1281,123 @@ h2:first-child { margin-top: 0; }
   <!-- ── Unterseite: SDR-TX ── -->
   <div id="cfg-sdr" class="cfg-subpanel">
     <div class="audio-cfg-card sdr-cfg-card">
+
+      <!-- ── SDR-Profile ── -->
+      <div style="margin-bottom:16px;padding-bottom:14px;
+                  border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;
+                    align-items:center;margin-bottom:10px">
+          <span style="font-weight:600;color:var(--text)">
+            SDR-Geräte &amp; Profile
+          </span>
+          <button class="btn secondary" onclick="sdrScan()"
+                  id="sdr-scan-btn">🔍 Geräte scannen</button>
+        </div>
+
+        <!-- Gefundene Geräte -->
+        <div id="sdr-devices-list"
+             style="font-size:var(--fs-sm);color:var(--text2);
+                    margin-bottom:10px">
+          Noch kein Scan durchgeführt.
+        </div>
+
+        <!-- Aktive Profile -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;
+                    gap:8px 16px;margin-bottom:10px">
+          <label style="color:var(--text2);font-size:var(--fs-sm)">
+            Aktives RX-Profil
+            <select id="sdr-active-rx"
+                    onchange="sdrActivate('rx',this.value)"
+                    style="display:block;width:100%;margin-top:3px;
+                           background:var(--bg2);color:var(--text);
+                           border:1px solid var(--border);
+                           border-radius:4px;padding:4px 8px">
+              <option value="">(keines — Audio/VAC)</option>
+            </select>
+          </label>
+          <label style="color:var(--text2);font-size:var(--fs-sm)">
+            Aktives TX-Profil
+            <select id="sdr-active-tx"
+                    onchange="sdrActivate('tx',this.value)"
+                    style="display:block;width:100%;margin-top:3px;
+                           background:var(--bg2);color:var(--text);
+                           border:1px solid var(--border);
+                           border-radius:4px;padding:4px 8px">
+              <option value="">(keines — Audio-TX-Pfad)</option>
+            </select>
+          </label>
+        </div>
+
+        <!-- Profil bearbeiten -->
+        <details style="margin-top:8px">
+          <summary style="cursor:pointer;color:var(--text2);
+                          font-size:var(--fs-sm);user-select:none">
+            ▸ Profil bearbeiten / Neu anlegen
+          </summary>
+          <div style="margin-top:10px;display:grid;
+                      grid-template-columns:1fr 1fr;gap:8px 16px">
+            <label style="color:var(--text2);font-size:var(--fs-sm)">
+              Profilname
+              <input id="sdr-edit-name" type="text"
+                     placeholder="z.B. HackRF"
+                     style="display:block;width:100%;margin-top:3px;
+                            background:var(--bg2);color:var(--text);
+                            border:1px solid var(--border);
+                            border-radius:4px;padding:4px 8px">
+            </label>
+            <label style="color:var(--text2);font-size:var(--fs-sm)">
+              Typ (automatisch)
+              <input id="sdr-edit-type" type="text" readonly
+                     placeholder="aus Scan"
+                     style="display:block;width:100%;margin-top:3px;
+                            background:var(--bg2);color:var(--text2);
+                            border:1px solid var(--border);
+                            border-radius:4px;padding:4px 8px;
+                            opacity:0.7">
+            </label>
+            <label style="color:var(--text2);font-size:var(--fs-sm)">
+              Treiber
+              <input id="sdr-edit-driver" type="text"
+                     placeholder="hackrf / rtlsdr / sdrplay"
+                     style="display:block;width:100%;margin-top:3px;
+                            background:var(--bg2);color:var(--text);
+                            border:1px solid var(--border);
+                            border-radius:4px;padding:4px 8px">
+            </label>
+            <label style="color:var(--text2);font-size:var(--fs-sm)">
+              Serial (leer = erstes Gerät)
+              <input id="sdr-edit-serial" type="text"
+                     placeholder="optional"
+                     style="display:block;width:100%;margin-top:3px;
+                            background:var(--bg2);color:var(--text);
+                            border:1px solid var(--border);
+                            border-radius:4px;padding:4px 8px">
+            </label>
+            <label style="color:var(--text2);font-size:var(--fs-sm);
+                          grid-column:span 2">
+              Notiz
+              <input id="sdr-edit-comment" type="text"
+                     placeholder="optional"
+                     style="display:block;width:100%;margin-top:3px;
+                            background:var(--bg2);color:var(--text);
+                            border:1px solid var(--border);
+                            border-radius:4px;padding:4px 8px">
+            </label>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn" onclick="sdrSaveProfile()"
+                    style="flex:1">💾 Profil speichern</button>
+            <button class="btn secondary"
+                    onclick="sdrDeleteProfile()"
+                    style="color:var(--red)">
+              🗑 Löschen</button>
+          </div>
+          <div id="sdr-edit-msg"
+               style="font-size:var(--fs-sm);margin-top:6px;
+                      color:var(--text2);min-height:1.2em"></div>
+        </details>
+      </div>
+
       <div class="audio-cfg-row">
         <label class="toggle-sw" style="width:auto;cursor:pointer;">
           <input type="checkbox" id="sdr-enabled">
@@ -1907,6 +2153,12 @@ async function loadAudioConfig() {
     const pttSel = document.getElementById('cfg-ptt');
     if (pttSel && cur.ptt_backend) pttSel.value = cur.ptt_backend;
 
+    const deepCb = document.getElementById('cfg-deep-decode');
+    if (deepCb) {
+      deepCb.checked = !!cur.deep_decode;
+      deepCb.dataset.saved = cur.deep_decode ? '1' : '0';
+    }
+
     if (statusEl && cur.writable === false) {
       statusEl.style.color = 'var(--orange)';
       statusEl.textContent = '⚠ Schreiben deaktiviert — kein config_path bekannt.';
@@ -1923,6 +2175,9 @@ async function saveAudioConfig() {
   const inSel  = document.getElementById('cfg-audio-in')?.value  ?? '';
   const outSel = document.getElementById('cfg-audio-out')?.value ?? '';
   const ptt    = document.getElementById('cfg-ptt')?.value || 'null';
+  const deepCb = document.getElementById('cfg-deep-decode');
+  const deepChanged = deepCb
+    && (deepCb.checked ? '1' : '0') !== deepCb.dataset.saved;
   // Leer = null (= Standard / wie TX bei RX)
   const body = {
     audio: {
@@ -1930,6 +2185,7 @@ async function saveAudioConfig() {
       output: outSel === '' ? null : parseInt(outSel, 10),
     },
     ptt: { backend: ptt },
+    rx:  { deep_decode: !!(deepCb && deepCb.checked) },
   };
 
   const statusEl = document.getElementById('cfg-audio-status');
@@ -1940,9 +2196,16 @@ async function saveAudioConfig() {
       body: JSON.stringify(body),
     });
     if (statusEl) {
-      statusEl.style.color = 'var(--green)';
-      statusEl.textContent = '✓ ' + (r.message || 'Konfiguration gespeichert');
+      if (deepChanged) {
+        statusEl.style.color = 'var(--orange)';
+        statusEl.textContent = '✓ Gespeichert — Neustart erforderlich um '
+          + 'Deep Decoding zu ' + (deepCb.checked ? 'aktivieren.' : 'deaktivieren.');
+      } else {
+        statusEl.style.color = 'var(--green)';
+        statusEl.textContent = '✓ ' + (r.message || 'Konfiguration gespeichert');
+      }
     }
+    if (deepCb) deepCb.dataset.saved = deepCb.checked ? '1' : '0';
     loadStatus();   // Status-Karten (Audio-Gerät, PTT) auffrischen
   } catch (e) {
     if (statusEl) {
@@ -1962,6 +2225,148 @@ const sdrState = {
   caps:    null, // {gain_overall, sample_rates, antennas, …}
   saved:   null, // gespeicherter sdr_tx-Block (vom Server)
 };
+
+// ── SDR-PROFILE (Schritt 3 — analog zu TRX-Profilen) ────────────────
+
+let _sdrScanDevices = [];   // Cache des letzten /api/sdr/scan
+
+async function sdrScan() {
+  const btn  = document.getElementById('sdr-scan-btn');
+  const list = document.getElementById('sdr-devices-list');
+  if (btn) btn.disabled = true;
+  list.textContent = 'Suche läuft…';
+  try {
+    const res = await apiFetch('/api/sdr/scan');
+    if (!res.available) {
+      list.textContent = 'SoapySDR nicht installiert.';
+      return;
+    }
+    _sdrScanDevices = res.devices || [];
+    if (_sdrScanDevices.length === 0) {
+      list.textContent = 'Keine SDR-Geräte gefunden.';
+    } else {
+      list.innerHTML = _sdrScanDevices.map((d, i) => {
+        const caps = [];
+        if (d.rx_capable) caps.push('RX');
+        if (d.tx_capable) caps.push('TX');
+        const badge = caps.length
+          ? `<span style="color:var(--green)">${caps.join('+')}</span>`
+          : '<span style="color:var(--text2)">?</span>';
+        const err = d.probe_error
+          ? ` <span style="color:var(--red)">⚠ ${_esc(d.probe_error)}</span>`
+          : '';
+        return `<div style="margin-bottom:4px">`
+          + `<b>${_esc(d.label)}</b> ${badge}`
+          + (d.serial ? ` · ${_esc(d.serial)}` : '')
+          + err
+          + ` <button class="btn secondary" `
+          + `style="font-size:var(--fs-xs);padding:1px 6px;margin-left:6px" `
+          + `onclick="sdrFillFromDevice(${i})">Übernehmen</button></div>`;
+      }).join('');
+    }
+    // Dropdowns aktualisieren
+    sdrUpdateDropdowns(res.profiles, res.active_rx, res.active_tx);
+  } catch(e) {
+    list.textContent = 'Fehler: ' + (e.message || e);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function sdrFillFromDevice(idx) {
+  // Formular mit gescanntem Gerät befüllen (Index in _sdrScanDevices)
+  const d = _sdrScanDevices[idx];
+  if (!d) return;
+  const n = document.getElementById('sdr-edit-name');
+  if (n && !n.value) n.value = d.label || d.driver || '';
+  const t = document.getElementById('sdr-edit-type');
+  if (t) t.value = d.type || '';
+  const dr = document.getElementById('sdr-edit-driver');
+  if (dr) dr.value = d.driver || '';
+  const s = document.getElementById('sdr-edit-serial');
+  if (s) s.value = d.serial || '';
+}
+
+function sdrUpdateDropdowns(profiles, activeRx, activeTx) {
+  ['rx','tx'].forEach(dir => {
+    const sel = document.getElementById('sdr-active-' + dir);
+    if (!sel) return;
+    // Bestehende Optionen außer der leeren entfernen
+    while (sel.options.length > 1) sel.remove(1);
+    (profiles || []).forEach(p => {
+      const ok = dir === 'rx'
+        ? ['rx','trx'].includes(p.type)
+        : ['tx','trx'].includes(p.type);
+      if (!ok) return;
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.name
+        + (p._comment ? ' — ' + p._comment : '');
+      sel.appendChild(opt);
+    });
+    sel.value = (dir === 'rx' ? activeRx : activeTx) || '';
+  });
+}
+
+async function sdrActivate(dir, name) {
+  try {
+    await apiFetch('/api/sdr/profile/activate/' + dir, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name: name || null })
+    });
+  } catch(e) {
+    alert('Fehler: ' + (e.message || e));
+  }
+}
+
+async function sdrSaveProfile() {
+  const msg  = document.getElementById('sdr-edit-msg');
+  const name = document.getElementById('sdr-edit-name').value.trim();
+  if (!name) { msg.textContent = 'Profilname fehlt.'; return; }
+  const body = {
+    name,
+    type:    document.getElementById('sdr-edit-type').value.trim()
+             || 'rx',
+    driver:  document.getElementById('sdr-edit-driver').value.trim(),
+    serial:  document.getElementById('sdr-edit-serial').value.trim()
+             || undefined,
+    _comment: document.getElementById('sdr-edit-comment').value.trim()
+             || undefined,
+  };
+  try {
+    const res = await apiFetch('/api/sdr/profile/save', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    msg.textContent = res.message || 'Gespeichert.';
+    msg.style.color = 'var(--green)';
+    await sdrScan();
+  } catch(e) {
+    msg.textContent = e.message || 'Fehler.';
+    msg.style.color = 'var(--red)';
+  }
+}
+
+async function sdrDeleteProfile() {
+  const name = document.getElementById('sdr-edit-name').value.trim();
+  if (!name) return;
+  if (!confirm('SDR-Profil "' + name + '" löschen?')) return;
+  const msg = document.getElementById('sdr-edit-msg');
+  try {
+    const res = await apiFetch(
+      '/api/sdr/profile?name=' + encodeURIComponent(name),
+      { method: 'DELETE' });
+    msg.textContent = res.message || 'Gelöscht.';
+    msg.style.color = 'var(--green)';
+    document.getElementById('sdr-edit-name').value = '';
+    await sdrScan();
+  } catch(e) {
+    msg.textContent = e.message || 'Fehler.';
+    msg.style.color = 'var(--red)';
+  }
+}
 
 function _sdrArgsKey(args) {
   // Stabiler Schlüssel für ein <option value>: driver + identity-Feld.
@@ -2370,6 +2775,10 @@ function loadTrxProfiles() {
       info.style.display = 'block';
       info.textContent   = `Aktives Profil: ${active}`;
     }
+    // Bearbeitungsformular mit der aktuellen Auswahl befüllen
+    const current = profiles.find(p => p.name === (sel?.value || active))
+                    || profiles[0];
+    if (current) trxFillEditForm(current);
   }).catch(() => {});
 }
 
@@ -2379,6 +2788,7 @@ function onTrxProfileChange(name) {
   // Profilwerte sofort in Formular anzeigen (Vorschau vor Aktivieren)
   const p = _trxProfiles.find(x => x.name === name);
   if (!p) return;
+  trxFillEditForm(p);   // Bearbeitungsformular mitziehen
   // Serieller Port
   const portSel = document.getElementById('hamlib-port');
   if (portSel && p.device) {
@@ -2404,6 +2814,101 @@ function onTrxProfileChange(name) {
   }
   // Baudrate
   if (p.baud) document.getElementById('hamlib-baud').value = String(p.baud);
+}
+
+// ── TRX-Profil-Verwaltung (Anlegen / Bearbeiten / Löschen) ──────────
+
+function trxFillEditForm(profile) {
+  // Formular mit Profildaten füllen
+  document.getElementById('trx-edit-name').value =
+    profile.name || '';
+  document.getElementById('trx-edit-rigmodel').value =
+    profile.rig_model || '';
+  document.getElementById('trx-edit-device').value =
+    profile.device || '';
+  const baudSel = document.getElementById('trx-edit-baud');
+  if (baudSel) baudSel.value = String(profile.baud || 19200);
+  document.getElementById('trx-edit-tx-dev').value =
+    profile.audio_device_tx ?? '';
+  document.getElementById('trx-edit-rx-dev').value =
+    profile.audio_device_rx ?? '';
+  document.getElementById('trx-edit-ptt-delay').value =
+    profile.ptt_delay_ms ?? 250;
+  document.getElementById('trx-edit-level').value =
+    profile.level ?? 30;
+  document.getElementById('trx-edit-comment').value =
+    profile._comment || '';
+}
+
+function trxNewProfile() {
+  // Formular leeren für ein neues Profil
+  trxFillEditForm({});
+  document.getElementById('trx-edit-name').focus();
+  document.getElementById('trx-edit-msg').textContent = '';
+}
+
+async function trxSaveProfile() {
+  const msg = document.getElementById('trx-edit-msg');
+  const name = document.getElementById('trx-edit-name').value.trim();
+  if (!name) { msg.textContent = 'Profilname fehlt.'; return; }
+
+  const body = {
+    name,
+    rig_model:      parseInt(document.getElementById('trx-edit-rigmodel').value) || 0,
+    device:         document.getElementById('trx-edit-device').value.trim(),
+    baud:           parseInt(document.getElementById('trx-edit-baud').value) || 19200,
+    audio_device_tx: document.getElementById('trx-edit-tx-dev').value !== ''
+                     ? parseInt(document.getElementById('trx-edit-tx-dev').value)
+                     : null,
+    audio_device_rx: document.getElementById('trx-edit-rx-dev').value !== ''
+                     ? parseInt(document.getElementById('trx-edit-rx-dev').value)
+                     : null,
+    ptt_backend:    'hamlib',
+    auto_start:     true,
+    ptt_delay_ms:   parseInt(document.getElementById('trx-edit-ptt-delay').value) || 250,
+    level:          parseInt(document.getElementById('trx-edit-level').value) || 30,
+    _comment:       document.getElementById('trx-edit-comment').value.trim(),
+  };
+
+  try {
+    const res = await apiFetch('/api/trx/save', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    msg.textContent = res.message || 'Gespeichert.';
+    msg.style.color = 'var(--green)';
+    // Dropdown aktualisieren
+    loadTrxProfiles();
+  } catch(e) {
+    msg.textContent = e.message || 'Fehler beim Speichern.';
+    msg.style.color = 'var(--red)';
+  }
+}
+
+async function trxDeleteProfile() {
+  const name = document.getElementById('trx-edit-name').value.trim();
+  if (!name) return;
+  if (!confirm('Profil "' + name + '" wirklich löschen?')) return;
+  const msg = document.getElementById('trx-edit-msg');
+  try {
+    const res = await apiFetch(
+      '/api/trx/profile?name=' + encodeURIComponent(name),
+      { method: 'DELETE' }
+    );
+    if (res.ok === false) {
+      msg.textContent = res.error || 'Löschen nicht möglich.';
+      msg.style.color = 'var(--red)';
+      return;
+    }
+    msg.textContent = res.message || 'Gelöscht.';
+    msg.style.color = 'var(--green)';
+    trxNewProfile();
+    loadTrxProfiles();
+  } catch(e) {
+    msg.textContent = e.message || 'Fehler beim Löschen.';
+    msg.style.color = 'var(--red)';
+  }
 }
 
 async function activateTrxProfile() {
@@ -2756,11 +3261,16 @@ function appendRxFrame(frame) {
 
   const row = document.createElement('div');
   const isTest = !!frame.test;
+  // Deep-Decode-Fund (vom parallelen 20s-Decoder nachgeliefert)
+  const deepBadge = frame.deep
+      ? '<span title="Deep-Decode-Fund" style="font-size:10px;background:#8E44AD;color:#fff;'
+        + 'border-radius:3px;padding:1px 4px;margin-left:4px">🔍</span>'
+      : '';
   row.className = 'frame-row' + (isEmerg ? ' emergency' : '') + (isTest ? ' testframe' : '');
   row.innerHTML = `<span class="ts">${ts}</span>
     <span class="ch">${ch}</span>
     <span class="from">${frm}</span>
-    <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0"><span class="type" style="width:auto">${typ}</span>${isTest ? '<span class="test-pill">TEST</span>' : ''}</span>
+    <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0"><span class="type" style="width:auto">${typ}</span>${isTest ? '<span class="test-pill">TEST</span>' : ''}${deepBadge}</span>
     <span class="snr ${snrCls}">${snr != null ? snrLabel(snr) : '–'}</span>
     <span class="off">${offStr}</span>
     <span class="data">${dat}</span>`;
@@ -4036,6 +4546,11 @@ function slDraw() {
   const lW  = sl.laneW;
   const pps = sl.pxPerSec;
 
+  const HEADER_H = 36;        // px — reservierte Header-Zone oben
+  const CH = H - HEADER_H;    // nutzbare Zeichenfläche unter dem Header
+  const visS = CH / pps;      // sichtbare Sekunden unterhalb des Headers
+                              // (Zeitfenster endet am unteren Rand = "jetzt")
+
   // Theme erkennen — Swimlane-Farben sind theme-sensitiv (Fix 4)
   const isLight = document.documentElement
     .getAttribute('data-theme') === 'light';
@@ -4048,8 +4563,11 @@ function slDraw() {
     ? (sl.tLast - sl.txT0)
     : 0;
 
-  // Oberkante des sichtbaren Fensters (älteste sichtbare Zeit)
-  const topS = Math.max(0, nowS - sl.windowS);
+  // Oberkante des sichtbaren Fensters (älteste sichtbare Zeit).
+  // visS statt sl.windowS: die Header-Zone gehört nicht zur Zeitachse —
+  // sonst würden die neuesten HEADER_H/pps Sekunden unter den Canvas-
+  // Rand fallen und die Jetzt-Linie wäre nicht mehr "jetzt".
+  const topS = Math.max(0, nowS - visS);
 
   // Hintergrund
   ctx.fillStyle = isLight ? '#f0f4f8' : SL_BACKGROUND;
@@ -4066,9 +4584,9 @@ function slDraw() {
 
   // ── Zeitraster (t=0 oben, Zeit wächst nach unten) ────────
   const firstGrid = Math.ceil(topS / 5) * 5;
-  for (let t = firstGrid; t <= topS + sl.windowS + 5; t += 5) {
-    const yPos = (t - topS) * pps;
-    if (yPos < 0 || yPos > H) continue;
+  for (let t = firstGrid; t <= topS + visS + 5; t += 5) {
+    const yPos = HEADER_H + (t - topS) * pps;
+    if (yPos < HEADER_H || yPos > H) continue;
     const is10 = (Math.round(t) % 10 === 0);
     ctx.strokeStyle = is10
       ? (isLight ? 'rgba(0,0,0,0.45)' : SL_GRID_COLOR)
@@ -4097,7 +4615,7 @@ function slDraw() {
       : (isEdge ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.55)');
     ctx.lineWidth = isEdge ? 2.0 : 1.2;
     ctx.beginPath();
-    ctx.moveTo(ch * lW, 0);
+    ctx.moveTo(ch * lW, HEADER_H);
     ctx.lineTo(ch * lW, H);
     ctx.stroke();
   }
@@ -4105,13 +4623,21 @@ function slDraw() {
   // ── Frames zeichnen ──────────────────────────────────────
   const pad = 3;  // px Abstand Block zu Lane-Rand
 
+  // Clipping auf die Zone unter dem Header: teilweise heraus-
+  // gescrollte Frames malen sonst in die Header-Zone und schimmern
+  // durch den halbtransparenten Header-Balken.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, HEADER_H, W, CH);
+  ctx.clip();
+
   for (const f of sl.frames) {
-    // Y-Position: t=0 oben, Zeit wächst nach unten
-    const yTop = (f.startS - topS) * pps;
+    // Y-Position: t=0 oben, Zeit wächst nach unten (Header-Offset)
+    const yTop = HEADER_H + (f.startS - topS) * pps;
     const yH   = Math.max(f.durS * pps, 18);  // Mindesthöhe 18px
 
     // Außerhalb des sichtbaren Bereichs überspringen
-    if (yTop + yH < 0 || yTop > H) continue;
+    if (yTop + yH < HEADER_H || yTop > H) continue;
     if (f.ch < 0 || f.ch >= SL_N_CHANNELS) continue;
 
     const xLeft = f.ch * lW + pad;
@@ -4158,6 +4684,8 @@ function slDraw() {
     }
   }
 
+  ctx.restore();   // Clipping aufheben (Jetzt-Linie + Header voll sichtbar)
+
   // ── "Jetzt"-Linie (roter Strich am unteren Rand) ─────────
   // Rot funktioniert in beiden Themes.
   ctx.strokeStyle = 'rgba(255,80,80,0.8)';
@@ -4176,7 +4704,7 @@ function slDraw() {
     ctx.fillStyle = isLight
       ? 'rgba(240,244,248,0.90)'
       : 'rgba(13,17,23,0.82)';
-    ctx.fillRect(x + 1, 0, lW - 2, 34);
+    ctx.fillRect(x + 1, 0, lW - 2, HEADER_H);
     // Text
     const cx = x + lW / 2;
     ctx.fillStyle = isLight ? '#1f2328' : '#ffffff';
@@ -4435,6 +4963,8 @@ class WebServer:
         app.router.add_get   ("/api/tx/queue",       self._handle_tx_queue)
         app.router.add_delete("/api/tx/queue",       self._handle_tx_queue_clear)
         app.router.add_post  ("/api/trx/activate",    self._handle_trx_activate)
+        app.router.add_post  ("/api/trx/save",        self._handle_trx_save)
+        app.router.add_delete("/api/trx/profile",     self._handle_trx_delete)
         app.router.add_get ("/api/audio/devices", self._handle_audio_devices)
         app.router.add_get ("/api/audio/config",  self._handle_audio_config_get)
         app.router.add_post("/api/audio/config",  self._handle_audio_config_post)
@@ -4442,6 +4972,11 @@ class WebServer:
         app.router.add_get ("/api/sdr/caps",         self._handle_sdr_caps)
         app.router.add_get ("/api/sdr/config",       self._handle_sdr_config_get)
         app.router.add_post("/api/sdr/config",       self._handle_sdr_config_post)
+        app.router.add_get   ("/api/sdr/scan",              self._handle_sdr_scan)
+        app.router.add_post  ("/api/sdr/profile/save",      self._handle_sdr_profile_save)
+        app.router.add_delete("/api/sdr/profile",           self._handle_sdr_profile_delete)
+        app.router.add_post  ("/api/sdr/profile/activate/rx", self._handle_sdr_activate_rx)
+        app.router.add_post  ("/api/sdr/profile/activate/tx", self._handle_sdr_activate_tx)
         app.router.add_get ("/api/hamlib/ports",     self._handle_hamlib_ports)
         app.router.add_get ("/api/hamlib/models",    self._handle_hamlib_models)
         app.router.add_get ("/api/hamlib/status",    self._handle_hamlib_status)
@@ -4502,8 +5037,10 @@ class WebServer:
             "last_tx":           None,
             "last_rx":           None,
             "audio_device":      _fmt_audio_device(self._config),
-            "ptt_backend":       self._config.get("audio", {}).get("ptt_backend", "null"),
-            "ptt_delay_ms":      self._config.get("audio", {}).get("ptt_delay_ms", 250),
+            "ptt_backend":       (self._config.get("tx_audio") or
+                                  self._config.get("audio") or {}).get("ptt_backend", "null"),
+            "ptt_delay_ms":      (self._config.get("tx_audio") or
+                                  self._config.get("audio") or {}).get("ptt_delay_ms", 250),
             "tx_interval_s":     tx_interval,
             "tx_time_offset_s":  tx_offset,
             "active_trx_profile": self._config.get("active_trx_profile", ""),
@@ -4633,12 +5170,27 @@ class WebServer:
             except (TypeError, ValueError):
                 return str(val)
 
+        # Schreiben in die neuen Keys; Seed aus den alten ("audio"/"rx") —
+        # bei Alt-Configs zeigt tx_audio/rx_audio dann auf DASSELBE Dict
         if "output" in audio:
-            self._config.setdefault("audio", {})["device"] = _coerce(audio["output"])
+            self._config.setdefault(
+                "tx_audio", self._config.get("audio") or {}
+            )["device"] = _coerce(audio["output"])
         if "input" in audio:
-            self._config.setdefault("rx", {})["device"] = _coerce(audio["input"])
+            self._config.setdefault(
+                "rx_audio", self._config.get("rx") or {}
+            )["device"] = _coerce(audio["input"])
         if "backend" in ptt:
-            self._config.setdefault("audio", {})["ptt_backend"] = str(ptt["backend"])
+            self._config.setdefault(
+                "tx_audio", self._config.get("audio") or {}
+            )["ptt_backend"] = str(ptt["backend"])
+
+        # Deep-Decoding-Toggle (rx_audio.deep_decode) — wirkt erst nach Neustart
+        rx_body = body.get("rx") or {}
+        if "deep_decode" in rx_body:
+            self._config.setdefault(
+                "rx_audio", self._config.get("rx") or {}
+            )["deep_decode"] = bool(rx_body["deep_decode"])
 
         # Best-effort-Persistenz — für den MVP nicht kritisch, daher kein Fehler
         # nach außen, wenn das Schreiben scheitert.
@@ -4781,16 +5333,20 @@ class WebServer:
                     "host":       "localhost",
                     "port":       4532,
                 })
-            audio = dict(self._config.get("audio") or {})
+            audio = dict(self._config.get("tx_audio")
+                         or self._config.get("audio") or {})
             audio["ptt_backend"] = profile.get("ptt_backend", "null")
-            # TX-Audiogerät: audio_device_tx (Legacy-Fallback: audio_device) → audio.device
+            # TX-Audiogerät: audio_device_tx (Legacy-Fallback: audio_device) → tx_audio.device
             tx_dev = profile.get("audio_device_tx", profile.get("audio_device"))
             if tx_dev is not None:
                 audio["device"] = tx_dev
-            self._config["audio"] = audio
-            # RX-Audiogerät: audio_device_rx → rx.device (fehlend/None = "wie TX")
+            self._config["tx_audio"] = audio
+            self._config["audio"]    = audio   # Kompatibilität altes Format
+            # RX-Audiogerät: audio_device_rx → rx_audio.device (fehlend/None = "wie TX")
             if profile.get("audio_device_rx") is not None:
-                self._config.setdefault("rx", {})["device"] = profile["audio_device_rx"]
+                self._config.setdefault(
+                    "rx_audio", self._config.get("rx") or {}
+                )["device"] = profile["audio_device_rx"]
             try:
                 await asyncio.get_running_loop().run_in_executor(
                     None, self._save_config_atomic)
@@ -4816,6 +5372,145 @@ class WebServer:
             "ok": True,
             "message": f"Profil '{name}' aktiviert.",
             "profile": profile,
+        })
+
+    async def _handle_trx_save(self, request: web.Request) -> web.Response:
+        """
+        POST /api/trx/save — Profil anlegen oder aktualisieren.
+        Body: vollständiges Profil-Objekt mit name (Pflicht).
+        Existiert ein Profil mit diesem Namen: wird ersetzt.
+        Existiert keines: wird am Ende der Liste eingefügt.
+        """
+        if self._config_path is None:
+            raise web.HTTPBadRequest(
+                text='{"error":"Schreiben nicht aktiviert."}',
+                content_type="application/json")
+        try:
+            body = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text='{"error":"Ungültiger JSON-Body"}',
+                content_type="application/json")
+
+        name = str(body.get("name", "")).strip()
+        if not name:
+            raise web.HTTPBadRequest(
+                text='{"error":"name erforderlich"}',
+                content_type="application/json")
+
+        # Pflichtfelder prüfen
+        required = ["rig_model", "device", "baud",
+                    "audio_device_tx", "ptt_backend"]
+        for f in required:
+            if f not in body:
+                raise web.HTTPBadRequest(
+                    text=f'{{"error":"Feld \'{f}\' fehlt"}}',
+                    content_type="application/json")
+
+        # Profil-Objekt bauen (nur bekannte Felder übernehmen)
+        profile = {
+            "name":           name,
+            "rig_model":      int(body["rig_model"]),
+            "device":         str(body["device"]),
+            "baud":           int(body["baud"]),
+            "audio_device_tx": body["audio_device_tx"],
+            "ptt_backend":    str(body["ptt_backend"]),
+            "auto_start":     bool(body.get("auto_start", True)),
+        }
+        # Optionale Felder
+        if body.get("audio_device_rx") is not None:
+            profile["audio_device_rx"] = body["audio_device_rx"]
+        if body.get("ptt_delay_ms") is not None:
+            profile["ptt_delay_ms"] = int(body["ptt_delay_ms"])
+        if body.get("level") is not None:
+            profile["level"] = body["level"]
+        if body.get("_comment"):
+            profile["_comment"] = str(body["_comment"])
+
+        async with self._config_write_lock:
+            old_profiles = list(self._config.get("trx_profiles", []))
+            profiles = list(old_profiles)
+            idx = next((i for i, p in enumerate(profiles)
+                        if p.get("name") == name), None)
+            if idx is not None:
+                profiles[idx] = profile   # Ersetzen
+                action = "aktualisiert"
+            else:
+                profiles.append(profile)  # Neu anfügen
+                action = "angelegt"
+            self._config["trx_profiles"] = profiles
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None, self._save_config_atomic)
+            except Exception as exc:
+                self._config["trx_profiles"] = old_profiles   # Rollback
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"Schreiben fehlgeschlagen: {exc}"}}',
+                    content_type="application/json")
+
+        log.info("TRX-Profil %s: %s", action, name)
+        return web.json_response({
+            "ok": True,
+            "message": f"Profil '{name}' {action}.",
+            "profile": profile,
+            "count": len(profiles),
+        })
+
+    async def _handle_trx_delete(self, request: web.Request) -> web.Response:
+        """
+        DELETE /api/trx/profile — Profil löschen.
+        Query-Parameter: ?name=IC-7610
+        Aktives Profil kann nicht gelöscht werden.
+        Letztes Profil kann nicht gelöscht werden.
+        """
+        if self._config_path is None:
+            raise web.HTTPBadRequest(
+                text='{"error":"Schreiben nicht aktiviert."}',
+                content_type="application/json")
+
+        name = request.rel_url.query.get("name", "").strip()
+        if not name:
+            raise web.HTTPBadRequest(
+                text='{"error":"name-Parameter fehlt"}',
+                content_type="application/json")
+
+        async with self._config_write_lock:
+            profiles = list(self._config.get("trx_profiles", []))
+            active   = self._config.get("active_trx_profile", "")
+
+            if name == active:
+                return web.json_response(
+                    {"ok": False,
+                     "error": "Aktives Profil kann nicht gelöscht werden."},
+                    status=409)
+            if len(profiles) <= 1:
+                return web.json_response(
+                    {"ok": False,
+                     "error": "Letztes Profil kann nicht gelöscht werden."},
+                    status=409)
+
+            new_profiles = [p for p in profiles if p.get("name") != name]
+            if len(new_profiles) == len(profiles):
+                return web.json_response(
+                    {"ok": False,
+                     "error": f"Profil '{name}' nicht gefunden."},
+                    status=404)
+
+            self._config["trx_profiles"] = new_profiles
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None, self._save_config_atomic)
+            except Exception as exc:
+                self._config["trx_profiles"] = profiles   # Rollback
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"Schreiben fehlgeschlagen: {exc}"}}',
+                    content_type="application/json")
+
+        log.info("TRX-Profil gelöscht: %s", name)
+        return web.json_response({
+            "ok": True,
+            "message": f"Profil '{name}' gelöscht.",
+            "remaining": len(new_profiles),
         })
 
     async def _enqueue_tx(self, request: web.Request,
@@ -4912,13 +5607,16 @@ class WebServer:
 
     async def _handle_audio_config_get(self, _request: web.Request) -> web.Response:
         """Aktuell konfigurierte Audiogeräte zurückgeben."""
-        audio = self._config.get("audio", {}) or {}
-        rx    = self._config.get("rx",    {}) or {}
+        audio = (self._config.get("tx_audio") or
+                 self._config.get("audio") or {})
+        rx    = (self._config.get("rx_audio") or
+                 self._config.get("rx") or {})
         return web.json_response({
             "tx_device":   audio.get("device"),      # int / str / None
             "rx_device":   rx.get("device"),         # None = "wie TX"
             "ptt_backend": audio.get("ptt_backend", "null"),
             "level":       audio.get("level"),
+            "deep_decode": bool(rx.get("deep_decode", False)),
             "config_path": self._config_path,
             "writable":    self._config_path is not None,
         })
@@ -4970,13 +5668,21 @@ class WebServer:
 
         async with self._config_write_lock:
             # Aktuellen Zustand merken (für Diff in Response)
-            old_audio = dict(self._config.get("audio", {}))
-            old_rx    = dict(self._config.get("rx",    {}))
+            old_audio = dict(self._config.get("tx_audio")
+                             or self._config.get("audio") or {})
+            old_rx    = dict(self._config.get("rx_audio")
+                             or self._config.get("rx") or {})
 
+            # setdefault mit Alt-Dict als Seed: bei Alt-Configs zeigt
+            # tx_audio dann auf DASSELBE Dict wie audio (konsistent)
             if tx_set:
-                self._config.setdefault("audio", {})["device"] = new_tx
+                self._config.setdefault(
+                    "tx_audio", self._config.get("audio") or {}
+                )["device"] = new_tx
             if rx_set:
-                self._config.setdefault("rx", {})["device"] = new_rx
+                self._config.setdefault(
+                    "rx_audio", self._config.get("rx") or {}
+                )["device"] = new_rx
 
             # In Datei schreiben (atomar)
             try:
@@ -4985,8 +5691,8 @@ class WebServer:
                 )
             except Exception as e:
                 # Rollback im Speicher
-                self._config["audio"] = old_audio
-                self._config["rx"]    = old_rx
+                self._config["tx_audio"] = old_audio
+                self._config["rx_audio"] = old_rx
                 log.error("gateway.json schreiben fehlgeschlagen: %s", e)
                 raise web.HTTPInternalServerError(
                     text=f'{{"error":"Schreiben fehlgeschlagen: {e}"}}',
@@ -5014,8 +5720,10 @@ class WebServer:
         return web.json_response({
             "ok": True,
             "message": msg,
-            "tx_device": self._config["audio"].get("device"),
-            "rx_device": self._config.get("rx", {}).get("device"),
+            "tx_device": (self._config.get("tx_audio")
+                          or self._config.get("audio") or {}).get("device"),
+            "rx_device": (self._config.get("rx_audio")
+                          or self._config.get("rx") or {}).get("device"),
             "tx_restart_required": False,    # TX liest cfg live
             "rx_restart_required": rx_changed,
         })
@@ -5170,11 +5878,256 @@ class WebServer:
             "tx_restart_required": False,
         })
 
+    # ── SDR-PROFILE (Schritt 3 — analog zu TRX-Profilen) ─────────────
+
+    async def _handle_sdr_scan(self, _request: web.Request
+                               ) -> web.Response:
+        """
+        GET /api/sdr/scan — enumerate mit RX+TX-Capabilities.
+        Dient als "SDR-Geräte suchen"-Button in der UI.
+        Liefert immer 200 (leere Liste wenn kein SoapySDR).
+        """
+        import gust_soapy_tx as sx
+        loop = asyncio.get_running_loop()
+        devices = await loop.run_in_executor(
+            None, sx.enumerate_all_devices)
+        modules = await loop.run_in_executor(
+            None, sx.list_modules)
+        profiles = self._config.get("sdr_profiles", [])
+        return web.json_response({
+            "available": sx.soapy_available(),
+            "devices":   devices,
+            "modules":   modules,
+            "profiles":  profiles,
+            "active_rx": self._config.get("active_sdr_rx_profile"),
+            "active_tx": self._config.get("active_sdr_tx_profile"),
+        })
+
+    async def _handle_sdr_profile_save(self,
+            request: web.Request) -> web.Response:
+        """
+        POST /api/sdr/profile/save — Profil anlegen/aktualisieren.
+        Body: vollständiges Profil-Objekt.
+        Pflicht: name, type ("rx"|"tx"|"trx"), driver.
+        Optional: serial, _comment, rx {…}, tx {…}.
+        Existiert ein Profil mit diesem Namen: wird ersetzt.
+        """
+        if self._config_path is None:
+            raise web.HTTPBadRequest(
+                text='{"error":"Schreiben nicht aktiviert."}',
+                content_type="application/json")
+        try:
+            body = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text='{"error":"Ungültiger JSON-Body"}',
+                content_type="application/json")
+
+        name   = str(body.get("name", "")).strip()
+        ptype  = str(body.get("type", "")).strip()
+        driver = str(body.get("driver", "")).strip()
+
+        if not name:
+            raise web.HTTPBadRequest(
+                text='{"error":"name erforderlich"}',
+                content_type="application/json")
+        if ptype not in ("rx", "tx", "trx"):
+            raise web.HTTPBadRequest(
+                text='{"error":"type muss rx, tx oder trx sein"}',
+                content_type="application/json")
+        if not driver:
+            raise web.HTTPBadRequest(
+                text='{"error":"driver erforderlich"}',
+                content_type="application/json")
+
+        profile = {
+            "name":   name,
+            "type":   ptype,
+            "driver": driver,
+        }
+        if body.get("serial"):
+            profile["serial"] = str(body["serial"])
+        if body.get("_comment"):
+            profile["_comment"] = str(body["_comment"])
+        # rx-Unter-Objekt — nur bei type rx oder trx
+        if ptype in ("rx", "trx") and isinstance(body.get("rx"), dict):
+            profile["rx"] = body["rx"]
+        # tx-Unter-Objekt — nur bei type tx oder trx
+        if ptype in ("tx", "trx") and isinstance(body.get("tx"), dict):
+            profile["tx"] = body["tx"]
+
+        async with self._config_write_lock:
+            profiles = list(self._config.get("sdr_profiles", []))
+            old_profiles = list(profiles)
+            idx = next((i for i, p in enumerate(profiles)
+                        if p.get("name") == name), None)
+            if idx is not None:
+                profiles[idx] = profile
+                action = "aktualisiert"
+            else:
+                profiles.append(profile)
+                action = "angelegt"
+            self._config["sdr_profiles"] = profiles
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None, self._save_config_atomic)
+            except Exception as exc:
+                self._config["sdr_profiles"] = old_profiles
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"Schreiben fehlgeschlagen: {exc}"}}',
+                    content_type="application/json")
+
+        log.info("SDR-Profil %s: %s", action, name)
+        return web.json_response({
+            "ok": True,
+            "message": f"Profil '{name}' {action}.",
+            "profile": profile,
+            "count":   len(profiles),
+        })
+
+    async def _handle_sdr_profile_delete(self,
+            request: web.Request) -> web.Response:
+        """
+        DELETE /api/sdr/profile?name=HackRF
+        Aktives RX- oder TX-Profil kann nicht gelöscht werden.
+        Letztes Profil kann nicht gelöscht werden.
+        """
+        if self._config_path is None:
+            raise web.HTTPBadRequest(
+                text='{"error":"Schreiben nicht aktiviert."}',
+                content_type="application/json")
+        name = request.rel_url.query.get("name", "").strip()
+        if not name:
+            raise web.HTTPBadRequest(
+                text='{"error":"name-Parameter fehlt"}',
+                content_type="application/json")
+
+        async with self._config_write_lock:
+            profiles  = list(self._config.get("sdr_profiles", []))
+            active_rx = self._config.get("active_sdr_rx_profile", "")
+            active_tx = self._config.get("active_sdr_tx_profile", "")
+
+            if name in (active_rx, active_tx):
+                return web.json_response(
+                    {"ok": False,
+                     "error": "Aktives Profil kann nicht "
+                              "gelöscht werden."},
+                    status=409)
+            if len(profiles) <= 1:
+                return web.json_response(
+                    {"ok": False,
+                     "error": "Letztes Profil kann nicht "
+                              "gelöscht werden."},
+                    status=409)
+
+            new_profiles = [p for p in profiles
+                            if p.get("name") != name]
+            if len(new_profiles) == len(profiles):
+                return web.json_response(
+                    {"ok": False,
+                     "error": f"Profil '{name}' nicht gefunden."},
+                    status=404)
+
+            old_profiles = list(profiles)
+            self._config["sdr_profiles"] = new_profiles
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None, self._save_config_atomic)
+            except Exception as exc:
+                self._config["sdr_profiles"] = old_profiles
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"Schreiben fehlgeschlagen: {exc}"}}',
+                    content_type="application/json")
+
+        log.info("SDR-Profil gelöscht: %s", name)
+        return web.json_response({
+            "ok": True,
+            "message": f"Profil '{name}' gelöscht.",
+            "remaining": len(new_profiles),
+        })
+
+    async def _sdr_activate(self, request: web.Request,
+                            direction: str) -> web.Response:
+        """
+        Gemeinsame Logik für activate/rx und activate/tx.
+        Body: {"name": "SDRplay"} oder {"name": null}
+        null deaktiviert (zurück auf Audio-Pfad).
+        """
+        if self._config_path is None:
+            raise web.HTTPBadRequest(
+                text='{"error":"Schreiben nicht aktiviert."}',
+                content_type="application/json")
+        try:
+            body = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text='{"error":"Ungültiger JSON-Body"}',
+                content_type="application/json")
+
+        name = body.get("name")  # None = deaktivieren
+        if name is not None:
+            name = str(name).strip() or None
+
+        cfg_key  = f"active_sdr_{direction}_profile"
+        ok_types = ("rx", "trx") if direction == "rx" else ("tx", "trx")
+
+        # Prüfen ob Profil existiert und die Richtung unterstützt
+        if name is not None:
+            profiles = self._config.get("sdr_profiles", [])
+            profile  = next((p for p in profiles
+                             if p.get("name") == name), None)
+            if profile is None:
+                return web.json_response(
+                    {"ok": False,
+                     "error": f"Profil '{name}' nicht gefunden."},
+                    status=404)
+            if profile.get("type") not in ok_types:
+                return web.json_response(
+                    {"ok": False,
+                     "error": f"Profil '{name}' ist nicht "
+                              f"{direction.upper()}-fähig "
+                              f"(type={profile.get('type')})."},
+                    status=409)
+
+        async with self._config_write_lock:
+            self._config[cfg_key] = name
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None, self._save_config_atomic)
+            except Exception as exc:
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"{exc}"}}',
+                    content_type="application/json")
+
+        if direction == "rx":
+            msg = (f"SDR-RX aktiviert: {name}"
+                   if name else "SDR-RX deaktiviert (Audio/VAC)")
+        else:
+            msg = (f"SDR-TX aktiviert: {name}"
+                   if name else "SDR-TX deaktiviert (Audio-TX-Pfad)")
+        log.info(msg)
+        return web.json_response({
+            "ok": True,
+            "message": msg,
+            cfg_key: name,
+        })
+
+    async def _handle_sdr_activate_rx(self,
+            request: web.Request) -> web.Response:
+        """POST /api/sdr/profile/activate/rx — active_sdr_rx_profile setzen."""
+        return await self._sdr_activate(request, "rx")
+
+    async def _handle_sdr_activate_tx(self,
+            request: web.Request) -> web.Response:
+        """POST /api/sdr/profile/activate/tx — active_sdr_tx_profile setzen."""
+        return await self._sdr_activate(request, "tx")
+
     # ── HAMLIB / rigctld (P5-14) ──────────────────────────────────────
 
     def _hamlib_endpoint(self) -> tuple:
         """rigctld-Host/Port aus self._config ermitteln (Defaults localhost:4532)."""
-        audio = self._config.get("audio", {}) if isinstance(self._config, dict) else {}
+        audio = ((self._config.get("tx_audio") or self._config.get("audio") or {})
+                 if isinstance(self._config, dict) else {})
         rig   = self._config.get("rigctld", {}) if isinstance(self._config, dict) else {}
         host = (audio.get("hamlib_host")
                 or rig.get("host")
@@ -5470,7 +6423,8 @@ class WebServer:
         profile_created = None
         async with self._config_write_lock:
             old_rig      = self._config.get("rigctld")
-            old_audio    = dict(self._config.get("audio") or {})
+            old_audio    = dict(self._config.get("tx_audio")
+                                or self._config.get("audio") or {})
             old_profiles = self._config.get("trx_profiles")
             old_active   = self._config.get("active_trx_profile")
             self._config["rigctld"] = {
@@ -5481,11 +6435,13 @@ class WebServer:
                 "host":       "localhost",
                 "port":       4532,
             }
-            audio = dict(self._config.get("audio") or {})
+            audio = dict(self._config.get("tx_audio")
+                         or self._config.get("audio") or {})
             audio["ptt_backend"] = "hamlib"
             audio["hamlib_host"] = "localhost"
             audio["hamlib_port"] = 4532
-            self._config["audio"] = audio
+            self._config["tx_audio"] = audio
+            self._config["audio"]    = audio   # Kompatibilität altes Format
 
             # Erstes Speichern: automatisch als Profil anlegen falls noch kein
             # trx_profiles-Array existiert (Rückwärtskompatibilität / Onboarding).
@@ -5513,7 +6469,8 @@ class WebServer:
                     self._config.pop("rigctld", None)
                 else:
                     self._config["rigctld"] = old_rig
-                self._config["audio"] = old_audio
+                self._config["tx_audio"] = old_audio
+                self._config["audio"]    = old_audio
                 # Profil-Rollback (nur falls in diesem Aufruf neu angelegt)
                 if old_profiles is None:
                     self._config.pop("trx_profiles", None)
@@ -5781,8 +6738,10 @@ class WebServer:
             import io
             import csv as csvmod
             buf = io.StringIO()
-            fields = ["nr", "ts", "start_s", "channel", "frame_type",
-                      "callsign", "freq_offset_hz"]
+            # tx_start_s: physikalischer Sendezeitstempel (0.0 = alte Session)
+            # deep:       True = Fund des Deep-Decoders (20s-Fenster)
+            fields = ["nr", "ts", "start_s", "tx_start_s", "channel",
+                      "frame_type", "callsign", "freq_offset_hz", "deep"]
             session_start = min(
                 (f.get("ts", 0.0) for f in self._session_frames), default=0.0)
             w = csvmod.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
@@ -5795,10 +6754,12 @@ class WebServer:
                     "nr":            i,
                     "ts":            round(f.get("ts", 0.0), 3),
                     "start_s":       round(float(f.get("ts", 0.0)) - session_start, 3),
+                    "tx_start_s":    round(float(f.get("tx_start_s", 0.0)), 3),
                     "channel":       int(ch) if ch is not None else -1,
                     "frame_type":    f.get("type_name", ""),
                     "callsign":      f.get("from", ""),
                     "freq_offset_hz": 0.0,
+                    "deep":          bool(f.get("deep", False)),
                 })
             content = buf.getvalue().encode("utf-8")
             return web.Response(
@@ -5843,7 +6804,9 @@ class WebServer:
                                 endpoint=False, dtype=np.float32)
             audio = (0.8 * np.sin(2 * np.pi * freq_hz * t)).astype(np.float32)
 
-            audio_cfg = self._config.get("audio", {}) if isinstance(self._config, dict) else {}
+            audio_cfg = ((self._config.get("tx_audio")
+                          or self._config.get("audio") or {})
+                         if isinstance(self._config, dict) else {})
             # rigctld muss bereits laufen (Früh-Start in cmd_daemon).
             # ensure_rigctld_running() wird hier NICHT aufgerufen — auf Windows
             # akzeptiert rigctld nur eine TCP-Verbindung gleichzeitig; ein zweiter

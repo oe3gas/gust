@@ -186,6 +186,81 @@ def enumerate_tx_devices() -> List[Dict[str, Any]]:
     return out
 
 
+def enumerate_all_devices() -> List[Dict[str, Any]]:
+    """
+    Alle via SoapySDR auffindbaren Geräte mit RX- UND TX-Fähigkeit.
+    Öffnet jedes Gerät kurz um getNumChannels(RX) und
+    getNumChannels(TX) zu lesen.
+
+    Result-Dict pro Gerät:
+        args, identity, label, driver, serial,
+        rx_capable, num_rx_channels,
+        tx_capable, num_tx_channels,
+        type ("rx"|"tx"|"trx"|"unknown"),
+        probe_error
+    Niemals exception-werfend.
+    """
+    if not _SOAPY_AVAILABLE:
+        return []
+    try:
+        raw = SoapySDR.Device.enumerate()
+    except Exception as exc:
+        log.warning("SoapySDR.Device.enumerate() Fehler: %s", exc)
+        return []
+
+    # SOAPY_SDR_RX importieren — analog zu SOAPY_SDR_TX
+    try:
+        from SoapySDR import SOAPY_SDR_RX as _RX
+    except ImportError:
+        _RX = 0   # Fallback-Konstante
+
+    out: List[Dict[str, Any]] = []
+    for args in raw:
+        info = _args_dict(args)
+        num_rx = 0
+        num_tx = 0
+        probe_err: Optional[str] = None
+        dev = None
+        try:
+            dev = SoapySDR.Device(info)
+            num_rx = int(dev.getNumChannels(_RX))
+            num_tx = int(dev.getNumChannels(SOAPY_SDR_TX))
+        except Exception as exc:
+            probe_err = str(exc)
+        finally:
+            if dev is not None:
+                try:
+                    del dev
+                except Exception:
+                    pass
+
+        rx_cap = num_rx > 0
+        tx_cap = num_tx > 0
+        if rx_cap and tx_cap:
+            dev_type = "trx"
+        elif rx_cap:
+            dev_type = "rx"
+        elif tx_cap:
+            dev_type = "tx"
+        else:
+            dev_type = "unknown"
+
+        out.append({
+            "args":            info,
+            "identity":        _args_identity(info),
+            "label":           info.get("label") or _args_label(info),
+            "driver":          info.get("driver", ""),
+            "serial":          info.get("serial", ""),
+            "num_rx_channels": num_rx,
+            "num_tx_channels": num_tx,
+            "rx_capable":      rx_cap,
+            "tx_capable":      tx_cap,
+            "type":            dev_type,
+            "probe_error":     probe_err,
+        })
+    return out
+
+
 def list_modules() -> List[Dict[str, str]]:
     """
     Geladene SoapySDR-Treiber-Module (+ Version, falls verfügbar) —

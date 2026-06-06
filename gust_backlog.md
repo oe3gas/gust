@@ -1,6 +1,6 @@
 # GUST — Backlog
 **OE3GAS — Generic Universal Shortwave Telemetry**
-*Stand: Juni 2026 — i18n DE/EN (P5-21) · Inbox-Kosmetik fehlende Frames (P5-22) · CLI-Verbesserungen · QSO-Modus · TRX-Profile · BUG-10 root fix · gust_tx_test Fixes*
+*Stand: Juni 2026 — BUG-18–19 Deep-Decoder · ADR-26–28 · Ringpuffer 120s · Deep-Decoder 90% PASS*
 
 ---
 
@@ -227,6 +227,8 @@ FEC-Algorithmus. Siehe ADR-25 und gust_knowledge.md §22.
 | BUG-15 | 🔴 | bug | rigctld wird beim Daemon-Start nicht gestartet | rigctld startete erst lazy beim ersten TX (build_ptt im Worker). Frequenz-Polling und PTT nicht sofort verfügbar. **Fix:** Früh-Start-Block in `cmd_daemon()` nach `gateway.start()` — startet rigctld sofort bei `ptt_backend=hamlib` + `auto_start=true`. | ✅ |
 | BUG-16 | 🔴 | bug | Windows IPv4/IPv6-Konflikt: rigctld auf ::1, Python verbindet auf 127.0.0.1 | Windows löst `localhost` als `::1` (IPv6) auf. rigctld bindet auf `::1`, `HamlibPTT` verbindet auf `127.0.0.1` → ConnectionRefused obwohl rigctld läuft. **Fix:** `RIGCTLD_HOST_DEFAULT = "127.0.0.1"` in `gust_audio.py`; `ensure_rigctld_running()` ersetzt `localhost` → `127.0.0.1` beim rigctld-Start (`-T`-Flag). Diagnose: `netstat -ano | findstr ":4532"` zeigt `[::1]:4532` statt `0.0.0.0:4532`. | ✅ |
 | BUG-17 | 🟡 | bug | Tune: doppelter rigctld-Start | `_handle_tx_tune._run()` rief `ensure_rigctld_running()` auf — auf Windows (nur 1 TCP-Conn) entstand ein zweiter rigctld-Prozess wenn Polling-Loop gerade verbunden war. **Fix:** `ensure_rigctld_running()` aus Tune entfernt; Tune verlässt sich auf Früh-Start in `cmd_daemon()`. | ✅ |
+| BUG-18 | 🔴 | bug | Deep-Decoder CPU-Konkurrenz | Deep-Decoder nutzte `self._executor` (8 Worker, geteilt mit Short-Decoder) — 80 Deep-Calls/Scan verhungerten den Short-Decoder (Regression 55 → 44 Frames). **Fix:** eigener `_deep_executor` (N_CHANNELS Worker, nur bei `deep_decode=true`), Shutdown im finally. Siehe ADR-27. | ✅ |
+| BUG-19 | 🟡 | bug | DedupCache TOL_S zu eng | `sync_offset_s`-Jitter zwischen zwei Scans (Short/Short oder Deep/Short) ~0,7 s > TOL_S 0,5 s → 9 Überzählige pro Session. **Fix:** TOL_S = 1,5 s (> Jitter, < ~4 s Mindest-Sendeabstand). Siehe ADR-28. | ✅ |
 
 ---
 
@@ -273,6 +275,8 @@ FEC-Algorithmus. Siehe ADR-25 und gust_knowledge.md §22.
 | ✅ BUG-15 | — | bug | rigctld Früh-Start beim Daemon-Start | Juni 2026 |
 | ✅ BUG-16 | — | bug | Windows IPv4/IPv6-Konflikt rigctld/HamlibPTT | Juni 2026 |
 | ✅ BUG-17 | — | bug | Tune: doppelter rigctld-Prozess verhindert | Juni 2026 |
+| ✅ BUG-18 | — | bug | Deep-Decoder CPU-Konkurrenz (gemeinsamer Executor) | Juni 2026 |
+| ✅ BUG-19 | — | bug | DedupCache TOL_S zu eng (0.5s → 1.5s) | Juni 2026 |
 
 ---
 
@@ -370,8 +374,79 @@ ist Kern-Designziel (Telemetrie/Notfunk). Der Cliff ist zudem ein Mehrkanal-Arte
 nötig wird: kürzere Codes (RS(31,15)/RS(63,31), BUG-04), nicht mehr Parität.
 Analyse: `gust_knowledge.md` §22, Methodik: `stresstest.md` Schicht 4.
 
+### ADR-26: Ringpuffer-Mindestgröße 120s ✅ (Juni 2026)
+Bei 30s Puffer und 5.5s Frame-Dauer liegt die Wrap-around-
+Wahrscheinlichkeit bei 18.3% pro Frame → ~60% Live-Dekodierrate.
+Bei 120s sinkt sie auf 4.6%. Speicherbedarf: 120s × native SR ×
+float32 ≈ 21 MB bei 48 kHz — unkritisch auch auf RPi.
+Fix: `buffer_seconds = max(self._window * 2, 120.0)` in
+`AudioReceiver.__init__()` (gust_rx.py).
+
+### ADR-27: Deep-Decoder — paralleler RX-Task mit eigenem Executor ✅ (Juni 2026)
+Der Short-Decoder (9s/2s) erreicht auf VAC-Audio nur ~54-57%
+Dekodierrate. Root Cause ungeklärt (nicht Ringpuffer, nicht
+Samplerate, nicht Scan-Intervall). Lösung: paralleler Deep-Decoder
+(20s Fenster / 15s Intervall, Sliding-Window analog Batch-Decoder)
+über `rx.deep_decode: true` in gateway.json aktivierbar.
+Gemeinsamer `_DedupCache` mit Short-Decoder verhindert doppelte
+Events. Kritisch: eigener separater ThreadPoolExecutor
+(`_deep_executor`, N_CHANNELS Worker) — der Short-Decoder-Pool
+darf nicht geteilt werden (sonst CPU-Starvation → Regression von
+55 auf 44 Frames). Ergebnis: Short ~57 + Deep ~29 = 86-90% Gesamt.
+Implementiert in gust_rx.py (`_deep_decoder` asyncio Task).
+
+### ADR-28: DedupCache TOL_S = 1.5s ✅ (Juni 2026)
+Ursprünglicher Wert TOL_S = 0.5s führte zu 9 Überzähligen pro
+Session: sync_offset_s-Jitter zwischen zwei Scans (Short-Short oder
+Deep-Short) beträgt ~0.7s > 0.5s → Dedup ließ durch. Neuer Wert
+1.5s: größer als max. beobachteter Jitter (0.7s), kleiner als
+Mindest-Sendeabstand (~4s Framedauer). Keine legitimen Frames
+werden unterdrückt.
+
+### ADR-29: gateway.json v2 — tx_audio/rx_audio + _doc-Block ✅ (Juni 2026)
+Umbenennung `audio` → `tx_audio`, `rx` → `rx_audio` (sprechende
+Namen: TX-Pipe vs. RX-Pipe) plus `_doc`-Block, der alle Schlüssel
+in der Datei selbst dokumentiert. Rückwärtskompatibilität über
+Helper `_get_tx_audio()`/`_get_rx_audio()` in gust.py (neu-vor-alt)
+und Inline-Fallbacks in gust_gateway/gust_audio/gust_web/
+gust_tx_test/gust_beacon. Schreibpfade nutzen das Seeding-Pattern
+`setdefault("tx_audio", cfg.get("audio", {}))` — bei Alt-Configs
+zeigen beide Keys auf dasselbe Dict, beide Sichten bleiben konsistent.
+
+### ADR-30: TRX-Profil-Verwaltung im Web-UI (CRUD-API) ✅ (Juni 2026)
+`POST /api/trx/save` (anlegen/ersetzen per Name) und
+`DELETE /api/trx/profile?name=…` mit Schutzregeln: aktives Profil
+und letztes Profil nicht löschbar (409). Bearbeitungsformular im
+Transceiver-Sub-Tab, vom Profil-Dropdown automatisch befüllt.
+Profile sind damit vollständig ohne Handbearbeitung der
+gateway.json verwaltbar (vorher: Anlage nur manuell).
+
+### ADR-31: SDR-Profile — sdr_profiles + active_sdr_rx/tx_profile ✅ (Juni 2026)
+Analog zu TRX-Profilen ersetzt ein `sdr_profiles`-Array die
+Einzelblöcke `sdr_tx`/`rtlsdr` (die als Lese-Fallback erhalten
+bleiben). Jedes Profil: name, type (rx|tx|trx — automatisch per
+`enumerate_all_devices()` aus der Hardware abgeleitet, nicht
+manuell), driver, serial, rx{…}/tx{…}-Unterobjekte.
+`active_sdr_rx_profile`/`active_sdr_tx_profile` wählen RX- und
+TX-Pfad unabhängig (null = Audio-Pfad). API: /api/sdr/scan,
+profile/save, profile (DELETE), profile/activate/rx|tx —
+Schutzregeln wie ADR-30.
+
+### ADR-32: IQReceiver auf SoapySDR (treiberneutral) + Factory ✅ (Juni 2026)
+`IQReceiver` akzeptiert ein sdr_profiles-Profil und empfängt via
+SoapySDR (`_run_soapy()`: RTL-SDR, SDRplay, HackRF-RX); pyrtlsdr
+bleibt als Fallback für driver=rtlsdr ohne SoapySDR
+(`_run_pyrtlsdr()`). PPM-Korrektur als komplexer Mischer
+(`_apply_ppm()`), blockierendes readStream im Executor.
+`build_iq_receiver(cfg)` als Factory (Profil → Legacy-rtlsdr →
+None); cmd_daemon/cmd_rx starten den IQ-Task parallel zum
+AudioRXLoop. TX-Seite analog: `_resolve_sdr_tx_cfg()` mit
+Priorität active_sdr_tx_profile → sdr_tx.enabled → Audio.
+Einschränkung: SoapySDR-Bindings derzeit nur unter Python 3.9
+(PothosSDR) — siehe gust_knowledge.md §24.
+
 ---
 
 *Dokument: gust_backlog.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — BUG-13–17 TRX-Profil/Tune/rigctld-Fixes · ADR-21–25 · Docker-Deployment (P8-07) · requirements.txt-Fix (aiohttp) · RS(255,191) verworfen (ADR-25)*
+*Stand: Juni 2026 — BUG-18–19 Deep-Decoder-Fixes · ADR-26–28 Ringpuffer/Deep-Decoder/DedupCache · ADR-29–32 gateway.json v2 / TRX-CRUD / SDR-Profile · Stresstest 90% PASS*

@@ -1097,6 +1097,174 @@ für den Realbetrieb.
 
 ---
 
+## 23. Live-Decoder Dekodierrate — Root Cause und Deep-Decoder (Juni 2026)
+
+### Befund
+
+Der Live-Decoder (Short: 9s/2s) erreicht auf VAC-Audio nur ~54–57%
+Dekodierrate, der Batch-Decoder auf derselben Audio-Quelle 88%.
+Ausgeschlossen als Ursache (empirisch verifiziert):
+
+- Samplerate (8kHz / 44.1kHz / 48kHz getestet — kein Unterschied)
+- Ringpuffer-Größe (30s → 120s — kein Unterschied)
+- Scan-Intervall (100ms / 500ms / 2s — identische Rate)
+- Audio-Clipping (keines)
+- Ringpuffer-Wrap-around (Wahrscheinlichkeit bei 120s nur 4.6%)
+
+Root Cause konnte nicht isoliert werden. Der einzige verbleibende
+Unterschied: der Batch-Decoder verarbeitet ein statisches WAV-File,
+der Live-Decoder arbeitet auf einem kontinuierlich beschriebenen
+Ringpuffer. Die Hypothese lautet: der Decoder findet in manchen
+Ringpuffer-Fenster-Positionen keinen sauberen SYNC, obwohl das
+Audio dekodierbar wäre (Fenster-Timing vs. Frame-Phase).
+
+### Lösung: Deep-Decoder
+
+Statt Root Cause zu lösen: paralleler Task der analog zum
+Batch-Decoder arbeitet.
+
+**Parameter (aus Optimierungsrechnung):**
+- Fenster: 20s (4× mehr Randabstand als 9s-Fenster)
+- Intervall: 15s (Latenz für Nachlieferung)
+- Schritt: 2s (identisch zum Short-Decoder)
+- CPU: 0.3× Zusatzlast des Short-Decoders
+
+**Architektur:**
+
+```
+AudioRXLoop.run()
+  ├─ Short-Decoder      9s-Fenster / 2s-Takt, self._executor (8 Worker)
+  ├─ _level_publisher   RMS/Peak alle 250 ms (Web-UI Audio-Meter)
+  └─ _deep_decoder      nur bei rx.deep_decode=true (gateway.json)
+       alle 15s:  get_snapshot(20s)  ← SELBER Ringpuffer
+         Sliding-Window, Schritt 2s:
+           pro Offset 8 Kanäle parallel auf _deep_executor
+           (eigener Pool! BUG-18: geteilter Pool → Short-Decoder
+            verhungert, Regression 55 → 44 Frames)
+         tx_start_s = deep_tick − 20s + offset_s + sync_offset_s
+         gemeinsamer _DedupCache (TOL_S 1,5s, BUG-19)
+           → Short-Decoder-Funde automatisch unterdrückt,
+             nur echte Zusatzfunde passieren
+         Event mit deep=True → Web-UI zeigt 🔍-Badge
+```
+
+**Wichtige Implementierungspunkte:**
+
+1. **Eigener ThreadPoolExecutor** (`_deep_executor`, N_CHANNELS
+   Worker, nur bei aktiviertem Feature angelegt) — die ~80
+   Deep-Decodes pro Scan dürfen den Short-Decoder-Pool nicht
+   belegen (BUG-18 / ADR-27).
+2. **Gemeinsamer Dedup-Cache** mit dem Short-Decoder: der
+   Sendezeitstempel-Schlüssel (Kanal + Rufzeichen + tx_start)
+   funktioniert scan-übergreifend. Der `sync_offset_s`-Jitter
+   zwischen verschiedenen Snapshot-Ankern beträgt bis ~0,7 s —
+   TOL_S musste deshalb von 0,5 auf 1,5 s (BUG-19 / ADR-28).
+3. **Fixed-Cadence** auch im Deep-Loop (Resync statt Aufstauen),
+   Mute-Respekt während eigenem TX, Stille-Skip.
+4. **Opt-in**: `"rx": {"deep_decode": true}` + Daemon-Neustart;
+   Toggle im Web-UI (Audio & PTT) mit Neustart-Hinweis.
+
+### Ergebnis (Stresstest via VAC, Juni 2026)
+
+| Konfiguration | Dekodierrate |
+|---|---|
+| Short-Decoder allein | ~54–57 % |
+| Short + Deep (eigener Executor) | **86–90 %** ✅ PASS (≥ 80 %) |
+| Short + Deep (geteilter Executor, BUG-18) | 44 Frames — schlechter als ohne |
+| Batch-Decoder (Referenz, statisches WAV) | 88 % |
+
+Der Deep-Decoder liefert verpasste Frames mit ~15 s Verzögerung
+nach — für Telemetrie/Notfunk unkritisch, für die Live-Anzeige
+durch das 🔍-Badge transparent.
+
+### Merksatz
+
+> **Wenn zwei Tasks denselben ThreadPool teilen, verhungert der
+> latenzkritische.** Parallele Decoder-Pfade brauchen getrennte
+> Executors — CPU-Konkurrenz zeigt sich nicht als Fehler, sondern
+> als stille Raten-Regression.
+
+---
+
+## 24. SDR-Profil-System — Konfiguration, API, Laufzeit-Bindung (Juni 2026)
+
+### Motivation
+
+Die SDR-Konfiguration bestand aus zwei unverbundenen Einzelblöcken
+(`sdr_tx` für SoapySDR-TX, `rtlsdr` für IQ-RX) — ein Gerät pro
+Richtung, hart verdrahtet. Mit mehreren Geräten im Shack (HackRF,
+SDRplay, RTL-SDR) braucht es dasselbe Muster wie bei den
+TRX-Profilen: benannte Profile + ein Zeiger auf das aktive.
+
+### Konfigurationsmodell (gateway.json)
+
+```
+"sdr_profiles": [
+  { "name": "HackRF",  "type": "trx", "driver": "hackrf",
+    "serial": "", "rx": {…}, "tx": {…} },
+  { "name": "SDRplay", "type": "rx",  "driver": "sdrplay",
+    "rx": {center_freq_hz, sample_rate, gain, ppm_correction} }
+],
+"active_sdr_rx_profile": null,    ← null = Audio/VAC-RX
+"active_sdr_tx_profile": null     ← null = Audio-TX-Pfad
+```
+
+RX- und TX-Pfad sind unabhängig wählbar (z.B. SDRplay-RX +
+Audio-TX über den TRX). `sdr_tx`/`rtlsdr` bleiben als
+Lese-Fallback erhalten — keine Migration nötig.
+
+### type-Ableitung aus der Hardware
+
+`type` (rx|tx|trx) wird nicht manuell gepflegt:
+`enumerate_all_devices()` (gust_soapy_tx.py) öffnet jedes Gerät
+kurz und liest `getNumChannels(RX)` + `getNumChannels(TX)` —
+RTL-SDR ⇒ rx, HackRF ⇒ trx. Im Web-UI ist das Typ-Feld readonly
+und wird per „Geräte scannen"/„Übernehmen" befüllt.
+
+### API (gust_web.py)
+
+| Endpunkt | Zweck |
+|---|---|
+| GET /api/sdr/scan | enumerate + RX/TX-Caps + Profile + aktive |
+| POST /api/sdr/profile/save | anlegen/ersetzen (per Name) |
+| DELETE /api/sdr/profile?name= | löschen (Schutz: aktiv/letztes → 409) |
+| POST /api/sdr/profile/activate/rx | active_sdr_rx_profile (null = aus) |
+| POST /api/sdr/profile/activate/tx | active_sdr_tx_profile (null = aus) |
+
+activate prüft die Richtungs-Fähigkeit (rx-Profil ist nicht als
+TX aktivierbar → 409). Beide activate-Handler teilen sich eine
+Implementierung (`_sdr_activate(request, direction)`).
+
+### Laufzeit-Bindung (gust.py / gust_iq_rx.py)
+
+TX: `_resolve_sdr_tx_cfg(cfg)` mit Priorität
+`active_sdr_tx_profile` → Legacy `sdr_tx.enabled` → None
+(Audio-Pfad). Baut aus dem Profil das Dict, das `_tx_via_sdr()`
+erwartet (device_args aus driver+serial, freq, gain, …).
+
+RX: `cmd_daemon()`/`cmd_rx()` starten den IQReceiver **parallel**
+zum AudioRXLoop — beide publizieren in denselben EventBus.
+
+`_run_soapy()` ist treiberneutral: Device-Args aus
+`driver`+`serial`, CF32-Stream, blockierendes `readStream`
+im Executor (Event-Loop bleibt reaktiv), PPM-Korrektur
+via `_apply_ppm()` (komplexer Frequenz-Mischer).
+
+`build_iq_receiver(cfg)` als Factory-Funktion:
+active_sdr_rx_profile → Legacy-rtlsdr → None.
+
+### Wichtige Einschränkung: Python-Version
+
+SoapySDR-Bindings existieren derzeit nur in der Python-3.9-
+Umgebung (PothosSDR auf Windows). Unter Python 3.14 (normaler
+GUST-Daemon) greift bei `driver=rtlsdr` der pyrtlsdr-Fallback;
+SDRplay und HackRF-RX loggen einen klaren Fehler. Für
+produktiven SDR-RX-Betrieb mit SDRplay/HackRF muss entweder
+der Daemon unter Python 3.9 laufen oder SoapySDR-Bindings
+für 3.14 installiert werden.
+
+---
+
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
 *Stand: Juni 2026 — Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Connector-Konzept · Microham-Konfiguration · Docker-Deployment*

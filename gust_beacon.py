@@ -317,7 +317,8 @@ def run_beacon(args, cfg: dict | None = None):
 def main():
     # gateway.json als Default-Quelle fuer Audio/PTT
     cfg        = load_gateway_config(DEFAULT_GATEWAY)
-    cfg_audio  = cfg.get("audio", {}) if isinstance(cfg, dict) else {}
+    cfg_audio  = ((cfg.get("tx_audio") or cfg.get("audio") or {})
+                  if isinstance(cfg, dict) else {})
     cfg_call   = cfg.get("callsign") if isinstance(cfg, dict) else None
 
     def_device      = cfg_audio.get("device")

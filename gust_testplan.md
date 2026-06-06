@@ -476,6 +476,27 @@ nötig wäre.
 ### T-10.4 MeshCom End-to-End (OA) 🔲
 LoRa → GUST-Gateway → HF → Remote-Empfänger → MQTT-Echo.
 
+### T-10.5 — Live-Decoder Stresstest via VAC + Deep-Decoder ✅ (Juni 2026)
+
+**Ziel:** Live-Dekodierrate des Daemon-RX (Echtzeit-Ringpuffer) gegen
+den Batch-Decoder auf identischer Audio-Quelle messen; Deep-Decoder
+(ADR-27) als Nachliefer-Pfad validieren.
+**Methode:** Stresstest-WAV (`gust_stresstest.py`, 8 Kanäle) via
+Virtual Audio Cable in den laufenden Daemon einspielen;
+Session-Recorder (Web-UI, Tab Stresstest) aufzeichnen; Auswertung
+gegen Ground-Truth-CSV via `match_live_session()`.
+**Erwartung:** ≥ 80 % Dekodierrate (Akzeptanzkriterium).
+**Ergebnis:**
+
+| Konfiguration | Rate |
+|---|---|
+| Short-Decoder allein (9s/2s) | ~54–57 % |
+| Short + Deep-Decoder (`rx.deep_decode`) | **86–90 %** ✅ PASS |
+| Batch-Referenz (`gust_stress_decode.py`, gleiche WAV) | 88 % |
+
+Befunde dokumentiert: Root-Cause-Eingrenzung `gust_knowledge.md` §23;
+BUG-18 (Executor-Konkurrenz), BUG-19 (Dedup-TOL), ADR-26–28.
+
 ---
 
 ## Phase 9 — Protokoll v0.5 Tests
@@ -525,6 +546,52 @@ LoRa → GUST-Gateway → HF → Remote-Empfänger → MQTT-Echo.
   dekodieren mit und ohne use_equalizer=True.
 **Erwartung:** use_equalizer=True dekodiert auch bei -6 dB Tondämpfung
 **Status:** 🔲
+
+---
+
+## Modul 12 — SDR-Profil-System (`gust_soapy_tx.py`, `gust_iq_rx.py`, `gust.py`)
+
+### T-12.1 enumerate_all_devices() — type-Ableitung (UT) 🔲
+`enumerate_all_devices()` gibt für RTL-SDR type=`"rx"`,
+für HackRF type=`"trx"` zurück (RX+TX-Kanäle korrekt gelesen).
+Ohne Hardware: leere Liste, kein Exception.
+
+### T-12.2 _resolve_sdr_tx_cfg() — Priorität (UT) ✅
+```python
+# active_sdr_tx_profile=null → None
+# active_sdr_tx_profile="HackRF" → dict mit driver="hackrf"
+# RX-only-Profil als TX → None
+# Legacy sdr_tx.enabled=true → dict (Fallback)
+```
+Alle vier Fälle verifikationsgetestet (Juni 2026).
+
+### T-12.3 build_iq_receiver() — Priorität (UT) ✅
+```python
+# active_sdr_rx_profile=null → None
+# active_sdr_rx_profile="SDRplay" → IQReceiver(driver="sdrplay")
+# active_sdr_rx_profile="HackRF" (trx) → IQReceiver(driver="hackrf")
+# unbekanntes Profil → None + Warnung
+# Legacy rtlsdr.enabled=true → IQReceiver (Fallback)
+```
+Alle fünf Fälle verifikationsgetestet (Juni 2026).
+
+### T-12.4 SDR-Profil API — CRUD + Schutzregeln (IT) ✅
+Live-REST gegen isolierte Config (Port 8181):
+- scan (available=false ohne SoapySDR, profiles=2) ✓
+- activate rx SDRplay ✓
+- activate tx SDRplay → 409 (nicht TX-fähig) ✓
+- activate tx HackRF ✓
+- delete aktives Profil → 409 ✓
+- save RTL-SDR (count=3) ✓
+- deactivate rx (null) ✓
+- delete RTL-SDR (2 verbleibend) ✓
+
+### T-12.5 IQReceiver SoapySDR Hardware-Test (HT) 🔲
+SDRplay RSPdx2 an Python-3.9-Umgebung:
+- `active_sdr_rx_profile: "SDRplay"` in gateway.json setzen
+- Daemon starten → Log zeigt "IQ-RX-Loop aktiv · SDRplay · 14.110 MHz"
+- GUST-Signal auf 14.110 MHz → Frame dekodiert via IQ-Pfad
+Voraussetzung: SoapySDR-Bindings + Daemon unter Python 3.9.
 
 ---
 
@@ -602,5 +669,5 @@ HackRF-TX-Offset: konstant, vom Decoder automatisch kompensiert.
 
 *Dokument: gust_testplan.md*
 *Autor: OE3GAS*
-*Stand: Mai 2026 — Phase 7 Empfänger-Robustheit + SNR-Baseline (T-10.2) abgeschlossen; Modul 9 auf Connector Layer / MQTT (T-9.1–T-9.10) erweitert: 3-Ebenen-Teststrategie (offline / öffentlicher Broker / amqtt lokal)*
+*Stand: Juni 2026 — T-10.5 Live-Decoder VAC-Stresstest + Deep-Decoder (86–90 % PASS) · Modul 12 SDR-Profile-System (T-12.1–T-12.5); davor: Phase 7 Empfänger-Robustheit + SNR-Baseline (T-10.2); Modul 9 Connector Layer / MQTT (T-9.1–T-9.10): 3-Ebenen-Teststrategie (offline / öffentlicher Broker / amqtt lokal)*
 *Gilt für: Phase 1–10*

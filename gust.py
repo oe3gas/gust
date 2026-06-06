@@ -267,6 +267,67 @@ _DEFAULT_CONFIG = {
 # KONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════
 
+def _get_tx_audio(cfg: dict) -> dict:
+    """
+    Gibt den TX-Audio-Abschnitt zurück.
+    Neu: cfg["tx_audio"] — Alt: cfg["audio"] (Rückwärtskompatibilität).
+    """
+    return cfg.get("tx_audio") or cfg.get("audio") or {}
+
+
+def _get_rx_audio(cfg: dict) -> dict:
+    """
+    Gibt den RX-Audio-Abschnitt zurück.
+    Neu: cfg["rx_audio"] — Alt: cfg["rx"] (Rückwärtskompatibilität).
+    """
+    return cfg.get("rx_audio") or cfg.get("rx") or {}
+
+
+def _resolve_sdr_tx_cfg(cfg: dict) -> "dict | None":
+    """
+    Gibt die SDR-TX-Konfiguration zurück, die für den
+    nächsten Sendevorgang verwendet werden soll.
+
+    Priorität:
+      1. active_sdr_tx_profile → SDR-Profil aus sdr_profiles
+      2. cfg["sdr_tx"]["enabled"] == True → alter sdr_tx-Block
+      3. None → Audio-TX-Pfad
+
+    Rückgabe: dict mit den Feldern die _tx_via_sdr() erwartet
+    (device_args, sample_rate, freq_hz, antenna, gain,
+    tx_channel, label), oder None wenn Audio-Pfad.
+    """
+    # Neu: active_sdr_tx_profile
+    active_tx = cfg.get("active_sdr_tx_profile")
+    if active_tx:
+        profiles = cfg.get("sdr_profiles", [])
+        profile  = next(
+            (p for p in profiles if p.get("name") == active_tx),
+            None)
+        if profile and profile.get("type") in ("tx", "trx"):
+            tx_sub = profile.get("tx") or {}
+            return {
+                "device_args": {
+                    "driver": profile.get("driver", ""),
+                    **({"serial": profile["serial"]}
+                       if profile.get("serial") else {}),
+                },
+                "label":       profile.get("name", ""),
+                "sample_rate": int(tx_sub.get("sample_rate", 2_000_000)),
+                "freq_hz":     float(tx_sub.get("freq_hz", 14_110_000)),
+                "antenna":     tx_sub.get("antenna") or None,
+                "gain":        tx_sub.get("gain") or {"normalized": 0.5},
+                "tx_channel":  int(tx_sub.get("tx_channel", 0)),
+            }
+
+    # Fallback: alter sdr_tx-Block
+    sdr_tx = cfg.get("sdr_tx") or {}
+    if sdr_tx.get("enabled"):
+        return sdr_tx
+
+    return None
+
+
 def load_config(path: Optional[str], callsign: Optional[str]) -> dict:
     """
     Konfiguration laden und mit Standardwerten zusammenführen.
@@ -500,7 +561,7 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
     # den Prozess kennt und kein Konflikt-Dialog erscheint.
     # Im --sim-Modus wird kein TX ausgeführt und kein Funkgerät benötigt —
     # rigctld-Start wäre sinnlos und erzeugt Fehlermeldungen ohne Gerät.
-    _audio_cfg = cfg.get("audio", {})
+    _audio_cfg = _get_tx_audio(cfg)
     if (_audio_cfg.get("ptt_backend") == "hamlib"
             and cfg.get("rigctld", {}).get("auto_start", False)
             and not dry_run
@@ -536,9 +597,22 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
         rx_task = asyncio.create_task(rx.run(), name="rx_loop")
         log.info(
             "RX-Loop aktiv  |  Gerät: %s  |  Intervall: %.1fs  |  Fenster: %.1fs",
-            cfg["rx"].get("device") or "Standard",
-            cfg["rx"].get("scan_interval_s", 2.0),
-            cfg["rx"].get("window_s", 8.0),
+            _get_rx_audio(cfg).get("device") or "Standard",
+            _get_rx_audio(cfg).get("scan_interval_s", 2.0),
+            _get_rx_audio(cfg).get("window_s", 8.0),
+        )
+
+    # ── IQ-RX-Loop starten (SDR-Profil) ───────────────────────────────
+    from gust_iq_rx import build_iq_receiver
+    iq_rx      = build_iq_receiver(cfg)
+    iq_rx_task = None
+    if iq_rx is not None and not dry_run:
+        iq_rx_task = asyncio.create_task(
+            iq_rx.run(bus), name="iq_rx_loop")
+        log.info(
+            "IQ-RX-Loop aktiv  |  Profil: %s  |  %.3f MHz",
+            cfg.get("active_sdr_rx_profile") or "rtlsdr",
+            iq_rx.center_freq / 1e6,
         )
 
     try:
@@ -562,8 +636,8 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
                     callsign    = cfg["callsign"],
                     uptime_s    = now - start_time,
                     home_channel= ci["channel"],
-                    audio_device= cfg["audio"].get("device") or "–",
-                    ptt_backend = cfg["audio"].get("ptt_backend", "null"),
+                    audio_device= _get_tx_audio(cfg).get("device") or "–",
+                    ptt_backend = _get_tx_audio(cfg).get("ptt_backend", "null"),
                 ))
 
             wait = min(adapter.next_due_in() or 1.0, 0.5)
@@ -577,6 +651,13 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
             rx_task.cancel()
             try:
                 await rx_task
+            except asyncio.CancelledError:
+                pass
+        if iq_rx_task and not iq_rx_task.done():
+            iq_rx.stop()
+            iq_rx_task.cancel()
+            try:
+                await iq_rx_task
             except asyncio.CancelledError:
                 pass
         await gateway.stop()
@@ -611,12 +692,25 @@ async def cmd_rx(cfg: dict) -> None:
         rx_task = asyncio.create_task(rx.run(), name="rx_loop")
         log.info(
             "RX-Loop aktiv  |  Gerät: %s  |  Intervall: %.1fs  |  Fenster: %.1fs",
-            cfg["rx"].get("device") or "Standard",
-            cfg["rx"].get("scan_interval_s", 2.0),
-            cfg["rx"].get("window_s", 8.0),
+            _get_rx_audio(cfg).get("device") or "Standard",
+            _get_rx_audio(cfg).get("scan_interval_s", 2.0),
+            _get_rx_audio(cfg).get("window_s", 8.0),
         )
     else:
-        log.info("RX-Loop deaktiviert (rx.enabled=false)")
+        log.info("RX-Loop deaktiviert (rx_audio.enabled=false)")
+
+    # ── IQ-RX-Loop starten (SDR-Profil) ───────────────────────────────
+    from gust_iq_rx import build_iq_receiver
+    iq_rx      = build_iq_receiver(cfg)
+    iq_rx_task = None
+    if iq_rx is not None:
+        iq_rx_task = asyncio.create_task(
+            iq_rx.run(bus), name="iq_rx_loop")
+        log.info(
+            "IQ-RX-Loop aktiv  |  Profil: %s  |  %.3f MHz",
+            cfg.get("active_sdr_rx_profile") or "rtlsdr",
+            iq_rx.center_freq / 1e6,
+        )
 
     try:
         await asyncio.Event().wait()
@@ -627,6 +721,13 @@ async def cmd_rx(cfg: dict) -> None:
             rx_task.cancel()
             try:
                 await rx_task
+            except asyncio.CancelledError:
+                pass
+        if iq_rx_task and not iq_rx_task.done():
+            iq_rx.stop()
+            iq_rx_task.cancel()
+            try:
+                await iq_rx_task
             except asyncio.CancelledError:
                 pass
         await server.stop()
@@ -824,8 +925,9 @@ async def cmd_tx(cfg: dict, frame_type: str,
         return
 
     # ── TX-Pfad wählen: SDR (SoapySDR) oder NF-Audio ─────────────────
-    sdr_cfg = cfg.get("sdr_tx") or {}
-    if sdr_cfg.get("enabled"):
+    # active_sdr_tx_profile hat Vorrang, Fallback alter sdr_tx-Block
+    sdr_cfg = _resolve_sdr_tx_cfg(cfg)
+    if sdr_cfg is not None:
         await _tx_via_sdr(cs, frame_type_int, payload, sdr_cfg)
         return
 
@@ -833,25 +935,26 @@ async def cmd_tx(cfg: dict, frame_type: str,
         from gust_audio import AudioTransmitter, AUDIO_LEVEL
         from gust_frame  import channel_frequency, CHANNEL_BW_HZ
 
-        ptt = _build_ptt(cfg["audio"], cfg)
+        _tx_cfg = _get_tx_audio(cfg)
+        ptt = _build_ptt(_tx_cfg, cfg)
 
         # Level aus Config: Wert > 1 wird als Prozent interpretiert (50 → 0.5)
-        raw_level = cfg["audio"].get("level", AUDIO_LEVEL * 100)
+        raw_level = _tx_cfg.get("level", AUDIO_LEVEL * 100)
         level = max(0.01, min(1.0, raw_level / 100.0)) if raw_level > 1.0 else float(raw_level)
 
         print(f"\n  TX startet …")
         print(f"  PTT:       {ptt.__class__.__name__}")
-        print(f"  PTT-Delay: {cfg['audio'].get('ptt_delay_ms', 250)} ms (Lead + Tail)")
-        print(f"  Gerät:     {cfg['audio'].get('device') or 'Standard'}")
+        print(f"  PTT-Delay: {_tx_cfg.get('ptt_delay_ms', 250)} ms (Lead + Tail)")
+        print(f"  Gerät:     {_tx_cfg.get('device') or 'Standard'}")
         print(f"  Kanal:     wird aus SHA-256({cs}) bestimmt")
         print(f"  RC-Fenster: aktiv (window=True)")
 
         loop = asyncio.get_running_loop()
 
-        _ptt_delay_s = cfg["audio"].get("ptt_delay_ms", 250) / 1000.0
+        _ptt_delay_s = _tx_cfg.get("ptt_delay_ms", 250) / 1000.0
         with AudioTransmitter(
             ptt        = ptt,
-            device     = cfg["audio"].get("device"),
+            device     = _tx_cfg.get("device"),
             level      = level,
             ptt_lead_s = _ptt_delay_s,
             ptt_tail_s = _ptt_delay_s,
@@ -1263,16 +1366,20 @@ def _apply_audio_overrides(args, cfg: dict) -> None:
     geparst, da Windows MME mehrere Geräte mit gleichem Namen meldet.
     --level wird von Prozent (1–100) in float (0.01–1.0) umgerechnet.
     """
+    # In tx_audio schreiben; bei Alt-Configs zeigt setdefault auf DASSELBE
+    # Dict wie cfg["audio"] → beide Sichten bleiben konsistent.
+    tx_cfg = cfg.setdefault("tx_audio", cfg.get("audio", {}))
+
     device_arg = getattr(args, "device", None)
     if device_arg is not None:
         try:
-            cfg["audio"]["device"] = int(device_arg)
+            tx_cfg["device"] = int(device_arg)
         except ValueError:
-            cfg["audio"]["device"] = device_arg
+            tx_cfg["device"] = device_arg
 
     level_arg = getattr(args, "level", None)
     if level_arg is not None:
-        cfg["audio"]["level"] = max(0.01, min(1.0, level_arg / 100.0))
+        tx_cfg["level"] = max(0.01, min(1.0, level_arg / 100.0))
 
 
 def _run_async(coro) -> None:

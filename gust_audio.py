@@ -379,7 +379,8 @@ def ensure_rigctld_running(cfg: dict,
                             ihn beenden moechte; meist einfach laufen lassen)
     """
     rig_cfg   = cfg.get("rigctld") if isinstance(cfg, dict) else None
-    audio_cfg = cfg.get("audio", {}) if isinstance(cfg, dict) else {}
+    audio_cfg = ((cfg.get("tx_audio") or cfg.get("audio") or {})
+                 if isinstance(cfg, dict) else {})
 
     if host is None:
         host = (rig_cfg or {}).get("host", audio_cfg.get("hamlib_host", "localhost"))
@@ -851,8 +852,7 @@ class AudioReceiver:
 
         if channels == 2:
             # Stereo-Gerät: Callback nimmt Kanal 0 (bereits in _callback via [:, 0])
-            print(f"[RX] Gerät liefert Stereo — verwende Kanal 0 (links) als Mono",
-                  flush=True)
+            log.debug("[RX] Gerät liefert Stereo — verwende Kanal 0 (links) als Mono")
 
         # Native Samplerate: force_samplerate hat Vorrang vor Geräte-Default
         if self._force_sr:
@@ -889,10 +889,10 @@ class AudioReceiver:
         sr_info  = (f"{self._native_sr} Hz → resample → {SAMPLE_RATE} Hz"
                     if self._native_sr != SAMPLE_RATE
                     else f"{SAMPLE_RATE} Hz (nativ)")
-        print(f"[RX] Aufnahme gestartet  |  Gerät: '{dev_name}'  |  "
-              f"Kanäle: {channels}  |  SR: {sr_info}  |  "
-              f"Puffer: {self._buf_size // self._native_sr}s",
-              flush=True)
+        log.debug("[RX] Aufnahme gestartet  |  Gerät: '%s'  |  "
+                  "Kanäle: %d  |  SR: %s  |  Puffer: %ds",
+                  dev_name, channels, sr_info,
+                  self._buf_size // self._native_sr)
 
     def stop(self):
         """Audioaufnahme stoppen."""

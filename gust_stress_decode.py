@@ -502,14 +502,28 @@ def match_live_session(session_frames: list, csv_path: str) -> dict:
     expected = load_csv_log(csv_path)
 
     # tx_start_s bevorzugen (physikalischer Sendezeitstempel),
-    # Fallback auf ts (Decode-Zeitpunkt — alte Sessions)
+    # Fallback auf ts (Decode-Zeitpunkt — alte Sessions).
+    # Quellen: EventBus-Events (float) ODER CSV-Upload (String,
+    # "0.0" = Platzhalter alter Sessions ohne tx_start_s).
+    def _tx_start_of(f):
+        raw = f.get("tx_start_s")
+        if raw in (None, "", "0.0", "0", 0.0, 0):
+            return None
+        try:
+            return float(raw)
+        except (ValueError, TypeError):
+            return None
+
     use_tx_start = bool(session_frames) and all(
-        "tx_start_s" in f for f in session_frames)
+        _tx_start_of(f) is not None for f in session_frames)
 
     def _time_of(f):
         if use_tx_start:
-            return float(f["tx_start_s"])
-        return float(f.get("ts", 0.0))
+            return _tx_start_of(f)
+        try:
+            return float(f.get("ts", 0.0) or 0.0)
+        except (ValueError, TypeError):
+            return 0.0
 
     # session_frames → internes found-Format für match_results()
     t0 = min((_time_of(f) for f in session_frames), default=0.0)
