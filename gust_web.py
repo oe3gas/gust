@@ -541,6 +541,55 @@ h2:first-child { margin-top: 0; }
   border-bottom: 1px solid var(--border); }
 .seq-table th { color: var(--text2); font-weight: normal; }
 
+/* ── Inbox Antwort-Bereich ───────────────────────── */
+.inbox-reply-box {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.inbox-reply-box label {
+  display: block;
+  color: var(--text2);
+  font-size: var(--fs-sm);
+  margin-bottom: 4px;
+}
+.inbox-reply-box textarea {
+  width: 100%;
+  min-height: 72px;
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  resize: vertical;
+  box-sizing: border-box;
+}
+.inbox-reply-box textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.inbox-reply-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.inbox-reply-counter {
+  color: var(--text2);
+  font-size: var(--fs-xs);
+  flex: 1;
+}
+.inbox-reply-counter.warn { color: var(--orange, #f0a050); }
+.inbox-reply-status {
+  font-size: var(--fs-xs);
+  min-height: 1.2em;
+  margin-top: 4px;
+}
+.inbox-reply-status.ok  { color: var(--green, #3fb950); }
+.inbox-reply-status.err { color: var(--red,   #f85149); }
+
 /* ── MOBILE / RESPONSIVE ─────────────────────────────────────────── */
 @media (max-width: 640px) {
   header { padding: 8px 10px; gap: 8px; flex-wrap: wrap; }
@@ -3620,11 +3669,95 @@ function showInboxDetail(msg) {
   }
 
   box.innerHTML = html;
+
+  // ── Antwort-Block (nur bei vollständigen Nachrichten) ──
+  const replyFrom = msg.from;
+  if (msg.complete && replyFrom && replyFrom !== '?') {
+    const replyDiv = document.createElement('div');
+    replyDiv.className = 'inbox-reply-box';
+    replyDiv.innerHTML = `
+      <label>↩ Antwort an <strong>${_esc(replyFrom)}</strong>:</label>
+      <textarea id="inbox-reply-text"
+                placeholder="Antwort eingeben …"
+                oninput="inboxReplyCount(this)"></textarea>
+      <div class="inbox-reply-footer">
+        <span class="inbox-reply-counter"
+              id="inbox-reply-counter">0 Zeichen</span>
+        <button class="btn"
+                onclick="sendInboxReply('${_esc(replyFrom)}')"
+                id="inbox-reply-btn">
+          ↩ Senden
+        </button>
+      </div>
+      <div class="inbox-reply-status" id="inbox-reply-status"></div>
+    `;
+    box.appendChild(replyDiv);
+  }
+
   document.getElementById('inbox-modal').classList.add('open');
 }
 
 function closeInboxModal() {
   document.getElementById('inbox-modal').classList.remove('open');
+}
+
+// Zeichenzähler für Antwort-Textarea
+function inboxReplyCount(ta) {
+  const n  = ta.value.length;
+  const el = document.getElementById('inbox-reply-counter');
+  if (!el) return;
+  // GUST TEXT-Frame: 14 Byte Text je Fragment (UTF-8),
+  // Wire-Format max. 16 Fragmente = 224 Byte (BUG-09)
+  const bytes = new TextEncoder().encode(ta.value).length;
+  const frags = Math.max(1, Math.ceil(bytes / 14));
+  el.textContent = n + ' Zeichen'
+    + (frags > 1 ? ` (${frags} Fragmente)` : '');
+  el.className = 'inbox-reply-counter'
+    + (frags > 16 ? ' warn' : '');
+}
+
+async function sendInboxReply(toCall) {
+  const ta  = document.getElementById('inbox-reply-text');
+  const btn = document.getElementById('inbox-reply-btn');
+  const st  = document.getElementById('inbox-reply-status');
+  if (!ta || !btn || !st) return;
+
+  const text = ta.value.trim();
+  if (!text) {
+    st.textContent = 'Bitte Antworttext eingeben.';
+    st.className   = 'inbox-reply-status err';
+    return;
+  }
+
+  btn.disabled   = true;
+  st.textContent = 'Sende …';
+  st.className   = 'inbox-reply-status';
+
+  try {
+    // Freitext-TX via bestehende API: POST /api/tx/text.
+    // Feldname "to" (nicht "dest") — das Gateway liest
+    // data.get("to") und fragmentiert serverseitig.
+    const res = await apiFetch('/api/tx/text', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ to: toCall, text }),
+    });
+
+    if (res.ok !== false) {
+      st.textContent = '✓ Gesendet an ' + toCall;
+      st.className   = 'inbox-reply-status ok';
+      ta.value       = '';
+      inboxReplyCount(ta);
+      // Nach 3s: Modal schließen
+      setTimeout(() => closeInboxModal(), 3000);
+    } else {
+      throw new Error(res.error || res.message || 'Fehler');
+    }
+  } catch (e) {
+    st.textContent = '✗ ' + (e.message || 'Senden fehlgeschlagen');
+    st.className   = 'inbox-reply-status err';
+    btn.disabled   = false;
+  }
 }
 
 function frameDataSummary(f) {
