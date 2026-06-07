@@ -3754,7 +3754,22 @@ async function sendInboxReply(toCall) {
       throw new Error(res.error || res.message || 'Fehler');
     }
   } catch (e) {
-    st.textContent = '✗ ' + (e.message || 'Senden fehlgeschlagen');
+    // Lesbaren Text aus rohem HTTP-Fehler extrahieren:
+    // apiFetch wirft "HTTP 503: {"error":"Kein TX-Gateway..."}"
+    // → nur den error-Wert aus dem JSON zeigen
+    let msg = e.message || 'Senden fehlgeschlagen';
+    try {
+      const jsonStart = msg.indexOf('{');
+      if (jsonStart >= 0) {
+        const parsed = JSON.parse(msg.slice(jsonStart));
+        msg = parsed.error || parsed.message || msg;
+      }
+    } catch (_) { /* JSON-Parse fehlgeschlagen → Originaltext */ }
+    // HTTP-Statuscodes in sprechenden Text übersetzen
+    if (msg.startsWith('HTTP 503')) msg = 'Kein TX-Gateway aktiv (Monitor-Modus)';
+    if (msg.startsWith('HTTP 401')) msg = 'Nicht autorisiert';
+    if (msg.startsWith('HTTP 400')) msg = 'Ungültige Eingabe';
+    st.textContent = '✗ ' + msg;
     st.className   = 'inbox-reply-status err';
     btn.disabled   = false;
   }
