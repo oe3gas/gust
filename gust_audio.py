@@ -79,6 +79,17 @@ from gust_frame import FrameType, encode_weather, build_frame, N_CHANNELS
 
 log = logging.getLogger("gust.audio")
 
+# VITAL-Fallback für Standalone-Betrieb (z.B. `py gust_rx.py`):
+# log.vital() wird normalerweise von gust.py definiert (Level 35).
+# Ohne diesen Guard würde _callback() im PortAudio-Thread mit
+# AttributeError abbrechen, wenn gust.py nicht geladen ist.
+if not hasattr(logging.Logger, "vital"):
+    logging.addLevelName(35, "VITAL")
+    def _vital(self, message, *args, **kwargs):
+        if self.isEnabledFor(35):
+            self._log(35, message, args, **kwargs)
+    logging.Logger.vital = _vital
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # KONSTANTEN
@@ -135,24 +146,24 @@ class NullPTT(PTTBackend):
     """
     Simuliertes PTT-Backend — kein Hardware erforderlich.
 
-    Gibt PTT-Ereignisse auf der Konsole aus.
+    Loggt PTT-Ereignisse als debug (nur --verbose sichtbar).
     Verwendung: Tests auf dem PC, Entwicklung ohne Funkgerät.
     """
     def __init__(self, verbose: bool = True):
+        # verbose: nur noch für Rückwärtskompatibilität (Aufrufer
+        # setzen es teils) — Sichtbarkeit steuert jetzt das Logging.
         self.verbose = verbose
         self._active = False
 
     def activate(self):
         self._active = True
-        if self.verbose:
-            print("[PTT NullPTT] ▶▶▶  TX EIN  ◀◀◀")
+        log.debug("[NullPTT] PTT aktiviert")
 
     def release(self):
         if not self._active:
             return   # bereits released — kein Doppel-Log
         self._active = False
-        if self.verbose:
-            print("[PTT NullPTT]     TX AUS")
+        log.debug("[NullPTT] PTT gelöst")
 
     @property
     def is_active(self) -> bool:
@@ -190,23 +201,23 @@ class GPIUPTT(PTTBackend):
         GPIO.setwarnings(False)
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
-        print(f"[PTT GPIUPTT] GPIO Pin {pin} initialisiert (BCM, Output, LOW)")
+        log.vital("[PTT GPIUPTT] GPIO Pin %d initialisiert (BCM, Output, LOW)", pin)
 
     def activate(self):
         self._active = True
         GPIO.output(self.pin, GPIO.HIGH)
-        print(f"[PTT GPIUPTT] Pin {self.pin} HIGH → TX EIN")
+        log.vital("[PTT GPIUPTT] Pin %d HIGH → TX EIN", self.pin)
 
     def release(self):
         if not self._active:
             return   # bereits released — kein Doppel-Impuls
         self._active = False
         GPIO.output(self.pin, GPIO.LOW)
-        print(f"[PTT GPIUPTT] Pin {self.pin} LOW → TX AUS")
+        log.vital("[PTT GPIUPTT] Pin %d LOW → TX AUS", self.pin)
 
     def close(self):
         GPIO.cleanup(self.pin)
-        print(f"[PTT GPIUPTT] GPIO cleanup Pin {self.pin}")
+        log.debug("[PTT GPIUPTT] GPIO cleanup Pin %d", self.pin)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -248,7 +259,10 @@ class HamlibPTT(PTTBackend):
         self._sock.settimeout(5.0)
         try:
             self._sock.connect((self.host, self.port))
-            print(f"[PTT HamlibPTT] Verbunden mit rigctld @ {self.host}:{self.port}")
+            # debug statt vital: _cmd() verbindet pro Kommando neu
+            # (Windows-rigctld) — als vital wäre das Dauer-Spam
+            log.debug("[PTT HamlibPTT] Verbunden mit rigctld @ %s:%d",
+                      self.host, self.port)
         except ConnectionRefusedError:
             raise RuntimeError(
                 f"rigctld nicht erreichbar auf {self.host}:{self.port}\n"
@@ -276,7 +290,7 @@ class HamlibPTT(PTTBackend):
         """PTT einschalten via rigctld 'T 1'."""
         self._active = True
         resp = self._cmd("T 1")
-        print(f"[PTT HamlibPTT] T 1 → '{resp}' → TX EIN")
+        log.vital("[PTT HamlibPTT] T 1 → '%s' → TX EIN", resp)
 
     def release(self):
         """PTT ausschalten via rigctld 'T 0'.
@@ -290,10 +304,10 @@ class HamlibPTT(PTTBackend):
         self._active = False
         try:
             resp = self._cmd("T 0")
-            print(f"[PTT HamlibPTT] T 0 → '{resp}' → TX AUS")
+            log.vital("[PTT HamlibPTT] T 0 → '%s' → TX AUS", resp)
         except OSError as e:
-            print(f"[PTT HamlibPTT] T 0 fehlgeschlagen ({e}) — "
-                  f"TRX setzt PTT automatisch zurueck")
+            log.error("[PTT HamlibPTT] T 0 fehlgeschlagen (%s) — "
+                      "TRX setzt PTT automatisch zurueck", e)
 
     def get_frequency(self) -> float:
         """Aktuelle VFO-Frequenz abfragen (Hz)."""
@@ -313,7 +327,7 @@ class HamlibPTT(PTTBackend):
             self._sock.close()
         except Exception:
             pass
-        print("[PTT HamlibPTT] Verbindung geschlossen")
+        log.debug("[PTT HamlibPTT] Verbindung geschlossen")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -371,7 +385,8 @@ def ensure_rigctld_running(cfg: dict,
         host:    Override fuer Host. Default: cfg['rigctld'].host
                  oder cfg['audio'].hamlib_host oder 'localhost'
         port:    Override fuer Port. Default analog (4532).
-        verbose: Statusmeldungen auf stdout.
+        verbose: Statusmeldungen loggen (vital/debug). False z.B. im
+                 Web-Handler, der selbst eine vital-Meldung absetzt.
 
     Returns:
         None              — rigctld lief bereits
@@ -390,7 +405,7 @@ def ensure_rigctld_running(cfg: dict,
     # 1) Schon erreichbar?
     if _is_rigctld_alive(host, port):
         if verbose:
-            print(f"[rigctld] schon erreichbar @ {host}:{port}")
+            log.debug("[rigctld] schon erreichbar @ %s:%d", host, port)
         return None
 
     # 2) Eintrag fehlt komplett
@@ -442,7 +457,8 @@ def ensure_rigctld_running(cfg: dict,
     cmd.extend(str(a) for a in extra)
 
     if verbose:
-        print(f"[rigctld] Auto-Start als Hintergrundprozess: {' '.join(cmd)}")
+        log.vital("[rigctld] Auto-Start als Hintergrundprozess: %s",
+                  " ".join(cmd))
 
     import tempfile, io
 
@@ -484,8 +500,8 @@ def ensure_rigctld_running(cfg: dict,
         time.sleep(0.1)
         if _is_rigctld_alive(host, port):
             if verbose:
-                print(f"[rigctld] gestartet (PID {proc.pid}), "
-                      f"erreichbar @ {host}:{port}")
+                log.vital("[rigctld] gestartet (PID %d), "
+                          "erreichbar @ %s:%d", proc.pid, host, port)
             stderr_fh.close()
             return proc
         rc = proc.poll()
@@ -647,8 +663,9 @@ class AudioTransmitter:
 
         duration = len(audio) / sample_rate
         dev_name = self.device if self.device is not None else "Standard"
-        print(f"[TX] Gerät: '{dev_name}'  |  Dauer: {duration:.2f}s  |  "
-              f"Pegel: {self.level*100:.0f}%  |  Kanäle: {out_channels}")
+        log.vital("[TX] Gerät: '%s'  |  Dauer: %.2fs  |  "
+                  "Pegel: %.0f%%  |  Kanäle: %d",
+                  dev_name, duration, self.level * 100, out_channels)
 
         try:
             self.ptt.activate()
@@ -663,7 +680,7 @@ class AudioTransmitter:
             # PTT IMMER lösen — auch bei Ctrl+C oder Ausnahmen
             self.ptt.release()
 
-        print(f"[TX] Fertig  (#{self._tx_count})")
+        log.vital("[TX] Fertig  (#%d)", self._tx_count)
 
     def transmit_frame(
         self,
@@ -704,8 +721,9 @@ class AudioTransmitter:
             window=window,
             add_silence_ms=0,   # Stille wird durch PTT-Lead/Tail ersetzt
         )
-        print(f"[TX] Kanal {used_channel}  |  Frame: {len(frame_body)} Byte  |  "
-              f"Window: {'RC' if window else 'Rect'}")
+        log.vital("[TX] Kanal %d  |  Frame: %d Byte  |  Window: %s",
+                  used_channel, len(frame_body),
+                  "RC" if window else "Rect")
         self.transmit_audio(audio)
         return used_channel
 
@@ -755,8 +773,8 @@ class AudioTransmitter:
         mixed[:len(audio_b)] += audio_b
         # Endgültige Pegelnormierung (Peak → self.level) macht transmit_audio().
 
-        print(f"[TX] Dual-Kanal {used_a}+{used_b}  |  Frames gemischt  |  "
-              f"Window: {'RC' if window else 'Rect'}")
+        log.vital("[TX] Dual-Kanal %d+%d  |  Frames gemischt  |  Window: %s",
+                  used_a, used_b, "RC" if window else "Rect")
         self.transmit_audio(mixed)
         return used_a, used_b
 
@@ -816,7 +834,7 @@ class AudioReceiver:
     def _callback(self, indata, frames, time_info, status):
         """PortAudio Callback — wird im Audio-Thread aufgerufen."""
         if status:
-            print(f"[RX Audio] Status: {status}", file=sys.stderr)
+            log.vital("[RX Audio] %s", status)
         mono = indata[:, 0] if indata.ndim > 1 else indata.ravel()
         # Callback bleibt minimal — kein Resampling hier (würde Overflow auf RPi 3 verursachen)
         # Resampling erfolgt in get_snapshot() beim Abholen
@@ -900,7 +918,7 @@ class AudioReceiver:
             self._stream.stop()
             self._stream.close()
             self._running = False
-            print("[RX] Aufnahme gestoppt")
+            log.debug("[RX] Aufnahme gestoppt")
 
     def get_snapshot(self, seconds: float = 6.0) -> np.ndarray:
         """

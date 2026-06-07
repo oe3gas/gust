@@ -1,6 +1,6 @@
 # GUST — Backlog
 **OE3GAS — Generic Universal Shortwave Telemetry**
-*Stand: Juni 2026 — BUG-18–19 Deep-Decoder · ADR-26–28 · Ringpuffer 120s · Deep-Decoder 90% PASS*
+*Stand: Juni 2026 — ADR-29–32 SDR-Profil-System · Phase 10 History & Logging (P10-01/P10-02) · Swimlane: laufende Zeitachse, Canvas-Scroll, Pause-Snapshot, Frame-Klick*
 
 ---
 
@@ -203,6 +203,31 @@ linear (Shortened RS). Stattdessen kürzere Codes oder anderen
 FEC-Algorithmus. Siehe ADR-25 und gust_knowledge.md §22.
 
 **Referenz:** ADR-25, gust_knowledge.md §22
+
+---
+
+## PHASE 10 — History & Logging ← IN ARBEIT
+
+| ID | Prio | Typ | Titel | Beschreibung | Status |
+|---|---|---|---|---|---|
+| P10-01 | 🟡 | feature | Zeitbasierte History — Swimlane 600 s | Backend: `_rx_history` von `deque(maxlen=50)` auf `deque(maxlen=350)` erhöht. Frontend: `/api/log` wird beim Seitenladen via `slLoadHistory()` auch in die Swimlane gespeist — Zeitachsen-Kalibrierung über `tx_start_s` (txT0 = ältester Frame, `_nowS()` startet beim neuesten und läuft live weiter), Batch-Insert via `slAddFrame(data, isHistory=true)` ohne Clamp/Scroll pro Frame. Client begrenzt auf `SL_MAX_WINDOW_S` (600 s). | ✅ |
+| P10-02 | 🟡 | feature | Anzahlbasierte Langzeit-History (Tabelle) | `gust_log.py` (geplant): persistentes Langzeit-Log im Daemon; anzahlbasierte Abfragen („die letzten 500 Frames von OE3XTU"), Darstellung als Tabelle — nicht Swimlane (bei 24 h History wären Frames nur 1–2 px hoch). Dazu `rx_history_maxlen` in gateway.json konfigurierbar machen (Daemon filtert/bewahrt auf, Client bekommt nur was er anfragt). | 🔲 |
+
+### Design-Entscheidungen (Juni 2026)
+
+- **Zeit vs. Anzahl:** "Die letzten 500 Frames von OE3XTU"
+  und "die letzten 600 Sekunden" sind verschiedene Dimensionen.
+  P10-01 (zeitbasiert, 600s Swimlane) und P10-02
+  (anzahlbasiert, Tabellenform) lösen dieses Problem getrennt.
+
+- **Swimlane bei langen Zeiträumen ungeeignet:**
+  Bei 24h History mit ~20 Frames/Tag wären Frames nur
+  1-2px hoch. Swimlane bleibt auf 600s begrenzt.
+  P10-02 verwendet Tabellen-Darstellung für lange Zeiträume.
+
+- **Filterung im Daemon, Darstellung im Client:**
+  Der Daemon entscheidet welche Frames aufbewahrt werden
+  (Speichereffizienz). Der Client bekommt nur was er anfragt.
 
 ---
 
@@ -449,4 +474,4 @@ Einschränkung: SoapySDR-Bindings derzeit nur unter Python 3.9
 
 *Dokument: gust_backlog.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — BUG-18–19 Deep-Decoder-Fixes · ADR-26–28 Ringpuffer/Deep-Decoder/DedupCache · ADR-29–32 gateway.json v2 / TRX-CRUD / SDR-Profile · Stresstest 90% PASS*
+*Stand: Juni 2026 — ADR-29–32 SDR-Profil-System · Phase 10 History & Logging (P10-01/P10-02) · Swimlane: laufende Zeitachse, Canvas-Scroll, Pause-Snapshot, Frame-Klick*

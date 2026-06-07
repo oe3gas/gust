@@ -4490,6 +4490,35 @@ function slInit() {
         || (e.target && e.target.isContentEditable)) return;
     slOnKey(e);
   });
+
+  // Klick auf Frame → Detail-Modal
+  const canvas2 = document.getElementById('sl-canvas');
+  if (canvas2) {
+    canvas2.addEventListener('click', slOnClick);
+  }
+
+  // Cursor-Stil: Zeiger wenn Maus über einem Frame
+  if (canvas2) {
+    canvas2.addEventListener('mousemove', (e) => {
+      const HEADER_H_ = 36;
+      if (e.offsetY < HEADER_H_) {
+        canvas2.style.cursor = 'default';
+        return;
+      }
+      const ch_    = Math.floor(e.offsetX / sl.laneW);
+      const clickY_ = e.offsetY + sl.scrollOffsetPx;
+      const clickS_ = (clickY_ - HEADER_H_) / sl.pxPerSec;
+      const nowS_   = sl.paused ? sl.frozenNowS : sl._nowS();
+      const frames_ = sl.paused
+        ? (sl.frozenFrames || []) : sl.frames;
+      const over = frames_.some(f => {
+        if (f.ch !== ch_) return false;
+        const ae = nowS_ - (f.startS + f.durS);
+        return clickS_ >= ae && clickS_ <= ae + f.durS;
+      });
+      canvas2.style.cursor = over ? 'pointer' : 'default';
+    });
+  }
 }
 
 function slResize() {
@@ -4577,6 +4606,41 @@ function slOnKey(e) {
   }
 }
 
+function slOnClick(e) {
+  const HEADER_H = 36;
+  // Klick im Header-Bereich → ignorieren
+  if (e.offsetY < HEADER_H) return;
+
+  // Kanal aus X-Position
+  const ch = Math.floor(e.offsetX / sl.laneW);
+  if (ch < 0 || ch >= SL_N_CHANNELS) return;
+
+  // Zeit aus Y-Position + Scroll-Offset
+  const clickY  = e.offsetY + sl.scrollOffsetPx;
+  const clickS  = (clickY - HEADER_H) / sl.pxPerSec;
+
+  // Aktueller nowS (eingefroren bei Pause)
+  const nowS   = sl.paused ? sl.frozenNowS : sl._nowS();
+  const frames = sl.paused
+    ? (sl.frozenFrames || [])
+    : sl.frames;
+
+  // Frame suchen der an dieser Position liegt:
+  // ageEnd = nowS - (startS + durS) → obere Kante
+  // ageEnd + durS = nowS - startS   → untere Kante
+  const hit = frames.find(f => {
+    if (f.ch !== ch) return false;
+    const ageEnd = nowS - (f.startS + f.durS);
+    const ageTop = ageEnd;          // obere Kante (px ÷ pps)
+    const ageBtm = ageEnd + f.durS; // untere Kante
+    return clickS >= ageTop && clickS <= ageBtm;
+  });
+
+  if (hit && hit.raw) {
+    openFrameModal(hit.raw);
+  }
+}
+
 function slBuildLegend() {
   const el = document.getElementById('sl-legend');
   if (!el) return;
@@ -4593,26 +4657,29 @@ function slBuildLegend() {
 // SWIMLANE — Frame empfangen (aus dem /ws/rx-Handler)
 // ═══════════════════════════════════════════════════════════
 
-function slAddFrame(data) {
+function slAddFrame(data, isHistory = false) {
   // Zeitbezug: tx_start_s bevorzugen (physikalischer Sendezeitpunkt,
   // monotone Daemon-Zeit), Fallback auf ts (Unix-Decode-Zeitpunkt)
   const rawT = (data.tx_start_s != null)
     ? data.tx_start_s
     : (data.ts || Date.now() / 1000);
 
-  // Nullpunkt beim ersten Frame setzen — Server-Zeit (txT0) und
-  // Browser-Wanduhr (browserT0) gemeinsam verankern, damit die
-  // laufende Zeitachse (sl._nowS) zur Frame-Achse passt
-  if (sl.txT0 === null) {
+  // Beim normalen Live-Empfang: Nullpunkt setzen
+  // Beim History-Load: txT0/browserT0 wird von
+  // slLoadHistory() gesetzt — hier überspringen
+  if (!isHistory && sl.txT0 === null) {
     sl.txT0      = rawT;
     sl.browserT0 = Date.now() / 1000;
   }
-  sl.tLast = rawT;
+  if (!isHistory) sl.tLast = rawT;
 
-  const startS   = rawT - sl.txT0;
+  // startS relativ zu txT0 (kann null sein beim History-Load)
+  const startS = sl.txT0 !== null ? rawT - sl.txT0 : rawT;
+
   const ch       = (data.channel != null)
     ? parseInt(data.channel)
-    : (data.detected_channel != null ? parseInt(data.detected_channel) : 0);
+    : (data.detected_channel != null
+        ? parseInt(data.detected_channel) : 0);
   const ftype    = data.type_name || '?';
   const callsign = data.from || '?';
 
@@ -4620,7 +4687,12 @@ function slAddFrame(data) {
   // GUST-Framedauer; duration_s ist im rx_frame-Event nicht enthalten)
   const durS = data.duration_s || 5.0;
 
-  sl.frames.push({ startS, durS, ch, ftype, callsign });
+  sl.frames.push({ startS, durS, ch, ftype, callsign,
+                   raw: data });
+
+  // History-Load: kein Clamp, kein Scroll, kein Zähler-Update
+  // (slLoadHistory() macht das am Ende einmalig)
+  if (isHistory) return;
 
   // History auf SL_MAX_WINDOW_S begrenzen
   {
@@ -4639,6 +4711,51 @@ function slAddFrame(data) {
   if (sl.autoScroll && !sl.paused) {
     sl.scrollOffsetPx = 0;
   }
+}
+
+function slLoadHistory(frames) {
+  // Lädt ein Array von History-Frames in die Swimlane.
+  // Kalibriert txT0/browserT0 so dass:
+  //   - txT0 = tx_start_s des ältesten Frames
+  //   - nowS zum Ladezeitpunkt = Alter des neuesten Frames
+  //     relativ zu txT0 (Zeitachse läuft ab "letztem Frame")
+
+  if (!frames || frames.length === 0) return;
+
+  // Zeitstempel aller Frames sammeln
+  const times = frames.map(f =>
+    f.tx_start_s != null ? f.tx_start_s
+                         : (f.ts || Date.now() / 1000)
+  );
+  const tMin = Math.min(...times);  // ältester Frame
+  const tMax = Math.max(...times);  // neuester Frame
+
+  // Zeitachse kalibrieren:
+  // txT0 = ältester Frame → startS aller Frames >= 0
+  // browserT0 = jetzt - Alter des neuesten Frames
+  //   → _nowS() startet beim neuesten Frame und läuft weiter
+  sl.txT0      = tMin;
+  sl.browserT0 = Date.now() / 1000 - (tMax - tMin);
+  sl.tLast     = tMax;
+
+  // Frames einfügen (isHistory=true → kein Clamp/Scroll)
+  for (const f of frames) {
+    slAddFrame(f, true);
+  }
+
+  // Einmalig: Clamp + Zähler aktualisieren
+  {
+    const nowS   = sl._nowS();
+    const cutoff = nowS - SL_MAX_WINDOW_S;
+    if (cutoff > 0)
+      sl.frames = sl.frames.filter(f => f.startS > cutoff);
+  }
+  const counter = document.getElementById('sl-counter');
+  if (counter) counter.textContent =
+    sl.frames.length + ' Frames';
+
+  // Auto-Scroll bleibt aktiv (oben = aktuell) — die ältesten
+  // Frames liegen nach dem ersten Render weiter unten.
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4942,7 +5059,10 @@ function slExport() {
     if (s.tx_available != null) applyTxAvailability(s.tx_available);
     // Frame-History nachladen
     const hist = await apiFetch('/api/log');
-    if (Array.isArray(hist.frames)) hist.frames.forEach(appendRxFrame);
+    if (Array.isArray(hist.frames)) {
+      hist.frames.forEach(appendRxFrame);
+      slLoadHistory(hist.frames);
+    }
   } catch(e) {
     buildChannelGrid(null);
     log2ui('WARNING', t('api.error') + ' ' + e.message);
@@ -5042,7 +5162,7 @@ class WebServer:
         self._start_time: Optional[float] = None
 
         # RX-Frame-History (letzte 50 Frames für /api/log)
-        self._rx_history: deque = deque(maxlen=50)
+        self._rx_history: deque = deque(maxlen=350)
 
         # Zeitstempel des zuletzt empfangenen Frames (für /api/status → "Letzter RX").
         # Wird hier getrackt, weil das TX-Gateway keine RX-Frames sieht.
