@@ -708,36 +708,26 @@ h2:first-child { margin-top: 0; }
     <div style="display:flex;gap:12px;align-items:center;
                 flex-wrap:wrap;margin-bottom:10px">
 
-      <!-- Zeitfenster -->
+      <!-- Zoom (Zeitfenster ist fix 600s) -->
       <label style="color:var(--text2);font-size:var(--fs-sm)">
-        Zeitfenster:
-        <select id="sl-window" onchange="slSetWindow(this.value)"
+        Zoom:
+        <select id="sl-zoom-select"
+                onchange="slSetZoom(this.value)"
                 style="margin-left:4px;background:var(--bg2);
-                       color:var(--text);border:1px solid var(--border);
+                       color:var(--text);
+                       border:1px solid var(--border);
                        border-radius:4px;padding:2px 6px">
-          <option value="60">60 s</option>
-          <option value="120" selected>120 s</option>
-          <option value="300">300 s</option>
-          <option value="600">600 s</option>
+          <option value="6" selected>Übersicht  (6 px/s)</option>
+          <option value="10">Detail     (10 px/s)</option>
         </select>
       </label>
-
-      <!-- Zoom-Info (px/s wird automatisch aus dem Zeitfenster berechnet) -->
-      <span id="sl-zoom-info"
-            style="color:var(--text2);font-size:var(--fs-xs);
-                   margin-left:-6px">
-        6 px/s
-      </span>
+      <span style="color:var(--text2);font-size:var(--fs-xs)">
+        600 s</span>
 
       <!-- Pause/Resume -->
       <button id="sl-pause-btn" class="btn"
               onclick="slTogglePause()"
               style="min-width:90px">⏸ Pause</button>
-      <button id="sl-autoscroll-btn" class="btn"
-              onclick="slToggleAutoScroll()"
-              style="min-width:110px"
-              title="Automatisch nach oben scrollen wenn neuer Frame eintrifft">
-        🔒 Auto-Scroll</button>
 
       <!-- PNG Export -->
       <button class="btn secondary"
@@ -749,13 +739,15 @@ h2:first-child { margin-top: 0; }
                    margin-left:auto">0 Frames</span>
     </div>
 
-    <!-- Canvas-Container: horizontal + vertikal scrollbar -->
+    <!-- Canvas-Container: Scroll ist Canvas-intern (scrollOffsetPx) -->
     <div id="sl-container"
-         style="overflow-x:auto;overflow-y:auto;
-                max-height:70vh;
+         style="overflow-x:auto;overflow-y:hidden;
                 background:#0D1117;border-radius:6px;
                 border:1px solid var(--border)">
-      <canvas id="sl-canvas"></canvas>
+      <canvas id="sl-canvas"
+              style="display:block;outline:none"
+              tabindex="0"
+              onclick="this.focus()"></canvas>
     </div>
 
     <!-- Legende -->
@@ -4405,6 +4397,8 @@ const SL_GRID_MINOR    = 'rgba(255,255,255,0.18)';
 const SL_N_CHANNELS    = 8;
 const SL_MAX_WINDOW_S  = 600;    // max. History in Sekunden
 const SL_MAX_CANVAS_H  = 8000;   // 600s × 13px/s = 7800px
+const SL_PPS_NORMAL    = 6;      // Standard-Zoom
+const SL_PPS_DETAIL    = 10;     // Detail-Zoom
 
 // Kanalfrequenzen (600 Hz + ch * 250 Hz, Kanalplan v0.5)
 const SL_CH_FREQ = Array.from({length: SL_N_CHANNELS},
@@ -4413,17 +4407,21 @@ const SL_CH_FREQ = Array.from({length: SL_N_CHANNELS},
 const sl = {
   inited:      false,       // Guard: slInit() nur einmal (RAF-Loop!)
   frames:      [],          // alle empfangenen Frames
-  windowS:     120,         // sichtbares Zeitfenster (Dropdown)
-  pxPerSec:    6,           // Pixel pro Sekunde (= SL_PPS_BY_WINDOW[120])
+  windowS:     600,            // fix, nicht mehr änderbar
+  pxPerSec:    SL_PPS_NORMAL,  // Pixel pro Sekunde (Zoom-Dropdown)
   paused:      false,
   autoScroll:  true,        // Auto-Scroll nach oben bei neuem Frame
   animFrame:   null,
   txT0:        null,        // Server-Zeit des ersten Frames
   browserT0:   null,        // Browser-Wanduhr beim ersten Frame
   tLast:       null,        // Server-Zeit des letzten Frames
-  laneW:       0,           // Breite einer Swimlane in Pixel (berechnet)
-  canvasW:     0,
-  canvasH:     0,
+  laneW:          0,        // Breite einer Swimlane in Pixel (berechnet)
+  canvasW:        0,
+  canvasH:        0,
+  scrollOffsetPx: 0,        // px nach unten gescrollt (0=oben=jetzt)
+  totalContentH:  0,        // gesamte Inhaltshöhe in px (für Scrollbar)
+  frozenFrames:   null,     // snapshot bei Pause (null = live)
+  frozenNowS:     0,        // nowS zum Zeitpunkt von Pause
 };
 
 // nowS: laufende Zeit relativ zum ersten Frame.
@@ -4448,7 +4446,15 @@ function monSwitchTab(which) {
     isList ? 'btn active' : 'btn secondary';
   document.getElementById('mon-btn-swimlane').className =
     isList ? 'btn secondary' : 'btn active';
-  if (!isList) slInit();  // Canvas initialisieren beim ersten Öffnen
+  if (!isList) {
+    slInit();  // Canvas initialisieren beim ersten Öffnen
+    // Canvas fokussieren nachdem Panel sichtbar ist
+    // (focus() schlägt fehl bei display:none)
+    setTimeout(() => {
+      const canvas = document.getElementById('sl-canvas');
+      if (canvas) canvas.focus();
+    }, 50);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4462,6 +4468,28 @@ function slInit() {
   slResize();
   window.addEventListener('resize', slResize);
   slLoop();
+
+  // wheel auf Container (empfängt Event auch ohne Focus)
+  const cont = document.getElementById('sl-container');
+  if (cont) {
+    cont.addEventListener('wheel', slOnWheel,
+      { passive: false });
+  }
+  // keydown auf document (globaler Handler,
+  // nur aktiv wenn Swimlane-Panel sichtbar)
+  document.addEventListener('keydown', (e) => {
+    const panel = document.getElementById(
+      'mon-panel-swimlane');
+    // offsetParent === null deckt auch versteckte Vorfahren ab
+    // (z.B. Monitor-Tab inaktiv, Sub-Panel aber display:'')
+    if (!panel || panel.style.display === 'none'
+        || panel.offsetParent === null) return;
+    // Eingabefelder nicht kapern (Pfeiltasten/Home/End dort lassen)
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+        || (e.target && e.target.isContentEditable)) return;
+    slOnKey(e);
+  });
 }
 
 function slResize() {
@@ -4469,25 +4497,84 @@ function slResize() {
   const canvas    = document.getElementById('sl-canvas');
   if (!canvas) return;
 
-  // Breite: Container-Breite, mind. 8 * 80px
   const containerW = container.clientWidth || 800;
   sl.canvasW = Math.max(containerW, SL_N_CHANNELS * 80);
   sl.laneW   = sl.canvasW / SL_N_CHANNELS;
 
-  // Canvas-Höhe wächst mit der Zeit bis windowS erreicht ist.
-  // HEADER_H (36px) oben für sticky Kanal-Header.
-  const HEADER_H = 36;
-  const nowS     = sl._nowS();
-  const drawnS   = Math.min(nowS, sl.windowS);
-  sl.canvasH     = Math.min(
-    HEADER_H + Math.ceil(drawnS * sl.pxPerSec),
+  // FIXE Canvas-Höhe = 70% der Viewport-Höhe
+  // (nicht dynamisch wachsend — Scroll ist intern)
+  sl.canvasH = Math.min(
+    Math.floor(window.innerHeight * 0.70),
     SL_MAX_CANVAS_H
   );
-  // Mindesthöhe: 200px damit leerer Canvas sichtbar ist
-  sl.canvasH = Math.max(sl.canvasH, 200);
+  sl.canvasH = Math.max(sl.canvasH, 300);
 
   canvas.width  = sl.canvasW;
   canvas.height = sl.canvasH;
+
+  // Scroll-Offset begrenzen nach Resize
+  slClampScroll();
+}
+
+function slClampScroll() {
+  const HEADER_H   = 36;
+  const nowS       = sl.paused ? sl.frozenNowS
+                               : sl._nowS();
+  const contentS   = Math.min(nowS, sl.windowS);
+  const contentH   = HEADER_H + contentS * sl.pxPerSec;
+  sl.totalContentH = Math.max(contentH, sl.canvasH);
+  const maxScroll  = Math.max(0,
+    sl.totalContentH - sl.canvasH);
+  sl.scrollOffsetPx = Math.max(0,
+    Math.min(sl.scrollOffsetPx, maxScroll));
+}
+
+function slOnWheel(e) {
+  e.preventDefault();
+  if (sl.paused) {
+    // Bei Pause: nur scrollen, keine Auto-Scroll-Logik
+    sl.scrollOffsetPx += e.deltaY * 0.8;
+    slClampScroll();
+    return;
+  }
+  // deltaY: positiv = nach unten scrollen (ältere Frames)
+  sl.scrollOffsetPx += e.deltaY * 0.8;
+  slClampScroll();
+  // Nach unten scrollen → Auto-Scroll aus (live verlassen)
+  if (e.deltaY > 0) sl.autoScroll = false;
+  // Ganz nach oben scrollen → Auto-Scroll wieder ein
+  if (sl.scrollOffsetPx === 0) sl.autoScroll = true;
+}
+
+function slOnKey(e) {
+  const H     = sl.canvasH;
+  const step  = sl.pxPerSec * 10;   // 10s pro Tastendruck
+  const page  = H * 0.8;            // 80% Canvas-Höhe
+  switch (e.key) {
+    case 'ArrowDown':  case 'ArrowRight':
+      sl.scrollOffsetPx += step;  break;
+    case 'ArrowUp':    case 'ArrowLeft':
+      sl.scrollOffsetPx -= step;  break;
+    case 'PageDown':
+      sl.scrollOffsetPx += page;  break;
+    case 'PageUp':
+      sl.scrollOffsetPx -= page;  break;
+    case 'Home':
+      sl.scrollOffsetPx = 0;        break;
+    case 'End':
+      sl.scrollOffsetPx = sl.totalContentH; break;
+    default: return;
+  }
+  e.preventDefault();
+  slClampScroll();
+  // Auto-Scroll folgt der Scroll-Position:
+  // Ganz oben → Auto-Scroll reaktivieren
+  if (sl.scrollOffsetPx === 0) {
+    sl.autoScroll = true;
+  } else {
+    // Irgendwo anders → Auto-Scroll aus
+    sl.autoScroll = false;
+  }
 }
 
 function slBuildLegend() {
@@ -4547,10 +4634,10 @@ function slAddFrame(data) {
   const counter = document.getElementById('sl-counter');
   if (counter) counter.textContent = sl.frames.length + ' Frames';
 
-  // Auto-Scroll: neuer Frame erscheint oben → zu "jetzt" springen
+  // Nur scrollen wenn nicht pausiert UND Auto-Scroll aktiv
+  // Bei Pause: Frame wird gespeichert aber View bleibt stehen
   if (sl.autoScroll && !sl.paused) {
-    const cont = document.getElementById('sl-container');
-    if (cont) cont.scrollTop = 0;
+    sl.scrollOffsetPx = 0;
   }
 }
 
@@ -4587,26 +4674,44 @@ function slDraw() {
   // nowS läuft mit Browser-Wanduhr — unabhängig von Frames.
   // Leere Zeitspannen (keine Frames) sind als leere Fläche
   // sichtbar; die Zeitachse friert nicht ein.
-  const nowS = sl._nowS();
+  // Bei Pause: eingefrorener Zeitpunkt und Frames (Snapshot)
+  const nowS   = sl.paused ? sl.frozenNowS : sl._nowS();
+  const frames = sl.paused ? (sl.frozenFrames || []) : sl.frames;
 
   // Hintergrund
   ctx.fillStyle = isLight ? '#f0f4f8' : SL_BACKGROUND;
   ctx.fillRect(0, 0, W, H);
 
+  // Gesamt-Inhaltshöhe berechnen (für Scrollbar)
+  {
+    const contentS_  = Math.min(nowS, sl.windowS);
+    sl.totalContentH = Math.max(
+      HEADER_H + contentS_ * pps, H);
+  }
+  const off = sl.scrollOffsetPx;   // aktueller Scroll-Offset in px
+
+  // Translation für Scroll-Offset anwenden
+  // Alles außer dem Kanal-Header scrollt mit
+  ctx.save();
+  ctx.translate(0, -off);
+
   // ── Swimlane-Hintergründe ────────────────────────────────
+  // (statische Möblierung: Offset kompensiert, deckt so trotz
+  // Translation immer den ganzen sichtbaren Canvas ab)
   const laneBg = isLight
     ? ['#dde8f5', '#e8f0f8']   // helle Blautöne
     : SL_BG_LANES;
   for (let ch = 0; ch < SL_N_CHANNELS; ch++) {
     ctx.fillStyle = laneBg[ch % 2];
-    ctx.fillRect(ch * lW, 0, lW, H);
+    ctx.fillRect(ch * lW, off, lW, H);
   }
 
   // ── Zeitraster: age=0 direkt unter Header (=jetzt), ──────
-  // age wächst nach unten (=Vergangenheit)
-  for (let age = 0; age <= visS + 5; age += 5) {
+  // age wächst nach unten (=Vergangenheit); Bereich um den
+  // Scroll-Offset erweitert (sichtbarer Inhalt = off .. off+visS)
+  for (let age = 0; age <= off / pps + visS + 5; age += 5) {
     const yPos = HEADER_H + age * pps;
-    if (yPos < HEADER_H || yPos > H) continue;
+    if (yPos < HEADER_H + off || yPos > H + off) continue;
     const is10 = (age % 10 === 0);
     ctx.strokeStyle = is10
       ? (isLight ? 'rgba(0,0,0,0.45)' : SL_GRID_COLOR)
@@ -4636,8 +4741,8 @@ function slDraw() {
       : (isEdge ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.55)');
     ctx.lineWidth = isEdge ? 2.0 : 1.2;
     ctx.beginPath();
-    ctx.moveTo(ch * lW, HEADER_H);
-    ctx.lineTo(ch * lW, H);
+    ctx.moveTo(ch * lW, HEADER_H + off);
+    ctx.lineTo(ch * lW, H + off);
     ctx.stroke();
   }
 
@@ -4649,10 +4754,10 @@ function slDraw() {
   // durch den halbtransparenten Header-Balken.
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, HEADER_H, W, CH);
+  ctx.rect(0, HEADER_H + off, W, CH);   // Offset kompensiert → Bildschirm-Zone
   ctx.clip();
 
-  for (const f of sl.frames) {
+  for (const f of frames) {
     // Alter des Frame-ENDES relativ zu nowS
     // (jüngste Frames haben kleines age → nahe am Header)
     const frameEndS = f.startS + f.durS;
@@ -4660,8 +4765,8 @@ function slDraw() {
     const yTop      = HEADER_H + ageEnd * pps;
     const yH   = Math.max(f.durS * pps, 18);  // Mindesthöhe 18px
 
-    // Außerhalb des sichtbaren Bereichs überspringen
-    if (yTop + yH < HEADER_H || yTop > H) continue;
+    // Außerhalb des sichtbaren (gescrollten) Bereichs überspringen
+    if (yTop + yH < HEADER_H + off || yTop > H + off) continue;
     if (f.ch < 0 || f.ch >= SL_N_CHANNELS) continue;
 
     const xLeft = f.ch * lW + pad;
@@ -4711,15 +4816,20 @@ function slDraw() {
   ctx.restore();   // Clipping aufheben (Jetzt-Linie + Header voll sichtbar)
 
   // ── "Jetzt"-Linie direkt unter dem Header (= aktuellster Zeitpunkt)
-  // Rot funktioniert in beiden Themes.
-  ctx.strokeStyle = 'rgba(255,80,80,0.8)';
-  ctx.lineWidth   = 1.5;
-  ctx.setLineDash([4, 3]);
-  ctx.beginPath();
-  ctx.moveTo(0, HEADER_H + 2);
-  ctx.lineTo(W, HEADER_H + 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  // Rot funktioniert in beiden Themes. Scrollt mit dem Inhalt —
+  // nur zeichnen solange nicht weggescrollt (sonst hinter Header).
+  if (off <= 2) {
+    ctx.strokeStyle = 'rgba(255,80,80,0.8)';
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(0, HEADER_H + 2);
+    ctx.lineTo(W, HEADER_H + 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.restore();   // Scroll-Translation aufheben
 
   // ── Kanal-Header (ZULETZT: immer oben sichtbar, über Frames) ──
   for (let ch = 0; ch < SL_N_CHANNELS; ch++) {
@@ -4743,6 +4853,20 @@ function slDraw() {
   }
 
   ctx.textAlign = 'left';  // Reset
+
+  // ── Scrollbar rechts ──────────────────────────────
+  const SB_W = 6;   // Scrollbar-Breite in px
+  const SB_X = W - SB_W - 1;
+  const visRatio  = H / sl.totalContentH;
+  const sbH       = Math.max(visRatio * H, 20);
+  const sbY       = (sl.scrollOffsetPx / sl.totalContentH) * H;
+  ctx.fillStyle   = 'rgba(255,255,255,0.15)';
+  ctx.fillRect(SB_X, 0, SB_W, H);
+  ctx.fillStyle   = 'rgba(255,255,255,0.55)';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(SB_X, sbY, SB_W, sbH, 3);
+  else               ctx.rect(SB_X, sbY, SB_W, sbH);
+  ctx.fill();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4750,67 +4874,45 @@ function slDraw() {
 // ═══════════════════════════════════════════════════════════
 
 function slLoop() {
-  if (!sl.paused) {
-    // Canvas-Größe aktualisieren falls Zeit vorangeschritten
-    const nowS    = sl._nowS();
-    const drawnS  = Math.min(nowS, sl.windowS);
-    const HEADER_H = 36;
-    const needed  = Math.min(
-      HEADER_H + Math.ceil(drawnS * sl.pxPerSec),
-      SL_MAX_CANVAS_H
-    );
-    const canvas = document.getElementById('sl-canvas');
-    if (canvas && Math.abs(canvas.height - needed) > 2) {
-      slResize();
-    }
-    slDraw();
-  }
+  // Auch bei Pause zeichnen: slDraw() rendert dann aus dem
+  // unveränderlichen frozen*-Snapshot — erlaubt flüssiges
+  // Scrollen durch das eingefrorene Bild ohne Resume.
+  slClampScroll();
+  slDraw();
   sl.animFrame = requestAnimationFrame(slLoop);
 }
 
-// Zoom-Stufen: bei größerem Zeitfenster kleiner pxPerSec
-const SL_PPS_BY_WINDOW = {
-   60: 10,
-  120:  6,
-  300:  3,
-  600:  2,
-};
-
+// Wird nicht mehr vom UI aufgerufen (Zeitfenster ist fix 600s) —
+// bleibt für internen Gebrauch erhalten.
 function slSetWindow(val) {
-  sl.windowS  = parseInt(val);
-  sl.pxPerSec = SL_PPS_BY_WINDOW[sl.windowS] || 5;
-  // Zoom-Label aktualisieren (info-only)
-  const info = document.getElementById('sl-zoom-info');
-  if (info) info.textContent = sl.pxPerSec + ' px/s';
+  sl.windowS = parseInt(val);
   slResize();
+  // Zeitfenster-Wechsel: zurück nach oben
+  sl.scrollOffsetPx = 0;
 }
 
-// Wird nicht mehr vom UI aufgerufen (Zoom-Dropdown entfernt) —
-// bleibt für internen Gebrauch erhalten.
 function slSetZoom(val) {
-  sl.pxPerSec = parseInt(val);
-  slResize();
+  sl.pxPerSec       = parseInt(val);
+  sl.scrollOffsetPx = 0;   // nach Zoom-Wechsel nach oben
+  slClampScroll();
+  // kein slResize() nötig — Canvas-Höhe ist fix
 }
 
 function slTogglePause() {
   sl.paused = !sl.paused;
   const btn = document.getElementById('sl-pause-btn');
   if (btn) btn.textContent = sl.paused ? '▶ Resume' : '⏸ Pause';
-  // Resume: einmalig nach oben scrollen
-  if (!sl.paused && sl.autoScroll) {
-    const cont = document.getElementById('sl-container');
-    if (cont) cont.scrollTop = 0;
-  }
-}
 
-function slToggleAutoScroll() {
-  sl.autoScroll = !sl.autoScroll;
-  const btn = document.getElementById('sl-autoscroll-btn');
-  if (btn) {
-    btn.textContent = sl.autoScroll
-      ? '🔒 Auto-Scroll'
-      : '🔓 Auto-Scroll';
-    btn.className = sl.autoScroll ? 'btn' : 'btn secondary';
+  if (sl.paused) {
+    // Snapshot: aktuellen Zustand einfrieren
+    sl.frozenFrames = sl.frames.slice();
+    sl.frozenNowS   = sl._nowS();
+  } else {
+    // Resume: Snapshot verwerfen, zurück zu live
+    sl.frozenFrames = null;
+    sl.frozenNowS   = 0;
+    // nach oben springen wenn Auto-Scroll aktiv
+    if (sl.autoScroll) sl.scrollOffsetPx = 0;
   }
 }
 
