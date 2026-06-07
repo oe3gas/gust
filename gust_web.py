@@ -722,24 +722,22 @@ h2:first-child { margin-top: 0; }
         </select>
       </label>
 
-      <!-- Pixel pro Sekunde -->
-      <label style="color:var(--text2);font-size:var(--fs-sm)">
-        Zoom:
-        <select id="sl-zoom" onchange="slSetZoom(this.value)"
-                style="margin-left:4px;background:var(--bg2);
-                       color:var(--text);border:1px solid var(--border);
-                       border-radius:4px;padding:2px 6px">
-          <option value="3">3 px/s</option>
-          <option value="5" selected>5 px/s</option>
-          <option value="8">8 px/s</option>
-          <option value="12">12 px/s</option>
-        </select>
-      </label>
+      <!-- Zoom-Info (px/s wird automatisch aus dem Zeitfenster berechnet) -->
+      <span id="sl-zoom-info"
+            style="color:var(--text2);font-size:var(--fs-xs);
+                   margin-left:-6px">
+        6 px/s
+      </span>
 
       <!-- Pause/Resume -->
       <button id="sl-pause-btn" class="btn"
               onclick="slTogglePause()"
               style="min-width:90px">⏸ Pause</button>
+      <button id="sl-autoscroll-btn" class="btn"
+              onclick="slToggleAutoScroll()"
+              style="min-width:110px"
+              title="Automatisch nach oben scrollen wenn neuer Frame eintrifft">
+        🔒 Auto-Scroll</button>
 
       <!-- PNG Export -->
       <button class="btn secondary"
@@ -751,9 +749,10 @@ h2:first-child { margin-top: 0; }
                    margin-left:auto">0 Frames</span>
     </div>
 
-    <!-- Canvas-Container mit horizontalem Scroll falls nötig -->
+    <!-- Canvas-Container: horizontal + vertikal scrollbar -->
     <div id="sl-container"
-         style="overflow-x:auto;overflow-y:hidden;
+         style="overflow-x:auto;overflow-y:auto;
+                max-height:70vh;
                 background:#0D1117;border-radius:6px;
                 border:1px solid var(--border)">
       <canvas id="sl-canvas"></canvas>
@@ -4404,7 +4403,8 @@ const SL_BACKGROUND    = '#0D1117';
 const SL_GRID_COLOR    = 'rgba(255,255,255,0.55)';
 const SL_GRID_MINOR    = 'rgba(255,255,255,0.18)';
 const SL_N_CHANNELS    = 8;
-const SL_MAX_CANVAS_H  = 4000;   // Sicherheitsnetz (600s × 12px/s = 7200px)
+const SL_MAX_WINDOW_S  = 600;    // max. History in Sekunden
+const SL_MAX_CANVAS_H  = 8000;   // 600s × 13px/s = 7800px
 
 // Kanalfrequenzen (600 Hz + ch * 250 Hz, Kanalplan v0.5)
 const SL_CH_FREQ = Array.from({length: SL_N_CHANNELS},
@@ -4413,15 +4413,25 @@ const SL_CH_FREQ = Array.from({length: SL_N_CHANNELS},
 const sl = {
   inited:      false,       // Guard: slInit() nur einmal (RAF-Loop!)
   frames:      [],          // alle empfangenen Frames
-  windowS:     120,         // sichtbares Zeitfenster in Sekunden
-  pxPerSec:    5,           // Pixel pro Sekunde
+  windowS:     120,         // sichtbares Zeitfenster (Dropdown)
+  pxPerSec:    6,           // Pixel pro Sekunde (= SL_PPS_BY_WINDOW[120])
   paused:      false,
+  autoScroll:  true,        // Auto-Scroll nach oben bei neuem Frame
   animFrame:   null,
-  txT0:        null,        // rawT des ersten Frames (Nullpunkt der Zeitachse)
-  tLast:       null,        // rawT des zuletzt empfangenen Frames ("jetzt")
+  txT0:        null,        // Server-Zeit des ersten Frames
+  browserT0:   null,        // Browser-Wanduhr beim ersten Frame
+  tLast:       null,        // Server-Zeit des letzten Frames
   laneW:       0,           // Breite einer Swimlane in Pixel (berechnet)
   canvasW:     0,
   canvasH:     0,
+};
+
+// nowS: laufende Zeit relativ zum ersten Frame.
+// Basiert auf Browser-Wanduhr — läuft auch ohne
+// neue Frames weiter (leere Zeitspannen sichtbar).
+sl._nowS = function() {
+  if (this.browserT0 === null) return 0;
+  return Date.now() / 1000 - this.browserT0;
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -4464,8 +4474,17 @@ function slResize() {
   sl.canvasW = Math.max(containerW, SL_N_CHANNELS * 80);
   sl.laneW   = sl.canvasW / SL_N_CHANNELS;
 
-  // Höhe: Zeitfenster * px/s, gekappt (Browser-Canvas-Limit)
-  sl.canvasH = Math.min(sl.windowS * sl.pxPerSec, SL_MAX_CANVAS_H);
+  // Canvas-Höhe wächst mit der Zeit bis windowS erreicht ist.
+  // HEADER_H (36px) oben für sticky Kanal-Header.
+  const HEADER_H = 36;
+  const nowS     = sl._nowS();
+  const drawnS   = Math.min(nowS, sl.windowS);
+  sl.canvasH     = Math.min(
+    HEADER_H + Math.ceil(drawnS * sl.pxPerSec),
+    SL_MAX_CANVAS_H
+  );
+  // Mindesthöhe: 200px damit leerer Canvas sichtbar ist
+  sl.canvasH = Math.max(sl.canvasH, 200);
 
   canvas.width  = sl.canvasW;
   canvas.height = sl.canvasH;
@@ -4494,10 +4513,13 @@ function slAddFrame(data) {
     ? data.tx_start_s
     : (data.ts || Date.now() / 1000);
 
-  // Nullpunkt beim ersten Frame setzen; tLast = "jetzt" auf der
-  // Frame-Zeitachse (eine Quelle — kein Mix aus monotoner Server-
-  // Zeit und Browser-Wanduhr)
-  if (sl.txT0 === null) sl.txT0 = rawT;
+  // Nullpunkt beim ersten Frame setzen — Server-Zeit (txT0) und
+  // Browser-Wanduhr (browserT0) gemeinsam verankern, damit die
+  // laufende Zeitachse (sl._nowS) zur Frame-Achse passt
+  if (sl.txT0 === null) {
+    sl.txT0      = rawT;
+    sl.browserT0 = Date.now() / 1000;
+  }
   sl.tLast = rawT;
 
   const startS   = rawT - sl.txT0;
@@ -4513,16 +4535,23 @@ function slAddFrame(data) {
 
   sl.frames.push({ startS, durS, ch, ftype, callsign });
 
-  // History begrenzen: Frames älter als windowS * 3 entfernen
-  if (sl.frames.length > 500) {
-    const nowS   = sl.tLast - sl.txT0;
-    const cutoff = nowS - sl.windowS * 3;
-    sl.frames = sl.frames.filter(f => f.startS > cutoff);
+  // History auf SL_MAX_WINDOW_S begrenzen
+  {
+    const nowS   = sl._nowS();
+    const cutoff = nowS - SL_MAX_WINDOW_S;
+    if (cutoff > 0)
+      sl.frames = sl.frames.filter(f => f.startS > cutoff);
   }
 
   // Frame-Zähler aktualisieren
   const counter = document.getElementById('sl-counter');
   if (counter) counter.textContent = sl.frames.length + ' Frames';
+
+  // Auto-Scroll: neuer Frame erscheint oben → zu "jetzt" springen
+  if (sl.autoScroll && !sl.paused) {
+    const cont = document.getElementById('sl-container');
+    if (cont) cont.scrollTop = 0;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4555,13 +4584,10 @@ function slDraw() {
   const isLight = document.documentElement
     .getAttribute('data-theme') === 'light';
 
-  // "Jetzt" = Zeit des zuletzt empfangenen Frames relativ zum ersten.
-  // Bewusst KEINE Browser-Wanduhr: startS basiert auf der monotonen
-  // Server-Zeit (tx_start_s) — beide Achsen müssen identisch sein.
-  // Ohne neue Frames friert die Anzeige ein (gewollt).
-  const nowS = sl.tLast !== null
-    ? (sl.tLast - sl.txT0)
-    : 0;
+  // nowS läuft mit Browser-Wanduhr — unabhängig von Frames.
+  // Leere Zeitspannen (keine Frames) sind als leere Fläche
+  // sichtbar; die Zeitachse friert nicht ein.
+  const nowS = sl._nowS();
 
   // Hintergrund
   ctx.fillStyle = isLight ? '#f0f4f8' : SL_BACKGROUND;
@@ -4724,15 +4750,43 @@ function slDraw() {
 // ═══════════════════════════════════════════════════════════
 
 function slLoop() {
-  if (!sl.paused) slDraw();
+  if (!sl.paused) {
+    // Canvas-Größe aktualisieren falls Zeit vorangeschritten
+    const nowS    = sl._nowS();
+    const drawnS  = Math.min(nowS, sl.windowS);
+    const HEADER_H = 36;
+    const needed  = Math.min(
+      HEADER_H + Math.ceil(drawnS * sl.pxPerSec),
+      SL_MAX_CANVAS_H
+    );
+    const canvas = document.getElementById('sl-canvas');
+    if (canvas && Math.abs(canvas.height - needed) > 2) {
+      slResize();
+    }
+    slDraw();
+  }
   sl.animFrame = requestAnimationFrame(slLoop);
 }
 
+// Zoom-Stufen: bei größerem Zeitfenster kleiner pxPerSec
+const SL_PPS_BY_WINDOW = {
+   60: 10,
+  120:  6,
+  300:  3,
+  600:  2,
+};
+
 function slSetWindow(val) {
-  sl.windowS = parseInt(val);
+  sl.windowS  = parseInt(val);
+  sl.pxPerSec = SL_PPS_BY_WINDOW[sl.windowS] || 5;
+  // Zoom-Label aktualisieren (info-only)
+  const info = document.getElementById('sl-zoom-info');
+  if (info) info.textContent = sl.pxPerSec + ' px/s';
   slResize();
 }
 
+// Wird nicht mehr vom UI aufgerufen (Zoom-Dropdown entfernt) —
+// bleibt für internen Gebrauch erhalten.
 function slSetZoom(val) {
   sl.pxPerSec = parseInt(val);
   slResize();
@@ -4742,6 +4796,22 @@ function slTogglePause() {
   sl.paused = !sl.paused;
   const btn = document.getElementById('sl-pause-btn');
   if (btn) btn.textContent = sl.paused ? '▶ Resume' : '⏸ Pause';
+  // Resume: einmalig nach oben scrollen
+  if (!sl.paused && sl.autoScroll) {
+    const cont = document.getElementById('sl-container');
+    if (cont) cont.scrollTop = 0;
+  }
+}
+
+function slToggleAutoScroll() {
+  sl.autoScroll = !sl.autoScroll;
+  const btn = document.getElementById('sl-autoscroll-btn');
+  if (btn) {
+    btn.textContent = sl.autoScroll
+      ? '🔒 Auto-Scroll'
+      : '🔓 Auto-Scroll';
+    btn.className = sl.autoScroll ? 'btn' : 'btn secondary';
+  }
 }
 
 function slExport() {
