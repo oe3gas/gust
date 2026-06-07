@@ -123,6 +123,12 @@ class _GustStreamHandler(logging.StreamHandler):
             return "RX ◀"
         if "[RX]" in msg and "Scans ohne Frame" in msg:
             return "▸"
+        # CRC-Fehler, Vollfenster, sonstige RX-Diagnose →
+        # als RX-Frame-Label behandeln (nur bei --verbose)
+        if "[RX]" in msg:
+            return "RX ◀"
+        if "[RX-DEEP]" in msg:
+            return "RX ◀"
         return ""
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -144,15 +150,20 @@ class _GustStreamHandler(logging.StreamHandler):
         label = self._classify(record)
 
         # Sichtbarkeitsregel:
-        # ERROR+         → immer
-        # display_level+ → immer (Quiet-Mode: VITAL+)
-        # Frame (TX/RX/▸)→ nur verbose
-        # sonst          → nur verbose
+        # ERROR+          → immer
+        # VITAL+ (o. Label)→ immer
+        # Frame (TX/RX/▸) → nur verbose
+        # sonst           → nur verbose
         if lvl >= logging.ERROR:
             show = True
-        elif lvl >= self._display_level and not label:
+        elif lvl >= VITAL and not label:
+            # Nicht-klassifizierte Meldungen: nur VITAL+ immer zeigen
             show = True
+        elif label in self._FRAME_LABELS:
+            # TX ▶ / RX ◀ / Heartbeat: nur mit --verbose
+            show = self._verbose
         else:
+            # Alle übrigen (INFO, WARNING ohne VITAL): nur --verbose
             show = self._verbose
 
         if not show:
