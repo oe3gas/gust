@@ -103,6 +103,37 @@ from gust_frame import N_CHANNELS
 log = logging.getLogger("gust.rx")
 
 
+def _set_low_priority() -> None:
+    """
+    Setzt die Priorität des aktuellen Threads auf
+    BELOW_NORMAL (Windows) bzw. nice+5 (Linux/macOS).
+    Wird als initializer im Deep-Decoder-Executor aufgerufen
+    damit PortAudio-Callbacks nie verdrängt werden.
+    Fehler werden ignoriert (kein Abbruch).
+    """
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            # SetThreadPriority(GetCurrentThread(),
+            #   THREAD_PRIORITY_BELOW_NORMAL = -1)
+            # restype/argtypes explizit: GetCurrentThread() liefert das
+            # Pseudo-Handle -2 — ohne c_void_p wird es auf 64-bit-Windows
+            # zu einem ungültigen 32-bit-Handle verstümmelt und
+            # SetThreadPriority schlägt stillschweigend fehl.
+            k32 = ctypes.windll.kernel32
+            k32.GetCurrentThread.restype  = ctypes.c_void_p
+            k32.SetThreadPriority.argtypes = [ctypes.c_void_p, ctypes.c_int]
+            handle = k32.GetCurrentThread()
+            k32.SetThreadPriority(handle, -1)
+        else:
+            import os
+            # nice() erhöht nice-Wert (niedrigere Priorität)
+            # +5: deutlich unter Normal, aber kein Idle
+            os.nice(5)
+    except Exception:
+        pass   # Berechtigungsfehler o.ä. — ignorieren
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # STANDARD-PARAMETER
 # ═══════════════════════════════════════════════════════════════════════
@@ -326,6 +357,7 @@ class AudioRXLoop:
             ThreadPoolExecutor(
                 max_workers=N_CHANNELS,
                 thread_name_prefix="gust_deep",
+                initializer=_set_low_priority,
             )
             if deep_decode else None
         )
