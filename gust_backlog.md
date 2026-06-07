@@ -470,8 +470,62 @@ Priorität active_sdr_tx_profile → sdr_tx.enabled → Audio.
 Einschränkung: SoapySDR-Bindings derzeit nur unter Python 3.9
 (PothosSDR) — siehe gust_knowledge.md §24.
 
+### ADR-33: Deep-Decoder Threads mit BELOW_NORMAL-Priorität ✅ (Juni 2026)
+Der Deep-Decoder startet alle 15 s bis zu N_CHANNELS=8 Threads
+gleichzeitig; diese verdrängten den PortAudio-Callback-Thread →
+`input overflow` exakt im 15-s-Takt. Fix: `_set_low_priority()` als
+`initializer` im `_deep_executor` (ThreadPoolExecutor) — Windows
+`SetThreadPriority(handle, -1)` = BELOW_NORMAL, Linux/macOS
+`os.nice(5)`. Kritisch auf 64-bit-Windows: `GetCurrentThread()`
+liefert das Pseudo-Handle −2; ohne `restype=c_void_p` /
+`argtypes=[c_void_p, c_int]` wird es auf 32 bit verstümmelt →
+`SetThreadPriority` schlägt **still** fehl (kein Fehler, keine
+Wirkung). Keine messbare Verschlechterung der Dekodierrate
+(BELOW_NORMAL weicht nur bei CPU-Knappheit aus). Siehe
+gust_knowledge.md §26.
+
+### ADR-34: VITAL-Log-Level + Quiet-Mode + print()→log.*() ✅ (Juni 2026)
+Eigener Log-Level **VITAL** (35, zwischen WARNING und ERROR) via
+`logging.addLevelName(35, "VITAL")` + Monkey-Patch
+`logging.Logger.vital()`. Ohne `--verbose` zeigt die Konsole nur
+VITAL+ERROR (mit Timestamp); RX/TX-Frame-Events, Heartbeat und
+CRC-Meldungen sind stumm. `_GustStreamHandler._classify()` erkennt
+RX/TX-Labels am Message-Inhalt (`"[RX]" in msg` → `RX ◀`), sodass
+bestehende `log.info()`-Aufrufe nach der Migration korrekt gefiltert
+werden; ERROR-Records geben immer `""` zurück (nie als RX ◀
+gerendert). Alle `print()`-Aufrufe in `gust_rx.py`/`gust_audio.py`
+migriert: Fehler→`log.error()`, Betriebsereignisse→`log.vital()`,
+Status→`log.debug()`; CLI-Funktionen (`list_audio_devices`,
+`ptt_test`, `_run_demo`) behalten `print()`. VITAL-Ereignisse:
+Web-Server-Start, rigctld Start/Stop, TRX-Profil aktiviert,
+`[RX Audio] input overflow`, PTT EIN/AUS, TX-Pipeline. Siehe
+gust_knowledge.md §25, gust_spec.md §5.3.
+
+### ADR-35: Swimlane — laufende Zeitachse + Canvas-internes Scrollen ✅ (Juni 2026)
+Die Swimlane-Zeitachse läuft mit der Browser-Wanduhr (`sl._nowS()`,
+verankert bei erstem Frame über `browserT0`) — auch ohne neue Frames;
+neueste Frames oben („jetzt"), ältere nach unten, Achsen-Labels als
+Alter (`-10s`/`-20s`). Fixe Canvas-Höhe (70 vh) mit Canvas-internem
+Scroll via `scrollOffsetPx` (`ctx.translate`), gezeichnete Scrollbar,
+Mausrad/Tastatur-Steuerung; Auto-Scroll positionsgesteuert (oben =
+live). Pause friert einen Snapshot ein (`frozenFrames`/`frozenNowS`).
+Fixes 600-s-Fenster, zwei Zoom-Stufen (6/10 px/s). History via
+`/api/log` → `slLoadHistory()` (Backend `deque(maxlen=350)`).
+Frame-Klick öffnet das Detail-Modal (`slOnClick` → `openFrameModal`).
+
+### ADR-36: Inbox-Antwortfunktion (Mini-Compose) ✅ (Juni 2026)
+Das Inbox-Detail-Modal (`showInboxDetail`) zeigt bei vollständigen
+Nachrichten (`complete=true`) einen Antwort-Bereich: Textarea,
+byte-korrekter Fragment-Zähler (14 Byte/Fragment, BUG-09-Grenze
+16 Fragmente), „↩ Senden" → `sendInboxReply(toCall)` → `POST
+/api/tx/text` mit Feld `to` (nicht `dest` — das Gateway liest
+`data.get("to")` und fragmentiert serverseitig). Status-Zeile mit
+benutzerfreundlicher Fehlerübersetzung (roher HTTP-Body → JSON-error
+extrahiert). Unvollständige Multi-Frame-Nachrichten erhalten keinen
+Antwort-Bereich.
+
 ---
 
 *Dokument: gust_backlog.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — ADR-29–32 SDR-Profil-System · Phase 10 History & Logging (P10-01/P10-02) · Swimlane: laufende Zeitachse, Canvas-Scroll, Pause-Snapshot, Frame-Klick*
+*Stand: Juni 2026 — ADR-33–36: Deep-Decoder Thread-Prio · VITAL-Logging + print()→log.*() · Swimlane laufende Zeitachse/Canvas-Scroll · Inbox-Antwort*

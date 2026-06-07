@@ -1265,6 +1265,100 @@ für 3.14 installiert werden.
 
 ---
 
+## 25. Logging-Architektur — VITAL-Level + Quiet-Mode (Juni 2026)
+
+VITAL ist ein eigener Level: `logging.addLevelName(35,
+"VITAL")` + Monkey-Patch `logging.Logger.vital()`.
+Alle Komponenten (gust_audio, gust_web, gust_rx) können
+`log.vital()` aufrufen sobald gust.py geladen ist.
+(Standalone-Fallback in gust_audio.py: definiert `vital`
+selbst, falls gust.py nicht geladen ist — sonst würde
+der PortAudio-Callback-Thread mit AttributeError abbrechen.)
+
+### Was VITAL bekommt
+
+- `[RX Audio] input overflow` — immer sichtbar weil
+  Betriebsproblem (Deep-Decoder-Scan alle 15s)
+- rigctld gestartet/gestoppt (via GUI + Daemon-Start)
+- TRX-Profil aktiviert
+- GUST Web-Server gestartet
+- PTT EIN/AUS (HamlibPTT, GPIUPTT)
+- TX-Pipeline Start/Ende
+
+### _GustStreamHandler
+
+`_classify(record)` erkennt RX/TX-Labels aus dem
+Message-Inhalt (`"[RX]" in msg` → `"RX ◀"`). Dadurch
+können bestehende `log.info()`-Aufrufe in `gust_rx.py`
+nach der Migration weiterhin korrekt gefiltert werden.
+ERROR-Records geben immer `""` zurück (nie als RX ◀
+gerendert).
+
+### print() → log.*() Migration
+
+Alle `print()`-Aufrufe in `gust_rx.py` und
+`gust_audio.py` auf Logger umgestellt:
+- Fehler → `log.error()`
+- Betriebsereignisse → `log.vital()`
+- Statusmeldungen → `log.debug()`
+- CLI-Funktionen (`list_audio_devices`, `ptt_test`,
+  `_run_demo`) behalten `print()` — sie laufen im
+  direkten User-Kontext, nicht im Daemon.
+
+---
+
+## 26. Deep-Decoder Thread-Priorität — Windows ctypes 64-bit Fix (Juni 2026)
+
+### Problem
+
+Input-Overflow-Meldungen häuften sich alle 15s exakt
+im Takt des Deep-Decoder-Scan-Intervalls. Die 8
+parallelen Deep-Threads verdrängten den PortAudio-
+Callback-Thread (Audio-ISR-ähnlicher Kontext).
+
+### Fix: BELOW_NORMAL via initializer
+
+```python
+def _set_low_priority() -> None:
+    if sys.platform == "win32":
+        import ctypes
+        handle = ctypes.windll.kernel32.GetCurrentThread()
+        ctypes.windll.kernel32.SetThreadPriority(handle, -1)
+    else:
+        import os; os.nice(5)
+```
+
+Als `initializer` im `ThreadPoolExecutor` wird die
+Funktion einmalig beim Thread-Start aufgerufen.
+
+### Kritische ctypes-Details (64-bit Windows)
+
+`GetCurrentThread()` gibt ein Pseudo-Handle zurück
+(Wert: `-2` = `0xFFFFFFFFFFFFFFFE`). Ohne explizite
+`restype`/`argtypes`:
+- ctypes behandelt Rückgabe als 32-bit int
+- `-2` wird zu `0xFFFFFFFE` (truncated)
+- `SetThreadPriority(0xFFFFFFFE, -1)` → ungültiges Handle
+- Kein Fehler, keine Wirkung — stille Fehlfunktion
+
+**Fix:**
+```python
+k32 = ctypes.windll.kernel32
+k32.GetCurrentThread.restype  = ctypes.c_void_p
+k32.SetThreadPriority.argtypes = [ctypes.c_void_p, ctypes.c_int]
+handle = k32.GetCurrentThread()
+k32.SetThreadPriority(handle, -1)
+```
+
+### Auswirkung auf Dekodierrate
+
+Keine messbare Verschlechterung. BELOW_NORMAL auf einem
+Mehrkern-PC bedeutet nur "weiche aus wenn CPU knapp" —
+bei ausreichend Kernen läuft der Thread fast gleich
+schnell wie mit NORMAL-Priorität.
+
+---
+
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Connector-Konzept · Microham-Konfiguration · Docker-Deployment*
+*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*

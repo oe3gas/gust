@@ -607,19 +607,32 @@ Globale Optionen:
 
 ### 5.3 CLI-Logging (gust.py)
 
-Farbiges ANSI-Logging via `GustFormatter` + `_GustStreamHandler`:
+GUST verwendet einen eigenen Log-Level **VITAL** (35)
+zwischen WARNING (30) und ERROR (40).
 
-| Log-Kategorie | Farbe | Label | Verhalten |
-|---|---|---|---|
-| `INFO` allgemein | grün | `INFO` | scrollend |
-| TX-Gateway-Event | gelb | `TX ▶` | scrollend, kompakt |
-| RX-Frame-Event | blau | `RX ◀` | scrollend, kompakt |
-| RX-Heartbeat (periodisch) | grau | `▸` | **überschreibend** (`\r`) |
-| `WARNING` | orange | `WARNING` | scrollend |
-| `ERROR` | rot | `ERROR` | scrollend |
-| `aiohttp.access` | — | — | **unterdrückt** (WARNING-Level) |
+**Ohne `--verbose` (Standard):**
+- VITAL und ERROR erscheinen auf der Konsole
+- Timestamp HH:MM:SS vor jeder Meldung
+- RX/TX-Frame-Events, Heartbeat, CRC-Meldungen: stumm
 
-`_GustStreamHandler.emit()` prüft nach dem Formatieren ob der Formatter einen leeren String geliefert hat — falls ja, wird nichts ausgegeben (kein Leerzeilen-Artefakt nach `\r`-Statuszeile).
+**Mit `--verbose`:**
+- Alle Level ab DEBUG sichtbar
+- RX ◀ / TX ▶ / Heartbeat farbig hervorgehoben
+
+**VITAL-Ereignisse (immer sichtbar):**
+- `GUST Web-Server gestartet`
+- `rigctld gestartet/gestoppt`
+- `TRX-Profil aktiviert`
+- `[RX Audio] input overflow`
+- PTT EIN/AUS, TX-Pipeline
+
+**Farbcodierung:**
+- Magenta: VITAL
+- Grün: INFO
+- Gelb: TX ▶
+- Blau: RX ◀
+- Grau: Heartbeat ▸ / DEBUG
+- Rot: ERROR
 
 ### 5.4 PTT-Steuerung (implementiert in gust_audio.py)
 
