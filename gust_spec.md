@@ -279,6 +279,90 @@ def assign_channel(callsign, n_channels=8, interval=300):
 # OE3GAS → Kanal 2, Versatz 220 s
 ```
 
+### 3.8 Kanalkapazität und Timing
+
+#### Frame-Dauer
+
+Die Länge eines GUST-Frames hängt vom Payload-Typ ab:
+
+| Frame-Typ | Payload | Symbole (RS+SYNC) | Audiodauer |
+|---|---|---|---|
+| CQ (0x41) | 5 Byte | 44 | ~1,4 s |
+| STATION_TLM (0x03) | 10 Byte | 48 | ~1,5 s |
+| WEATHER (0x01) | 14 Byte | 60 | ~1,9 s |
+| POSITION (0x02) | 18 Byte | 64 | ~2,1 s |
+| EMERG_RSRC (0x21) | 8 Byte | 52 | ~1,7 s |
+| EMERG_BEACON (0x20) | 20 Byte | 68 | ~2,2 s |
+| TEXT/0x40 (1 Fragment) | ≤ 20 Byte | 68 | ~2,2 s |
+
+Mit 200 ms Stille vor/nach dem Nutzsignal (PTT-Vorlauf/-Nachlauf):
+**typische Gesamtdauer 1,8–2,6 s** je Frame.
+
+Der Decoder benötigt mindestens die vollständige Frame-Dauer plus das
+Scan-Intervall im Empfangspuffer (Vollfenster-Garantie, `gust_rx.py`):
+```
+WINDOW_S ≥ MAX_FRAME_S + SCAN_INTERVAL_S
+9,0 s    ≥ 5,5 s       + 2,0 s            (Reserve: 1,5 s)
+```
+
+#### Duty Cycle pro Kanal
+
+```
+Duty Cycle = Frame-Dauer / TX-Intervall
+
+Normalbetrieb (300 s):  2,5 s / 300 s  ≈  0,8 %
+QSO-Modus    ( 60 s):   2,5 s /  60 s  ≈  4,2 %
+```
+
+Der QSO-Modus ist auf ≤ 8 % Duty Cycle begrenzt (4-Fragment-Nachricht,
+60-s-Intervall: 4 × 2,5 s / 60 s ≈ 16,7 % — deshalb gilt QSO-Modus
+nur für interaktiven Betrieb über den Web-Client, nicht für Baken).
+
+#### Mindestabstand zwischen Frames (empirisch)
+
+Aus Stresstest-Messungen (gust_stresstest.py + gust_stress_decode.py,
+Juni 2026) ergibt sich: Der Decoder benötigt einen Mindestabstand von
+**≥ 11 s** zwischen zwei aufeinanderfolgenden Frames auf demselben Kanal,
+damit keine zeitlichen Kollisionen im FFT-Decoder-Fenster entstehen.
+
+```
+Mindestabstand = 2 × MAX_FRAME_S ≈ 2 × 5,5 s = 11 s
+```
+
+Im Normalbetrieb (300 s Intervall) liegt der tatsächliche Abstand bei
+~300 s — weit oberhalb dieser Grenze. Relevant wird der Mindestabstand
+nur bei manuell ausgelösten Frames (One-Shot TX via Web-UI) und im
+QSO-Modus.
+
+#### Kanalkapazität (Pure ALOHA, deterministisches Scheduling)
+
+GUST verwendet kein CSMA (kein Horchen vor dem Senden). Der Hash-Schedule
+(`assign_channel()`) verteilt Stationen deterministisch über Zeit und
+Kanäle. Die theoretische Kapazität ohne Kollisionen:
+
+```
+Kapazität pro Kanal  =  TX-Intervall / Mindestabstand
+                     =  300 s / 11 s  ≈  27 Stationen
+
+Gesamtkapazität (8 Kanäle)  =  27 × 8  =  216 Stationen
+```
+
+Diese Zahl gilt für den Normalfall (kein manueller TX, alle Stationen
+mit gleichem `interval_s = 300`). In der Praxis ist die Kapazität
+deutlich höher, weil die Hash-Funktion Stationen auch zeitlich verteilt
+(nicht alle 27 Stationen pro Kanal senden zum selben Zeitpunkt).
+
+**Einordnung:** Für GUST-typische Szenarien (regionale Notfallnetze,
+Katastrophenschutz) ist diese Kapazität sehr komfortabel. Relevant wird
+sie erst bei öffentlich genutzten Gateways mit vielen simultanen Stationen.
+
+| Szenario | Stationen | Bewertung |
+|---|---|---|
+| Lokales Netz (1 Gemeinde) | 5–20 | unkritisch |
+| Regionalnetz (Bundesland) | 20–80 | unkritisch |
+| Nationales Netz | 80–216 | im sicheren Bereich |
+| Überregional (> 216) | > 216 | Kollisionswahrscheinlichkeit steigt |
+
 ---
 
 ## 4. Systemarchitektur

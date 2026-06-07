@@ -19,6 +19,10 @@ env/
 *.cf32
 rx_log.jsonl
 
+# Mess-Screenshots (Stresstest/SNR) und Konfigurations-Backups
+*.jpg
+*.bak
+
 # Generierter Komplett-Export (export_gust_sources.ps1) für Claude-Projektwissen
 gust_sources.txt
 
