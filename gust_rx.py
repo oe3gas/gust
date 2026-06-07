@@ -94,7 +94,6 @@ import logging
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from typing import Optional, Union
 
 import numpy as np
@@ -122,11 +121,6 @@ MIN_AUDIO_LEVEL  = 0.001  # Mindest-RMS um Stille zu überspringen
 DEEP_WINDOW_S    = 20.0   # Deep-Decoder: Snapshot-Länge
 DEEP_INTERVAL_S  = 15.0   # Deep-Decoder: Scan-Intervall
 DEEP_STEP_S      =  2.0   # Deep-Decoder: Sliding-Window-Schritt
-
-
-def _ts() -> str:
-    """Aktueller Timestamp für Konsolenausgabe."""
-    return datetime.now().strftime("%H:%M:%S.%f")[:12]
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -388,22 +382,22 @@ class AudioRXLoop:
             from gust_audio import AudioReceiver
             log.debug("[RX] gust_audio importiert ✓")
         except Exception as e:
-            print(f"{_ts()}  [RX] FEHLER gust_audio: {e}", flush=True)
-            print(f"{_ts()}  [RX] Tipp: gust_audio.py mit Python-3.9-Version ersetzen", flush=True)
+            log.error("[RX] FEHLER gust_audio: %s", e)
+            log.error("[RX] Tipp: gust_audio.py mit Python-3.9-Version ersetzen")
             return
 
         try:
             from gust_modulator import receive as _receive
             log.debug("[RX] gust_modulator importiert ✓")
         except Exception as e:
-            print(f"{_ts()}  [RX] FEHLER gust_modulator: {e}", flush=True)
+            log.error("[RX] FEHLER gust_modulator: %s", e)
             return
 
         try:
             from gust_eventbus import make_rx_frame_event, make_audio_level_event
             log.debug("[RX] gust_eventbus importiert ✓")
         except Exception as e:
-            print(f"{_ts()}  [RX] FEHLER gust_eventbus: {e}", flush=True)
+            log.error("[RX] FEHLER gust_eventbus: %s", e)
             return
 
         try:
@@ -414,12 +408,11 @@ class AudioRXLoop:
             )
             log.debug("[RX] AudioReceiver erstellt  Gerät=%s", self._device)
         except Exception as e:
-            print(f"{_ts()}  [RX] FEHLER AudioReceiver: {e}", flush=True)
-            print(f"{_ts()}  [RX] Tipp: sounddevice installiert? Gerät-ID korrekt?", flush=True)
+            log.error("[RX] FEHLER AudioReceiver: %s", e)
+            log.error("[RX] Tipp: sounddevice installiert? Gerät-ID korrekt?")
             return
 
-        # (früherer print() entfernt — log.info() unten ist die einzige Quelle)
-        log.info(
+        log.debug(
             "[RX] Loop startet  |  Gerät: %s  |  Interval: %.1fs  |  Fenster: %.1fs",
             self._device or "Standard",
             self._interval,
@@ -432,23 +425,18 @@ class AudioRXLoop:
         # (verhindert BUG-07: Simplex-Fenstertiming-Miss).
         _margin = self._window - MAX_FRAME_S - self._interval
         if _margin >= 0:
-            print(
-                f"{_ts()}  [RX] Vollfenster-Garantie ✓  "
-                f"(Fenster {self._window}s >= Frame {MAX_FRAME_S}s + Intervall "
-                f"{self._interval}s, Marge {_margin:+.1f}s)",
-                flush=True,
+            log.debug(
+                "[RX] Vollfenster-Garantie ✓  "
+                "(Fenster %ss >= Frame %ss + Intervall %ss, Marge %+.1fs)",
+                self._window, MAX_FRAME_S, self._interval, _margin,
             )
         else:
-            print(
-                f"{_ts()}  [RX] ⚠ Vollfenster-Garantie NICHT erfüllt  "
-                f"(Marge {_margin:+.1f}s) — Frames können durch Fenster fallen. "
-                f"Fenster >= {MAX_FRAME_S + self._interval:.1f}s wählen.",
-                flush=True,
-            )
             log.warning(
                 "[RX] Vollfenster-Garantie verletzt: Fenster %.1fs < Frame %.1fs + "
-                "Intervall %.1fs (Marge %.1fs)",
+                "Intervall %.1fs (Marge %.1fs) — Frames können durch Fenster "
+                "fallen. Fenster >= %.1fs wählen.",
                 self._window, MAX_FRAME_S, self._interval, _margin,
+                MAX_FRAME_S + self._interval,
             )
 
         self._running = True
@@ -613,15 +601,13 @@ class AudioRXLoop:
                                 snr = _measure_audio_snr(window, _f0)
                                 result["_snr_db"] = snr
 
-                                msg = (
-                                    f"{_ts()}  [RX-DEEP] 🔍 Frame #{self._rx_count}"
-                                    f"  von {callsign:<8}"
-                                    f"  [{result.get('type_name','?'):<10}]"
-                                    f"  Kanal {result.get('detected_channel','?')}"
-                                    f"  SNR={snr:+.1f}dB"
+                                log.info(
+                                    "[RX-DEEP] 🔍 Frame #%d  von %-8s  [%-10s]"
+                                    "  Kanal %s  SNR=%+.1fdB",
+                                    self._rx_count, callsign,
+                                    result.get("type_name", "?"),
+                                    result.get("detected_channel", "?"), snr,
                                 )
-                                print(msg, flush=True)
-                                log.info(msg)
 
                                 if self._bus is not None:
                                     event = make_rx_frame_event(result)
@@ -721,16 +707,15 @@ class AudioRXLoop:
                             except Exception:
                                 _f0 = 900.0 + result.get("freq_offset_hz", 0)
                             snr = _measure_audio_snr(audio, _f0)
-                            msg = (
-                                f"{_ts()}  [RX] ⚠ Frame identifiziert — CRC-Fehler  "
-                                f"(nicht dekodierbar)  "
-                                f"Kanal {result.get('detected_channel','?')}  "
-                                f"off={result.get('freq_offset_hz',0):+.1f}Hz  "
-                                f"Score={result.get('_sync_score',0):.3f}  "
-                                f"SNR≈{snr:+.1f}dB  {self._last_scan_ms:.0f}ms"
+                            log.info(
+                                "[RX] ⚠ Frame identifiziert — CRC-Fehler  "
+                                "(nicht dekodierbar)  Kanal %s  off=%+.1fHz  "
+                                "Score=%.3f  SNR≈%+.1fdB  %.0fms",
+                                result.get("detected_channel", "?"),
+                                result.get("freq_offset_hz", 0),
+                                result.get("_sync_score", 0),
+                                snr, self._last_scan_ms,
                             )
-                            print(msg, flush=True)
-                            log.warning(msg)
                         continue
 
                     # Frame dekodiert — SNR messen
@@ -769,17 +754,16 @@ class AudioRXLoop:
                     # Neuer Frame → ausgeben + EventBus
                     self._rx_count += 1
                     decoded_this_tick += 1
-                    msg = (
-                        f"{_ts()}  [RX] ✓ Frame #{self._rx_count}  "
-                        f"von {callsign:<8}  [{result.get('type_name','?'):<10}]  "
-                        f"Kanal {result.get('detected_channel','?')}  "
-                        f"off={result.get('freq_offset_hz',0):+.1f}Hz  "
-                        f"SNR={snr:+.1f}dB  "
-                        f"Score={result.get('_sync_score',0):.3f}  "
-                        f"{self._last_scan_ms:.0f}ms"
+                    log.info(
+                        "[RX] ✓ Frame #%d  von %-8s  [%-10s]  Kanal %s  "
+                        "off=%+.1fHz  SNR=%+.1fdB  Score=%.3f  %.0fms",
+                        self._rx_count, callsign,
+                        result.get("type_name", "?"),
+                        result.get("detected_channel", "?"),
+                        result.get("freq_offset_hz", 0),
+                        snr, result.get("_sync_score", 0),
+                        self._last_scan_ms,
                     )
-                    print(msg, flush=True)
-                    log.info(msg)
 
                     if self._bus is not None:
                         event = make_rx_frame_event(result)
@@ -802,11 +786,8 @@ class AudioRXLoop:
                         )
 
         except asyncio.CancelledError:
-            print(f"{_ts()}  [RX] Loop beendet (CancelledError)", flush=True)
             log.info("[RX] Loop beendet (CancelledError)")
         except Exception as e:
-            print(f"{_ts()}  [RX] FEHLER im Loop: {e}", flush=True)
-            import traceback; traceback.print_exc()
             log.error("[RX] Unerwarteter Fehler: %s", e, exc_info=True)
         finally:
             self._running = False
@@ -825,7 +806,6 @@ class AudioRXLoop:
             if self._deep_executor is not None:
                 self._deep_executor.shutdown(wait=False)
             receiver.stop()
-            print(f"{_ts()}  [RX] Statistik: {self._scan_count} Scans / {self._rx_count} dekodiert / {self._dup_count} Duplikate", flush=True)
             log.info(
                 "[RX] Statistik: %d Scans / %d dekodiert / %d Duplikate",
                 self._scan_count, self._rx_count, self._dup_count,
@@ -917,9 +897,11 @@ async def _demo():
     p.add_argument("-v", "--verbose", action="store_true",
                    help="Ausführliche Ausgabe inkl. Debug-Infos (SNR, Offset, Score)")
 
-    # No-Args-Hint — vor parse_args()
+    # No-Args-Hint — vor parse_args() (Logging minimal konfigurieren,
+    # sonst hätte log.info() hier noch keinen Handler)
     if len(sys.argv) == 1:
-        print("Verwendung: python gust_rx.py -h  oder  --help  für Parameterübersicht")
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+        log.info("Verwendung: python gust_rx.py -h  oder  --help  für Parameterübersicht")
         sys.exit(0)
 
     args = p.parse_args()
@@ -930,7 +912,7 @@ async def _demo():
         datefmt="%H:%M:%S",
     )
 
-    print(f"""
+    log.info(f"""
 ╔══════════════════════════════════════════════════════╗
 ║  GUST RX-Monitor  v1.0                           ║
 ╠══════════════════════════════════════════════════════╣
@@ -946,17 +928,21 @@ async def _demo():
         async def publish(self, event):
             d = event.get("data", {})
             pl = d.get("payload_decoded", {})
-            print(f"\n{'─'*54}")
-            print(f"  Frame empfangen:")
-            print(f"    Von   : {d.get('from','?')}")
-            print(f"    Typ   : {d.get('type_name','?')}")
-            print(f"    Kanal : {d.get('detected_channel','?')}")
-            print(f"    Offset: {d.get('freq_offset_hz',0):+.1f} Hz")
+            lines = [
+                "",
+                "─" * 54,
+                "  Frame empfangen:",
+                f"    Von   : {d.get('from','?')}",
+                f"    Typ   : {d.get('type_name','?')}",
+                f"    Kanal : {d.get('detected_channel','?')}",
+                f"    Offset: {d.get('freq_offset_hz',0):+.1f} Hz",
+            ]
             if isinstance(pl, dict):
                 for k, v in pl.items():
                     if k != "flags":
-                        print(f"    {k:20s} = {v}")
-            print(f"{'─'*54}\n")
+                        lines.append(f"    {k:20s} = {v}")
+            lines.append("─" * 54)
+            log.info("\n".join(lines))
 
     rx = AudioRXLoop(
         device          = args.device,
@@ -971,10 +957,10 @@ async def _demo():
         pass
     finally:
         s = rx.stats()
-        print(f"\nStatistik: {s['scans']} Scans  |  "
-              f"{s['decoded']} dekodiert  |  "
-              f"{s['duplicates']} Duplikate  |  "
-              f"⌀ {s['last_scan_ms']:.0f} ms/Scan")
+        log.info("Statistik: %d Scans  |  %d dekodiert  |  "
+                 "%d Duplikate  |  ⌀ %.0f ms/Scan",
+                 s["scans"], s["decoded"],
+                 s["duplicates"], s["last_scan_ms"])
 
 
 if __name__ == "__main__":

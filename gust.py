@@ -114,6 +114,10 @@ class _GustStreamHandler(logging.StreamHandler):
 
     def _classify(self, record: logging.LogRecord) -> str:
         """Frame-Label bestimmen: 'TX ▶', 'RX ◀', '▸' oder '' (normal)."""
+        # ERROR/CRITICAL nie als Frame-Label rendern — Fehler behalten
+        # ihr rotes ERROR-Format (z.B. "[RX] FEHLER AudioReceiver: ...")
+        if record.levelno >= logging.ERROR:
+            return ""
         if record.levelname in self._FRAME_LABELS:
             return record.levelname
         msg = record.getMessage()
