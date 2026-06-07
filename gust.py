@@ -62,160 +62,150 @@ try:
 except ImportError:
     from gust_weather import SimAdapter, create_adapter   # type: ignore
 
-# ── ANSI-Farben ────────────────────────────────────────────────────────
-_ANSI_RESET  = "\033[0m"
-_ANSI_GREY   = "\033[38;5;242m"
-_ANSI_GREEN  = "\033[32m"
-_ANSI_YELLOW = "\033[33m"
-_ANSI_BLUE   = "\033[34m"
-_ANSI_CYAN   = "\033[36m"
-_ANSI_RED    = "\033[31m"
-_ANSI_ORANGE = "\033[38;5;208m"
-_ANSI_BOLD   = "\033[1m"
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-# ── Überschreibende Statuszeile ────────────────────────────────────────
-class _StatusLine:
-    """
-    Verwaltet eine einzelne überschreibbare Zeile am Ende der Terminal-Ausgabe.
-    Wird für periodische RX-Scan-Meldungen verwendet (\r ohne \n).
-    """
-    _active: str = ""
-    _enabled: bool = True
+# Eigener Log-Level VITAL (35) — zwischen WARNING (30)
+# und ERROR (40). Für vitale Systemereignisse die immer
+# sichtbar sein sollen, auch ohne --verbose.
+VITAL = 35
+logging.addLevelName(VITAL, "VITAL")
 
-    @classmethod
-    def write(cls, text: str) -> None:
-        """Statuszeile überschreibend ausgeben (kein Newline)."""
-        if not cls._enabled or not sys.stderr.isatty():
-            return
-        padded = ("  " + text).ljust(78)
-        sys.stderr.write("\r" + padded)
-        sys.stderr.flush()
-        cls._active = text
+def _vital(self, message, *args, **kwargs):
+    if self.isEnabledFor(VITAL):
+        self._log(VITAL, message, args, **kwargs)
 
-    @classmethod
-    def clear(cls) -> None:
-        """Statuszeile löschen bevor eine normale Log-Zeile ausgegeben wird."""
-        if not cls._enabled or not sys.stderr.isatty():
-            return
-        if cls._active:
-            sys.stderr.write("\r" + " " * 80 + "\r")
-            sys.stderr.flush()
-            cls._active = ""
-
-
-# ── Farbiger Formatter ─────────────────────────────────────────────────
-class GustFormatter(logging.Formatter):
-    """
-    Farbiger CLI-Formatter für GUST.
-    - INFO-Meldungen: grün
-    - WARNING: orange, ERROR/CRITICAL: rot
-    - TX-Gateway-Meldungen: gelb mit TX ▶ Label
-    - RX-Frame-Meldungen:   blau  mit RX ◀ Label
-    - aiohttp.access: vollständig unterdrückt (WARNING gesetzt in setup_logging)
-    - Periodische RX-Scan-Heartbeats: überschreibende Statuszeile
-    """
-
-    _LEVEL_COLORS = {
-        logging.DEBUG:    _ANSI_GREY,
-        logging.INFO:     _ANSI_GREEN,
-        logging.WARNING:  _ANSI_ORANGE,
-        logging.ERROR:    _ANSI_RED,
-        logging.CRITICAL: _ANSI_RED + _ANSI_BOLD,
-    }
-
-    def format(self, record: logging.LogRecord) -> str:
-        ts    = self.formatTime(record, "%H:%M:%S")
-        msg   = record.getMessage()
-        name  = record.name
-
-        # TX-Gateway-Ereignisse → gelb, kompaktes Label
-        if name == "gust.gateway" and "gesendet auf Kanal" in msg:
-            _StatusLine.clear()
-            label = f"{_ANSI_YELLOW}TX ▶   {_ANSI_RESET}"
-            # Komprimieren: 'TX-Gateway: WEATHER gesendet auf Kanal 2  (4.9s, Prio 4)'
-            compact = msg.replace("TX-Gateway: ", "").replace(" gesendet auf Kanal ", "  Kanal ")
-            return f"{_ANSI_GREY}{ts}{_ANSI_RESET}  {label}{_ANSI_YELLOW}{compact}{_ANSI_RESET}"
-
-        # RX-Frame-Ereignisse → blau, kompaktes Label
-        if "[RX] ✓ Frame" in msg:
-            _StatusLine.clear()
-            label = f"{_ANSI_BLUE}RX ◀   {_ANSI_RESET}"
-            # '[RX] ✓ Frame #3  von OE3GAT    [WEATHER   ]  Kanal 0  ...' → kürzen
-            compact = msg.replace("[RX] ✓ ", "")
-            return f"{_ANSI_GREY}{ts}{_ANSI_RESET}  {label}{_ANSI_BLUE}{compact}{_ANSI_RESET}"
-
-        # Periodischer RX-Heartbeat → Statuszeile (überschreibend, kein Newline)
-        if "[RX]" in msg and "Scans ohne Frame" in msg:
-            _StatusLine.write(f"{_ANSI_GREY}{ts}  ▸ {msg}{_ANSI_RESET}")
-            return ""   # leerer String → kein normaler Log-Output
-
-        # DRY-RUN TX → cyan
-        if "DRY-RUN" in msg:
-            _StatusLine.clear()
-            return (f"{_ANSI_GREY}{ts}{_ANSI_RESET}  "
-                    f"{_ANSI_CYAN}DRY    {_ANSI_RESET}{_ANSI_CYAN}{msg}{_ANSI_RESET}")
-
-        # Standard: INFO grün, WARNING orange, ERROR rot
-        _StatusLine.clear()
-        color = self._LEVEL_COLORS.get(record.levelno, "")
-        level = f"{color}{record.levelname:<7}{_ANSI_RESET}"
-        # Logger-Name: nur letzten Teil ('gust.web' → 'web', 'gust' → 'gust')
-        short_name = name.split(".")[-1] if "." in name else name
-        return (f"{_ANSI_GREY}{ts}{_ANSI_RESET}  {level} "
-                f"{_ANSI_GREY}{short_name:<12}{_ANSI_RESET} {msg}")
-
-
-# ── Gefilterte Handler-Klasse ──────────────────────────────────────────
-class _SkipEmptyFilter(logging.Filter):
-    """Unterdrückt Log-Records mit leerem source-Message-String (belt-and-suspenders)."""
-    def filter(self, record: logging.LogRecord) -> bool:
-        return bool(record.getMessage())
-
+logging.Logger.vital = _vital
 
 class _GustStreamHandler(logging.StreamHandler):
     """
-    StreamHandler der nichts ausgibt wenn der Formatter einen leeren String
-    zurückgibt. Notwendig für den RX-Heartbeat: GustFormatter.format() gibt
-    dort "" zurück (Seiteneffekt: _StatusLine.write() malt die \r-Zeile),
-    aber StreamHandler.emit() würde sonst "" + "\n" schreiben — eine
-    Leerzeile nach dem \r, die die überschreibende Statuszeile zerstört.
+    Formatierter Stream-Handler für die GUST-Konsole.
 
-    Quiet-Mode (Standard, ohne --verbose): Meldungen unter `display_level`
-    werden unterdrückt — AUSSER betriebsrelevante Events (TX ▶, RX ◀,
-    DRY-RUN, RX-Heartbeat, Web-Server-Start), die immer sichtbar bleiben.
-    Wichtig: Die Filterung passiert hier im Handler (nicht am Root-Logger),
-    damit INFO-Records weiterhin den EventBusLogHandler für /ws/log erreichen.
-    `display_level` wird von setup_logging() gesetzt:
-    DEBUG (--verbose, alles sichtbar) oder WARNING (Quiet-Mode).
+    - Timestamp HH:MM:SS vor jeder Meldung
+    - VITAL-Meldungen immer ausgeben (Systemereignisse)
+    - TX ▶ / RX ◀ / Heartbeat nur mit verbose=True
+    - ERROR/CRITICAL immer ausgeben
+    - Alle anderen INFO/WARNING/DEBUG nur mit verbose=True
     """
-    display_level = logging.DEBUG   # Default: alles durchlassen
 
-    @staticmethod
-    def _is_operational(record: logging.LogRecord) -> bool:
-        """Betriebsrelevante Meldungen, die im Quiet-Mode sichtbar bleiben."""
+    # ANSI-Farben
+    _C = {
+        "RST":     "\033[0m",
+        "VITAL":   "\033[95m",    # Magenta — vitale Systemereignisse
+        "TX":      "\033[93m",    # Gelb    — TX
+        "RX":      "\033[94m",    # Blau    — RX
+        "HB":      "\033[90m",    # Grau    — Heartbeat
+        "INFO":    "\033[32m",    # Grün    — Info
+        "WARN":    "\033[33m",    # Orange  — Warning
+        "ERR":     "\033[31m",    # Rot     — Error
+        "DEBUG":   "\033[2m",     # Dim     — Debug
+        "TS":      "\033[2m",     # Dim     — Timestamp
+    }
+
+    # Labels die TX/RX/Heartbeat-Meldungen identifizieren
+    _FRAME_LABELS = {"TX ▶", "RX ◀", "▸"}
+
+    def __init__(self, verbose: bool = False,
+                 display_level: int = VITAL):
+        super().__init__(stream=sys.stdout)
+        self._verbose       = verbose
+        self._display_level = display_level
+        self._last_was_cr   = False
+
+    def _classify(self, record: logging.LogRecord) -> str:
+        """Frame-Label bestimmen: 'TX ▶', 'RX ◀', '▸' oder '' (normal)."""
+        if record.levelname in self._FRAME_LABELS:
+            return record.levelname
         msg = record.getMessage()
-        return (
-            "gesendet auf Kanal" in msg       # TX ▶ (gust.gateway)
-            or "[RX] ✓ Frame" in msg          # RX ◀ dekodierter Frame
-            or "DRY-RUN" in msg               # DRY (TX ohne Audio/PTT)
-            or "Scans ohne Frame" in msg      # RX-Heartbeat (Statuszeile)
-            or "Web-Server gestartet" in msg  # einmalige Startmeldung
-        )
+        if record.name == "gust.gateway" and "gesendet auf Kanal" in msg:
+            return "TX ▶"
+        if "[RX] ✓ Frame" in msg:
+            return "RX ◀"
+        if "[RX]" in msg and "Scans ohne Frame" in msg:
+            return "▸"
+        return ""
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            # Quiet-Mode: unterhalb display_level nur betriebsrelevante Events
-            if record.levelno < self.display_level \
-                    and not self._is_operational(record):
-                return
-            msg = self.format(record)
-            if not msg:
-                return
-            stream = self.stream
-            stream.write(msg + self.terminator)
-            self.flush()
+            self._emit_safe(record)
         except Exception:
             self.handleError(record)
+
+    def _emit_safe(self, record: logging.LogRecord) -> None:
+        C   = self._C
+        RST = C["RST"]
+
+        # Timestamp HH:MM:SS
+        ts = time.strftime("%H:%M:%S",
+                           time.localtime(record.created))
+
+        # Level und Frame-Label bestimmen
+        lvl   = record.levelno
+        label = self._classify(record)
+
+        # Sichtbarkeitsregel:
+        # ERROR+         → immer
+        # display_level+ → immer (Quiet-Mode: VITAL+)
+        # Frame (TX/RX/▸)→ nur verbose
+        # sonst          → nur verbose
+        if lvl >= logging.ERROR:
+            show = True
+        elif lvl >= self._display_level and not label:
+            show = True
+        else:
+            show = self._verbose
+
+        if not show:
+            return
+
+        msg    = record.getMessage()
+        stream = self.stream
+
+        # Heartbeat: überschreibende Statuszeile (\r, nur am TTY)
+        if label == "▸" and stream.isatty():
+            line = f"{C['HB']}{ts}  ▸ {msg}{RST}"
+            stream.write("\r" + ("  " + line).ljust(100))
+            stream.flush()
+            self._last_was_cr = True
+            return
+
+        # Vorherige \r-Statuszeile löschen bevor normal geschrieben wird
+        if self._last_was_cr:
+            stream.write("\r" + " " * 100 + "\r")
+            self._last_was_cr = False
+
+        if label == "TX ▶":
+            # 'TX-Gateway: WEATHER gesendet auf Kanal 2 …' → kompakt
+            compact = (msg.replace("TX-Gateway: ", "")
+                          .replace(" gesendet auf Kanal ", "  Kanal "))
+            line = f"{C['TS']}{ts}{RST}  {C['TX']}TX ▶    {compact}{RST}"
+        elif label == "RX ◀":
+            compact = msg.replace("[RX] ✓ ", "")
+            line = f"{C['TS']}{ts}{RST}  {C['RX']}RX ◀    {compact}{RST}"
+        elif label == "▸":
+            # Heartbeat ohne TTY (z.B. Logfile): normale Zeile
+            line = f"{C['TS']}{ts}{RST}  {C['HB']}▸       {msg}{RST}"
+        else:
+            # Farbe nach Level wählen
+            if lvl >= logging.ERROR:
+                color = C["ERR"]
+            elif lvl >= VITAL:
+                color = C["VITAL"]
+            elif lvl >= logging.WARNING:
+                color = C["WARN"]
+            elif lvl >= logging.INFO:
+                color = C["INFO"]
+            else:
+                color = C["DEBUG"]
+            # Logger-Name: nur letzter Teil ('gust.web' → 'web')
+            short = record.name.split(".")[-1]
+            # VITAL/ERROR: ganze Meldung einfärben, sonst nur das Label
+            body = f"{color}{msg}{RST}" if lvl >= VITAL else msg
+            line = (f"{C['TS']}{ts}{RST}  {color}{record.levelname:<7}{RST} "
+                    f"{C['TS']}{short:<9}{RST} {body}")
+
+        stream.write(line + self.terminator)
+        self.flush()
 
 
 log = logging.getLogger("gust")
@@ -370,54 +360,68 @@ def _deep_merge(base: dict, override: dict) -> dict:
 # LOGGING
 # ═══════════════════════════════════════════════════════════════════════
 
-def setup_logging(verbose: bool, bus: Optional[EventBus] = None) -> None:
+def setup_logging(verbose: bool,
+                  bus: Optional[EventBus] = None) -> None:
     """
-    Python-Logging konfigurieren.
-    - Farbiger GustFormatter für Terminal-Ausgabe
-    - Quiet-Mode (Standard): Konsole zeigt nur TX/RX/DRY/Heartbeat/Warnungen;
-      --verbose zeigt alles (DEBUG aufwärts)
-    - aiohttp.access auf WARNING → kein HTTP-Poll-Spam
-    - aiohttp.server auf WARNING → kein Connection-Spam
-    - Optionaler EventBus-Handler für Web-GUI /ws/log
-    """
-    # Root-Logger bleibt auch im Quiet-Mode auf INFO: die Records müssen
-    # den _GustStreamHandler (Allowlist TX/RX) und den EventBusLogHandler
-    # (/ws/log im Web-UI) erreichen. Die Konsolen-Reduktion macht
-    # _GustStreamHandler.display_level — NICHT der Logger-Level.
-    level = logging.DEBUG if verbose else logging.INFO
-    display_level = logging.DEBUG if verbose else logging.WARNING
+    Logging-Konfiguration für GUST.
 
-    # Root-Logger: GustFormatter auf stderr
+    Ohne --verbose (Quiet-Mode):
+      - VITAL (35) und höher erscheinen auf der Konsole
+      - TX ▶ / RX ◀ / Heartbeat werden unterdrückt
+      - _is_operational()-Meldungen erscheinen nur mit
+        --verbose
+
+    Mit --verbose:
+      - Alles ab DEBUG erscheint
+      - TX ▶ / RX ◀ / Heartbeat sichtbar
+
+    Timestamps: alle Meldungen im Format HH:MM:SS
+    """
     root = logging.getLogger()
-    root.setLevel(level)
+    root.setLevel(logging.DEBUG)
 
-    if not root.handlers:
-        handler = _GustStreamHandler(sys.stderr)
-        handler.setFormatter(GustFormatter())
-        handler.addFilter(_SkipEmptyFilter())
-        handler.display_level = display_level
-        root.addHandler(handler)
-    else:
-        # basicConfig wurde bereits aufgerufen — Handler ersetzen
-        root.handlers.clear()
-        handler = _GustStreamHandler(sys.stderr)
-        handler.setFormatter(GustFormatter())
-        handler.addFilter(_SkipEmptyFilter())
-        handler.display_level = display_level
-        root.addHandler(handler)
+    # Bestehende Handler entfernen (Neuinitialisierung)
+    for h in root.handlers[:]:
+        root.removeHandler(h)
 
-    # aiohttp-Spam unterdrücken
-    logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
+    # display_level: was auf der Konsole erscheint
+    display_level = logging.DEBUG if verbose else VITAL
+
+    handler = _GustStreamHandler(
+        verbose=verbose,
+        display_level=display_level)
+    handler.setLevel(logging.DEBUG)
+    root.addHandler(handler)
+
+    # aiohttp-Zugriffs-Log unterdrücken
+    logging.getLogger("aiohttp.access").setLevel(
+        logging.WARNING)
     logging.getLogger("aiohttp.server").setLevel(logging.WARNING)
     logging.getLogger("aiohttp.web").setLevel(logging.WARNING)
 
+    # rigctld/hamlib-Logger: immer auf VITAL setzen
+    # damit ihre Meldungen auch ohne --verbose erscheinen
+    # (werden via log.vital() aufgerufen — siehe Änderung 5)
+    logging.getLogger("rigctld").setLevel(logging.DEBUG)
+    logging.getLogger("hamlib").setLevel(logging.DEBUG)
+
+    # Event-Bus für WebSocket-Log-Streaming (optional)
     if bus is not None:
-        loop    = asyncio.get_running_loop()
-        eb_handler = EventBusLogHandler(bus)
-        eb_handler.set_loop(loop)
-        eb_handler.setLevel(logging.INFO)
-        logging.getLogger("gust").addHandler(eb_handler)
-        logging.getLogger("demo").addHandler(eb_handler)
+        _attach_bus_handler(root, bus)
+
+
+def _attach_bus_handler(root: logging.Logger, bus: EventBus) -> None:
+    """
+    EventBusLogHandler für /ws/log im Web-UI anhängen.
+    Wie bisher an den 'gust'- und 'demo'-Loggern (nicht am Root),
+    damit aiohttp/asyncio-Records nicht im Web-Log landen.
+    """
+    loop       = asyncio.get_running_loop()
+    eb_handler = EventBusLogHandler(bus)
+    eb_handler.set_loop(loop)
+    eb_handler.setLevel(logging.INFO)
+    logging.getLogger("gust").addHandler(eb_handler)
+    logging.getLogger("demo").addHandler(eb_handler)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -452,49 +456,64 @@ def _print_banner(cfg: dict, mode: str) -> None:
     off_str  = f"+{om}m {os_:02d}s  (Schedule: {im} min)"
     url_str  = f"http://localhost:{port}"
 
-    W  = 76   # Textfeld-Breite: 80 gesamt − 2×║ − 2 Leerzeichen Einzug = 76 (Box-Rand bündig)
+    # ANSI-Farben (funktionieren auf Windows 10+ in PowerShell/Terminal)
+    # Hellgrau für Beschreibung, Cyan/Gelb für Befehle, Reset
+    GRY  = "\033[90m"    # dunkelgrau  — Beschreibungen
+    CMD  = "\033[96m"    # cyan        — Befehle
+    DIM  = "\033[2m"     # gedimmt     — Trennlinien / Labels
+    RST  = "\033[0m"     # Reset
+    BLD  = "\033[1m"     # Bold        — Überschriften
+    YLW  = "\033[93m"    # Gelb        — Modus-Badge
+    GRN  = "\033[92m"    # Grün        — Status-Werte
+
+    W  = 76
     HR = '╠' + '═' * 78 + '╣'
-    def row(text): return f'║  {text:<{W}}║'
+    def row(text="", color=""):
+        inner = f"{color}{text}{RST}" if color else text
+        # Padding: wir rechnen ohne ANSI-Escapes für die Breite
+        pad = W - len(text)
+        return f"║  {inner}{' ' * max(0, pad)}║"
+
+    # Trennzeile zwischen Beschreibung und Befehl (innerhalb Aufrufe-Block)
+    def cmd_row(desc, cmd):
+        # Beschreibung in grau, Befehl in cyan — zwei separate Zeilen
+        return (
+            f"{row('  ' + desc, GRY)}\n"
+            f"{row('    ' + cmd, CMD)}"
+        )
 
     print(f"""
-╔{'═'*78}╗
-{row(f'GUST  v{VERSION}   [{mode}]')}
+\033[0m╔{'═'*78}╗
+{row(f'GUST  v{VERSION}', BLD)}
+{row(f'Modus      : {mode}', YLW)}
 {HR}
-{row(f'Rufzeichen : {cs}')}
-{row(f'Kanal      : {ci["channel"]}  ({freq_str})')}
-{row(f'TX-Offset  : {off_str}')}
-{row(f'Web-UI     : {url_str}')}
-{row('Stoppen    : Strg+C')}
+{row(f'Rufzeichen : {cs}', GRN)}
+{row(f'Kanal      : {ci["channel"]}  ({freq_str})', GRN)}
+{row(f'TX-Offset  : {off_str}', GRN)}
+{row(f'Web-UI     : {url_str}', GRN)}
+{row(f'Stoppen    : Strg+C', DIM)}
 {HR}
-{row('Aufrufe:')}
-{row('')}
-{row('  gust.py daemon')}
-{row('    TX + RX Vollbetrieb mit echter Hardware (Transceiver + Audio)')}
-{row('')}
-{row('  gust.py daemon --sim')}
-{row('    Wie daemon, aber SimAdapter speist synthetische Frames ein —')}
-{row('    kein echtes HF-Signal nötig, ideal zum Testen der Web-GUI')}
-{row('')}
-{row('  gust.py daemon --dry-run')}
-{row('    TX-Pipeline vollständig aktiv, aber kein Audio/PTT-Ausgang —')}
-{row('    Frame-Erzeugung und Scheduling testbar ohne Sender')}
-{row('')}
-{row('  gust.py daemon --sim --dry-run')}
-{row('    Kombination: SimAdapter + kein TX — reine Software-Simulation')}
-{row('')}
-{row('  gust.py rx')}
-{row('    Nur Empfang + Web-UI, kein TX-Gateway gestartet')}
-{row('')}
-{row('  gust.py tx weather / position / text / emergency')}
-{row('    Einmaliger One-Shot TX, danach beenden')}
-{row('')}
-{row('  gust.py info [RUFZEICHEN]')}
-{row('    Kanal + TX-Offset für ein Rufzeichen anzeigen')}
-{row('')}
-{row('  gust.py devices')}
-{row('    Verfügbare Audiogeräte mit IDs auflisten')}
+{row('Betrieb:', BLD)}
+{row()}
+{cmd_row('Vollbetrieb TX/RX', 'gust.py')}
+{row()}
+{cmd_row('Nur RX', 'gust.py rx')}
+{row()}
+{cmd_row('Demobetrieb GUI mit Demoframes', 'gust.py --sim')}
+{row()}
+{cmd_row('Demobetrieb GUI — TX-Pipeline aktiv, kein PTT/Audio', 'gust.py --dry-run')}
+{row()}
+{cmd_row('Simulation: Demoframes + kein TX', 'gust.py --sim --dry-run')}
+{HR}
+{row('Tools:', BLD)}
+{row()}
+{cmd_row('Erlaubte Startparameter anzeigen', 'gust.py -h')}
+{row()}
+{cmd_row('Verfügbare Audiogeräte mit ID', 'gust.py devices')}
+{row()}
+{cmd_row('Kanal + errechneten Offset für ein Rufzeichen anzeigen', 'gust.py info [RUFZEICHEN]')}
 ╚{'═'*78}╝
-""")
+\033[0m""")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -573,9 +592,11 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
                 None, ensure_rigctld_running, cfg)
             if _proc is not None:
                 server._rigctld_proc = _proc
-                log.info("rigctld beim Daemon-Start gestartet (PID %d).", _proc.pid)
+                logging.getLogger("rigctld").vital(
+                    "rigctld beim Daemon-Start gestartet (PID %d).", _proc.pid)
             else:
-                log.info("rigctld war bereits erreichbar beim Daemon-Start.")
+                logging.getLogger("rigctld").vital(
+                    "rigctld war bereits erreichbar beim Daemon-Start.")
         except Exception as _exc:
             log.warning("rigctld Früh-Start fehlgeschlagen: %s", _exc)
 
@@ -1251,6 +1272,15 @@ Beispiele:
 # ═══════════════════════════════════════════════════════════════════════
 
 def main() -> None:
+    # UTF-8 erzwingen damit Box-Zeichen im Banner bei
+    # stdout-Umleitung (> logfile) nicht crashen (cp1252)
+    if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8',
+                               errors='replace')
+    if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8',
+                               errors='replace')
+
     parser = build_parser()
 
     if len(sys.argv) == 1:

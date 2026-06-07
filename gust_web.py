@@ -4563,12 +4563,6 @@ function slDraw() {
     ? (sl.tLast - sl.txT0)
     : 0;
 
-  // Oberkante des sichtbaren Fensters (älteste sichtbare Zeit).
-  // visS statt sl.windowS: die Header-Zone gehört nicht zur Zeitachse —
-  // sonst würden die neuesten HEADER_H/pps Sekunden unter den Canvas-
-  // Rand fallen und die Jetzt-Linie wäre nicht mehr "jetzt".
-  const topS = Math.max(0, nowS - visS);
-
   // Hintergrund
   ctx.fillStyle = isLight ? '#f0f4f8' : SL_BACKGROUND;
   ctx.fillRect(0, 0, W, H);
@@ -4582,12 +4576,12 @@ function slDraw() {
     ctx.fillRect(ch * lW, 0, lW, H);
   }
 
-  // ── Zeitraster (t=0 oben, Zeit wächst nach unten) ────────
-  const firstGrid = Math.ceil(topS / 5) * 5;
-  for (let t = firstGrid; t <= topS + visS + 5; t += 5) {
-    const yPos = HEADER_H + (t - topS) * pps;
+  // ── Zeitraster: age=0 direkt unter Header (=jetzt), ──────
+  // age wächst nach unten (=Vergangenheit)
+  for (let age = 0; age <= visS + 5; age += 5) {
+    const yPos = HEADER_H + age * pps;
     if (yPos < HEADER_H || yPos > H) continue;
-    const is10 = (Math.round(t) % 10 === 0);
+    const is10 = (age % 10 === 0);
     ctx.strokeStyle = is10
       ? (isLight ? 'rgba(0,0,0,0.45)' : SL_GRID_COLOR)
       : (isLight ? 'rgba(0,0,0,0.18)' : SL_GRID_MINOR);
@@ -4597,13 +4591,14 @@ function slDraw() {
     ctx.lineTo(W, yPos);
     ctx.stroke();
 
-    // Zeitstempel-Label an der Linie
+    // Label: Alter in Sekunden (age=0 -> "jetzt")
     if (is10) {
       ctx.fillStyle = isLight
         ? 'rgba(0,0,0,0.80)'
         : 'rgba(255,255,255,0.92)';
       ctx.font      = 'bold 11px monospace';
-      ctx.fillText(`${Math.round(t)}s`, 3, yPos - 3);
+      const label   = age === 0 ? 'jetzt' : `-${age}s`;
+      ctx.fillText(label, 3, yPos + 12);
     }
   }
 
@@ -4632,8 +4627,11 @@ function slDraw() {
   ctx.clip();
 
   for (const f of sl.frames) {
-    // Y-Position: t=0 oben, Zeit wächst nach unten (Header-Offset)
-    const yTop = HEADER_H + (f.startS - topS) * pps;
+    // Alter des Frame-ENDES relativ zu nowS
+    // (jüngste Frames haben kleines age → nahe am Header)
+    const frameEndS = f.startS + f.durS;
+    const ageEnd    = nowS - frameEndS;
+    const yTop      = HEADER_H + ageEnd * pps;
     const yH   = Math.max(f.durS * pps, 18);  // Mindesthöhe 18px
 
     // Außerhalb des sichtbaren Bereichs überspringen
@@ -4686,14 +4684,14 @@ function slDraw() {
 
   ctx.restore();   // Clipping aufheben (Jetzt-Linie + Header voll sichtbar)
 
-  // ── "Jetzt"-Linie (roter Strich am unteren Rand) ─────────
+  // ── "Jetzt"-Linie direkt unter dem Header (= aktuellster Zeitpunkt)
   // Rot funktioniert in beiden Themes.
   ctx.strokeStyle = 'rgba(255,80,80,0.8)';
   ctx.lineWidth   = 1.5;
   ctx.setLineDash([4, 3]);
   ctx.beginPath();
-  ctx.moveTo(0, H - 2);
-  ctx.lineTo(W, H - 2);
+  ctx.moveTo(0, HEADER_H + 2);
+  ctx.lineTo(W, HEADER_H + 2);
   ctx.stroke();
   ctx.setLineDash([]);
 
@@ -4909,7 +4907,7 @@ class WebServer:
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, self._host, self._port)
         await self._site.start()
-        log.info("GUST Web-Server gestartet: http://%s:%d", self._host, self._port)
+        log.vital("GUST Web-Server gestartet: http://%s:%d", self._host, self._port)
 
         # Event-Bus Subscriber starten (falls vorhanden)
         if self._event_bus is not None:
@@ -5356,7 +5354,7 @@ class WebServer:
                     text=f'{{"error":"Schreiben fehlgeschlagen: {exc}"}}',
                     content_type="application/json")
 
-        log.info("TRX-Profil aktiviert: %s", name)
+        log.vital("TRX-Profil aktiviert: %s", name)
 
         # Beim Profil-Wechsel rigctld immer still neu starten — kein Konflikt-Dialog.
         # Der User hat bewusst ein Profil aktiviert; der laufende rigctld (egal ob
@@ -6286,6 +6284,9 @@ class WebServer:
             # GUST hat rigctld selbst gestartet → Handle für /stop merken.
             self._rigctld_proc = proc
             msg = "rigctld gestartet"
+            device = self._config.get("rigctld", {}).get("device") or "?"
+            log.vital("[rigctld] gestartet via GUI (PID %d, %s)",
+                      proc.pid, device)
         else:
             # rigctld lief bereits — nicht von GUST gestartet.
             msg = "rigctld war bereits erreichbar"
@@ -6309,6 +6310,7 @@ class WebServer:
         except Exception as exc:
             log.warning("rigctld terminate fehlgeschlagen: %s", exc)
         self._rigctld_proc = None
+        log.vital("[rigctld] gestoppt via GUI")
         return web.json_response({"ok": True, "message": "rigctld gestoppt"})
 
     def _find_port_owner(self, port: int) -> dict | None:
@@ -6525,7 +6527,7 @@ class WebServer:
                 proc.wait(timeout=3)
             except psutil.TimeoutExpired:
                 proc.kill()
-            log.info("[rigctld] Prozess PID %d beendet auf User-Anfrage", pid)
+            log.vital("[rigctld] Prozess PID %d beendet auf User-Anfrage", pid)
         except ImportError:
             return web.json_response({
                 "ok": False,
@@ -6592,7 +6594,7 @@ class WebServer:
                 pass
             msg = (f"Konfiguration gespeichert, rigctld neu gestartet "
                    f"(Modell {rig_model}, {device}, {baud} Bd){freq_msg}.")
-            log.info("[rigctld] %s", msg)
+            log.vital("[rigctld] %s", msg)
             self._publish_log("INFO", msg)
             return web.json_response({"ok": True, "message": msg})
         except RuntimeError as exc:
