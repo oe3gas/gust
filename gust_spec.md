@@ -154,6 +154,8 @@ GUST unterstützt ab v0.5 zwei unabhängige Empfangspfade:
 0x30  Generische Messung (Sensor-TLV)
 0x40  Freitext / QSO-Fragment
 0x41  QSO-CQ / Anruf
+0x50  AUTH — HMAC-SHA256 Frame-Authentifizierung (GUST-S, siehe 3.5)
+0x80–0xCF  GUST-X Frame-Typen (Extended, 9-Symbol-SYNC erforderlich, siehe 3.9)
 0xF0  Protokoll-Management (Kanalzuweisung, Timing)
 0xFF  Erweiterungsreserviert
 ```
@@ -260,6 +262,42 @@ Offset  Größe  Inhalt
 - **Kein serverseitiges Hard-Limit (Stand v0.3):** Das 56-Byte-/4-Frame-Limit wird
   **ausschließlich clientseitig** durchgesetzt. Siehe BUG-09.
 
+#### Frame 0x50 — AUTH (HMAC-SHA256, 20 Byte)
+
+Bilaterale Authentifizierung eines zuvor gesendeten Daten-Frames für
+geschlossene Gruppen mit gemeinsamem Schlüssel (Gegenstück zum öffentlich
+verifizierbaren AUTH_EX 0x85/0x86 in §3.9). Der AUTH-Frame folgt dem
+Daten-Frame und referenziert ihn über dessen Sequenznummer.
+```
+Offset  Größe  Inhalt
+  0       2    REF_SEQ    Sequenznummer des authentifizierten Daten-Frames
+  2       1    REF_TYPE   Frame-Typ des Daten-Frames
+  3       1    KEY_ID     Schlüssel-Identifier (welcher gemeinsame Schlüssel)
+  4      16    HMAC       HMAC-SHA256(key, …) truncated auf 16 Byte
+```
+Gesamt: 20 Byte — füllt die GUST-S-Payload exakt aus.
+
+**HMAC-Berechnung und -Prüfung:**
+```python
+import hashlib, hmac, struct
+
+def auth_tag(frame_body: bytes, ref_seq: int, key: bytes) -> bytes:
+    """HMAC-SHA256 über Daten-Frame-Body + REF_SEQ, truncated auf 16 Byte."""
+    msg = frame_body + struct.pack(">H", ref_seq)
+    return hmac.new(key, msg, hashlib.sha256).digest()[:16]
+
+def verify_auth(frame_body: bytes, ref_seq: int, tag: bytes, key: bytes) -> bool:
+    return hmac.compare_digest(tag, auth_tag(frame_body, ref_seq, key))
+```
+
+**Replay-Schutz:** Kein eigenes Timestamp-Feld (kein Platz in 20 Byte).
+Der Empfänger akzeptiert einen AUTH-Frame nur, wenn der referenzierte
+Daten-Frame (REF_SEQ) noch in seinem 60-s-Empfangspuffer liegt — siehe
+gust_knowledge.md §28 (60-s-Fenster, Sequenznummer statt Frame-Hash).
+
+**Sicherheitsniveau:** ~128 Bit gegen Fälschung (HMAC-16). Nur der
+Schlüsselpartner kann verifizieren — bewusst, für geschlossene Gruppen.
+
 ### 3.6 Rufzeichen-Kodierung (Basis-40)
 
 40 gültige Zeichen (` 0-9 A-Z / . - +`) → 4 Byte für bis zu **6 Zeichen**.
@@ -362,6 +400,265 @@ sie erst bei öffentlich genutzten Gateways mit vielen simultanen Stationen.
 | Regionalnetz (Bundesland) | 20–80 | unkritisch |
 | Nationales Netz | 80–216 | im sicheren Bereich |
 | Überregional (> 216) | > 216 | Kollisionswahrscheinlichkeit steigt |
+
+---
+
+### 3.9 GUST-X — Erweiterte Protokollvariante
+
+> **Status:** Geplant (P8-12, 🔲) — noch nicht implementiert. Voraussetzung für
+> vollen FEC-Gewinn ist der Soft-Output-Demodulator (P8-13). Siehe ADR-37.
+
+#### Überblick
+
+GUST existiert in zwei wählbaren Varianten:
+
+| Variante | SYNC | FEC | Max. Payload | Sendedauer | Timestamp |
+|---|---|---|---|---|---|
+| **GUST-S** (Slim) | 8 Symbole | RS(255,223) | 20 Byte | ≤ 5 s | optional |
+| **GUST-X** (Extended) | 9 Symbole | LDPC n=256 | 44 Byte | ≤ 7,5 s | **Pflicht** |
+
+GUST-S bleibt der Standard für alle bestehenden Stationen und
+Anwendungen. GUST-X ist eine opt-in Erweiterung — eine Station
+wählt pro Aussendung welche Variante sie verwendet. Beide Varianten
+können im selben Frequenzband gleichzeitig aktiv sein.
+
+#### Variantenerkennung: das 9. SYNC-Symbol
+
+GUST-S und GUST-X verwenden denselben Costas-Array-SYNC:
+```
+Costas-Basis: [2, 0, 6, 7, 1, 4, 3, 5]   (8 Symbole = 256 ms)
+```
+
+GUST-X hängt ein **neuntes Symbol** an den SYNC (total 9 Symbole = 288 ms):
+```
+GUST-S SYNC: [2, 0, 6, 7, 1, 4, 3, 5]          (8 Symbole)
+GUST-X SYNC: [2, 0, 6, 7, 1, 4, 3, 5, V]        (9 Symbole)
+             wobei V = Variantensymbol (1–6)
+```
+
+Das Variantensymbol V kodiert die GUST-X-Untervariante:
+
+| V | Bedeutung |
+|---|---|
+| 0 | reserviert (würde SYNC mehrdeutig machen) |
+| **1** | **GUST-X v1 (LDPC n=256, Payload 44 Byte, Timestamp Pflicht)** |
+| 2–6 | reserviert für künftige Varianten |
+| 7 | reserviert (würde SYNC mehrdeutig machen) |
+
+Das 9-Symbol-Muster ist für einen GUST-S Decoder unsichtbar — er
+sucht nur das 8-Symbol-Muster und findet GUST-X Frames nicht.
+Ein GUST-X Decoder erkennt beide Varianten: 8-Symbol = GUST-S,
+9-Symbol = GUST-X.
+
+**Vorteil gegenüber Mode-Bit im Frame-Header:**
+Das Variantensymbol steht vor der FEC — kein Henne-Ei-Problem.
+Der Decoder weiß bevor er FEC anwendet welches Verfahren
+(RS oder LDPC) und welche Payload-Länge erwartet wird.
+
+#### GUST-X Frame-Struktur
+
+```
+[SYNC 9 Symbole] [LDPC-kodierte Daten]
+     288 ms           variable
+
+Frame-Body (vor LDPC):
+  TYPE     (1 Byte)   0x80–0xCF für GUST-X-spezifische Typen
+                      0x01–0x4F weiterhin gültig (kompatible Typen)
+  CHANNEL  (1 Byte)   wie GUST-S (Kanal 0–7, Flags)
+  FROM     (4 Byte)   Rufzeichen Base-40 kodiert
+  TIMESTAMP (4 Byte)  Unix-Timestamp, 32 Bit, Sekunden  ← PFLICHTFELD
+  PAYLOAD  (var)      bis 44 Byte
+  CRC      (2 Byte)   CRC-16 über TYPE..PAYLOAD
+
+  Pflichtfelder (Overhead) = TYPE 1 + CHANNEL 1 + FROM 4 + TIMESTAMP 4 + CRC 2
+                           = 12 Byte
+```
+
+**Timestamp als Pflichtfeld:**
+Jeder GUST-X Frame trägt einen GPS/NTP-synchronisierten Zeitstempel.
+Damit ist der Messzeitpunkt eindeutig dokumentiert — unabhängig davon
+wann der Frame empfangen wurde, über wieviele Relais er lief oder
+wie lange er in einem Puffer lag. In zeitkritischen Anwendungen
+(Notfunk, Umweltmonitoring, Ionosphären-Messung) ist das ein
+fundamentaler Mehrwert gegenüber impliziter Empfangszeit.
+
+#### GUST-X Frame-Typen (0x80–0xCF)
+
+```
+0x81  WEATHER_EX     — Erweitertes Wetter + Position kombiniert (32 Byte)
+0x82  EMERG_EX       — Erweiterter Notfall-Beacon mit Freitext    (44 Byte)
+0x83  SENSOR_EX      — Erweiterte Sensor-TLV, 5–6 Kanäle          (40 Byte)
+0x84  POSITION_EX    — Position mit Track (3 Punkte + Heading)     (28 Byte)
+0x85  AUTH_EX        — ECDSA P-256, Signatur-Hälfte r  (2-Frame, siehe unten)
+0x86  AUTH_EX_B      — ECDSA P-256, Signatur-Hälfte s  (2. Frame zu 0x85)
+0x87  RELAY          — Mesh-Relay-Header + Original-Frame-Referenz (20 Byte)
+```
+
+#### AUTH_EX (0x85 + 0x86) — ECDSA P-256, öffentlich verifizierbar
+
+AUTH_EX ist die asymmetrische Ergänzung zum HMAC-basierten AUTH-Frame
+(0x50). Der entscheidende Unterschied:
+
+| Frame | Signatur | Verifizierbar durch | Schlüsselaustausch |
+|---|---|---|---|
+| 0x50 AUTH | HMAC-16 | nur Schlüsselpartner | bilateral, außerhalb GUST |
+| 0x85+0x86 AUTH_EX | ECDSA-64 (P-256, voll) | **jeden** | öffentlicher Schlüssel auf QRZ.com |
+
+**Warum zwei Frames?**
+Eine vollständige, verifizierbare ECDSA-P-256-Signatur ist r + s = 64 Byte
+und passt nicht in ein 44-Byte-GUST-X-Payload. Eine *gekürzte* Signatur ist
+prinzipiell **nicht** verifizierbar — die Verifikation benötigt r und s
+vollständig. Daher wird die Signatur über zwei Frames übertragen:
+
+- **0x85 AUTH_EX**   → r (32 Byte, vollständig)
+- **0x86 AUTH_EX_B** → s (32 Byte, vollständig)
+
+Beide Frames tragen denselben REF_SEQ / KEY_ID / TIMESTAMP und werden vom
+Empfänger im 60-s-Fenster zusammengeführt; danach erfolgt eine normale
+ECDSA-Verifikation.
+
+**Anwendungsfall:**
+Ein Gateway der noch nie Kontakt mit OE1XRK (Rotes Kreuz) hatte,
+empfängt einen EMERG_BEACON mit AUTH_EX. Er lädt den öffentlichen
+Schlüssel von OE1XRK von QRZ.com oder dem GUST-Key-Register und
+verifiziert: dieser Notruf kommt wirklich von OE1XRK.
+
+**Payload-Layout je Frame (44 Byte, identischer Header):**
+```
+Offset  Länge  Inhalt
+──────────────────────────────────────────────────────
+  0       2    REF_SEQ    Sequenznummer des Daten-Frames
+  2       1    REF_TYPE   Frame-Typ des Daten-Frames
+  3       1    KEY_ID     Schlüssel-Identifier (welcher Public Key)
+  4       4    TIMESTAMP  Unix-Timestamp (32 Bit) — Replay-Schutz
+  8      32    SIG_HALF   0x85: r[0:32]  |  0x86: s[0:32]  (jeweils vollständig)
+ 40       4    reserviert
+──────────────────────────────────────────────────────
+Gesamt: 44 Byte Payload je Frame
+```
+
+**Sicherheitsniveau:** ~128 Bit (ECDSA P-256, vollständige Signatur).
+
+**Signatur erzeugen und prüfen (Standard-ECDSA, voll verifizierbar):**
+```python
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric.utils import (
+    encode_dss_signature, decode_dss_signature)
+import struct, time
+
+def sign_frame_ecdsa(frame_body: bytes, ref_seq: int, timestamp: int,
+                     private_key) -> tuple:
+    """
+    Signiert einen Daten-Frame mit ECDSA P-256.
+    Gibt (r_bytes, s_bytes) zurück — je 32 Byte, vollständig.
+    r_bytes → AUTH_EX (0x85),  s_bytes → AUTH_EX_B (0x86).
+    """
+    msg = frame_body + struct.pack(">HI", ref_seq, timestamp)
+    sig_der = private_key.sign(msg, ec.ECDSA(hashes.SHA256()))
+    r, s = decode_dss_signature(sig_der)
+    return r.to_bytes(32, "big"), s.to_bytes(32, "big")
+
+def verify_frame_ecdsa(frame_body: bytes, r_bytes: bytes, s_bytes: bytes,
+                       ref_seq: int, timestamp: int, public_key,
+                       max_age_s: int = 60) -> bool:
+    """
+    Verifiziert AUTH_EX (0x85) + AUTH_EX_B (0x86) zusammen.
+    Standard-ECDSA P-256 — voll verifizierbar, kein Brute-Force.
+    public_key: ec.EllipticCurvePublicKey (P-256, z.B. von QRZ.com)
+    """
+    if abs(time.time() - timestamp) > max_age_s:
+        return False   # Replay-Schutz
+    r = int.from_bytes(r_bytes, "big")
+    s = int.from_bytes(s_bytes, "big")
+    sig_der = encode_dss_signature(r, s)
+    msg = frame_body + struct.pack(">HI", ref_seq, timestamp)
+    try:
+        public_key.verify(sig_der, msg, ec.ECDSA(hashes.SHA256()))
+        return True
+    except Exception:
+        return False
+```
+
+**Schlüsselverwaltung:**
+```python
+# Einmalig: Schlüsselpaar erzeugen
+from cryptography.hazmat.primitives.asymmetric import ec
+private_key = ec.generate_private_key(ec.SECP256R1())
+public_key  = private_key.public_key()
+# public_key auf QRZ.com publizieren (PEM-Format)
+```
+```json
+"auth_ex": {
+    "private_key_pem": "/etc/gust/ecdsa_private.pem",
+    "comment": "Nie ins Repo! In .gitignore."
+}
+```
+
+Bestehende GUST-S Typen (0x01–0x4F) sind auch in GUST-X gültig —
+eine GUST-X Station kann kurze Frames (z.B. CQ 0x41) ohne den
+GUST-X Overhead senden, indem sie den 8-Symbol-SYNC verwendet.
+
+#### Payload-Kapazität GUST-X
+
+```
+Sendedauer-Budget:        ≤ 7,5 s
+Symbole im Budget:        (7500 − 288 SYNC) / 32 ≈ 225 Symbole
+Codiert (3 bit/Symbol):   225 × 3 / 8 ≈ 84 Byte
+Daten (LDPC Rate 3/4):    84 × 0,75 ≈ 63 Byte
+Theoretische Max-Payload: 63 − 12 (Pflichtfelder) ≈ 51 Byte
+
+GUST-X v1 setzt die Payload bewusst auf 44 Byte (Reserve im Budget):
+  44 B Payload + 12 B Pflichtfelder = 56 B Frame-Body
+  56 / 0,75 ≈ 75 B LDPC-codiert ≈ 200 Symbole + 9 SYNC = 209 Symbole ≈ 6,7 s
+
+Vergleich:
+  GUST-S:     20 Byte Payload,  ≤ 5,0 s
+  GUST-X v1:  44 Byte Payload,  ≈ 6,7 s   (Budget ≤ 7,5 s)
+  Effizienz:  +120 % Payload im erweiterten Sendedauer-Budget (max. +50 %)
+```
+
+#### FEC: LDPC n=256, Rate 3/4
+
+GUST-X verwendet LDPC statt RS(255,223):
+
+| Eigenschaft | GUST-S RS | GUST-X LDPC |
+|---|---|---|
+| Blockgröße | 255 Byte (shortened) | 256 Bit |
+| Code-Rate | ~87 % (shortened) | 75 % |
+| Fehlerkorrektur | Hard-Decision | Soft-Decision (Belief Propagation) |
+| SNR-Gewinn | Referenz | ~2 dB besser |
+| Voraussetzung | — | Soft-Output-Demodulator |
+
+**Hinweis:** LDPC entfaltet seinen vollen Gewinn nur mit einem
+Soft-Output-Demodulator der Log-Likelihood-Ratios (LLR) statt
+Hard-Decisions liefert. Bis zur Implementierung des Soft-Demodulators
+kann GUST-X mit Hard-Decision-Fallback betrieben werden (kein
+SNR-Vorteil, aber längere Payload und Timestamp).
+Empirische Grundlage: Blocklängen-Evaluation §27 / gust_knowledge.md §27.
+
+#### Rückwärtskompatibilität
+
+```
+GUST-S sendet → GUST-X Decoder:  vollständig dekodierbar ✓
+GUST-X sendet → GUST-S Decoder:  unsichtbar (9-Symbol-SYNC nicht erkannt)
+                                   kein Fehler, kein falsches Dekodat
+GUST-X sendet 0x01 WEATHER →
+               GUST-S Decoder:   vollständig dekodierbar ✓ (8-Symbol-SYNC)
+```
+
+#### gateway.json Konfiguration
+
+```json
+"protocol": {
+    "variant": "gust-s",
+    "comment": "gust-s (Standard) oder gust-x (Extended, LDPC + 44B Payload)"
+}
+```
+
+Standard ist `gust-s`. Eine Station die `gust-x` konfiguriert sendet
+automatisch mit 9-Symbol-SYNC und LDPC. Empfang beider Varianten ist
+immer aktiv (der Decoder erkennt beide).
 
 ---
 
@@ -838,5 +1135,5 @@ meshtastic       — Phase 4, optional
 
 *Dokument: gust_spec.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — v0.5 · QSO-Modus · TRX-Profile · CLI-Logging · BUG-10/11/12 · 3 TRX-Profile (IC-7610, FT-818, TS-790)*
+*Stand: Juni 2026 — v0.5 · QSO-Modus · TRX-Profile · CLI-Logging · BUG-10/11/12 · 3 TRX-Profile (IC-7610, FT-818, TS-790) · §3.9 GUST-X (Entwurf) · AUTH_EX 0x85/0x86 ECDSA-64 (2-Frame)*
 *Lizenz: CC BY-SA 4.0 (geplant für Veröffentlichung)*
