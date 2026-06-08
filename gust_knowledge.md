@@ -1359,6 +1359,231 @@ schnell wie mit NORMAL-Priorität.
 
 ---
 
+## 27. LDPC Blocklängen-Evaluation und Hard-vs-Soft-Decision (Juni 2026)
+
+### Ausgangslage
+
+Nach Implementierung von `gust_ldpc.py` (Etappe 2, n=48, Rate 3/4)
+wurde festgestellt dass n=48 zu kurz für messbaren LDPC-Coding-Gain ist.
+Etappe 2b führte eine Monte-Carlo-Evaluation durch:
+AWGN/BPSK, regulärer (3,12)-LDPC Rate 3/4, python-ldpc min-sum,
+Blocklängen n ∈ {48, 128, 256, 512, 1024}.
+
+Ergebnisdateien:
+  `ldpc_planung/ldpc_blocklen_eval.py`         — reproduzierbarer Simulator
+  `ldpc_planung/ldpc_blocklen_eval_ergebnis.md` — vollständiger Bericht
+  `ldpc_planung/ldpc_blocklen_curves.csv`       — Rohdaten (Eb/N0 vs. FER)
+
+### Messergebnisse (Eb/N0 für FER = 1e-2)
+
+| Verfahren                      | Eb/N0 @ FER=1e-2 | Bewertung |
+|---|---|---|
+| LDPC n=1024 soft               | 3,35 dB | bester Wert |
+| LDPC n=256 soft                | 3,96 dB | Sweetspot |
+| LDPC n=48 soft                 | 5,40 dB | zu kurz |
+| **RS(255,223) hard (produktiv)** | **5,91 dB** | **Referenz** |
+| LDPC hard, alle Blocklängen    | > 7 dB  | schlechter als RS |
+
+### Die drei entscheidenden Befunde
+
+**1. n=48 ist zu kurz.**
+Nur 12 Prüfgleichungen — Belief Propagation liefert keinen Coding-Gain.
+Das implementierte `gust_ldpc.py` (n=48) ist korrekt, aber ohne SNR-Vorteil.
+
+**2. Hard-Decision ist die eigentliche Bremse.**
+Auf dem aktuellen GUST-Pfad (MFSK-Demod → Hard-Bytes) ist LDPC für
+**jede Blockgröße schlechter als RS**. Ein Wechsel auf LDPC mit dem
+heutigen Demodulator wäre eine FEC-Regression.
+
+**3. LDPC gewinnt nur unter zwei Bedingungen gleichzeitig:**
+- Soft-Output-Demodulator (Bin-Energien → bitweise LLR)
+- n ≥ 256 (Sweetspot: n=256 soft → ~3,96 dB, ~2 dB besser als RS)
+
+Bei n=256 passt der 24-Byte-Datenblock fast exakt auf einen WEATHER-Frame
+(14 Byte Payload + 8 Byte Header = 22 Byte) — idealer Sweetspot.
+Darüber (n=512, n=1024) sind die Blöcke größer als RS-Frames → keine
+Sendedauer-Einsparung mehr.
+
+### Entscheidung
+
+**Etappe 3 (gust_frame.py Integration) zurückgestellt.**
+Voraussetzungen für eine sinnvolle LDPC-Integration:
+
+1. **Soft-Output-Demodulator:** `_fft_detect_symbol()` muss
+   Log-Likelihood-Ratios (LLR) statt Hard-Decisions liefern.
+   Konkret: Bin-Energie des stärksten Tons vs. Summe aller anderen
+   Bins → bitweise LLR für den BP-Decoder.
+
+2. **Blockgröße n=256:** `gust_ldpc.py` neu parametrisieren.
+
+3. **Frame-Aggregation:** Bei n=256 und Rate 3/4 sind 192 Datenbits
+   (24 Byte) pro Block verfügbar. Kurze Payloads (CQ: 5 Byte) benötigen
+   mehrere Blöcke oder Zero-Padding-Strategie.
+
+### Aktueller Status der LDPC-Dateien
+
+| Datei | Status | Verwendung |
+|---|---|---|
+| `gust_fec.py` | ✅ produktiv | FEC-Interface, RS-Wrapper |
+| `gust_ldpc.py` (n=48) | ✅ korrekt, experimentell | nicht v1.0-Kandidat |
+| `cc_ldpc_etappe3_integration.md` | ⛔ gesperrt | erst nach Soft-Demod |
+
+### Merksatz
+
+> **LDPC braucht Soft-Decision-Input.** Ohne LLR vom Demodulator ist
+> Belief Propagation blind — Hard-Bytes geben keine Zuverlässigkeits-
+> information, BP degeneriert zu einem schlechten Bit-Flip-Decoder.
+> RS(255,223) ist unter diesen Bedingungen überlegen.
+
+---
+
+## 28. AUTH-Frame Design-Entscheidungen (Juni 2026)
+
+> **Status:** Entwurf — AUTH-Frames sind spezifiziert, aber nicht implementiert.
+> 0x50 AUTH (GUST-S, HMAC): §3.4/§3.5, P8-11. 0x85+0x86 AUTH_EX (GUST-X, ECDSA):
+> §3.9, P8-12. Implementierung nicht vor v1.0.
+
+### Warum zwei verschiedene AUTH-Verfahren?
+
+GUST verwendet je nach Anwendungsfall unterschiedliche Authentifizierung:
+
+**0x50 AUTH (GUST-S) — HMAC-SHA256, bilateral:**
+Für geschlossene Gruppen mit bestehendem Vertrauensverhältnis.
+HMAC-SHA256 truncated auf 16 Byte passt in die 20-Byte-GUST-S-Payload.
+Jede Station hat pro Gegenstelle einen eigenen Schlüssel — einfach,
+wartungsarm, keine Infrastruktur erforderlich.
+
+**0x85+0x86 AUTH_EX (GUST-X) — ECDSA P-256, öffentlich:**
+Für Stationen die öffentlich verifizierbar sein wollen (Notfunk-Organisationen,
+Expeditionen, bekannte Rufzeichen). Die vollständige 64-Byte-ECDSA-Signatur
+(r=32B + s=32B) erfordert zwei GUST-X-Frames. Öffentlicher Schlüssel
+auf QRZ.com — jeder Empfänger kann ohne Vorwissen verifizieren.
+
+### Warum kein Key-Exchange über GUST?
+
+Diffie-Hellman über HF wäre theoretisch möglich, führt aber zu
+Verschlüsselung — lizenzrechtlich problematisch auf Amateurfunk (§16 AFG).
+Der Out-of-Band-Austausch ist bewusste Designentscheidung: Stationen die
+Authentifizierung wollen, haben ohnehin eine direkte Beziehung.
+
+### Warum 60-Sekunden-Fenster?
+
+Kompromiss zwischen:
+- Zu kurz (< 30 s): AUTH-Frame könnte bei schlechter Ausbreitung verloren gehen
+  bevor er gesendet oder empfangen wurde
+- Zu lang (> 120 s): Replay-Fenster wird unkomfortabel groß
+
+60 s entspricht 12 × dem TX-Zyklus bei 300-s-Intervall — genug Puffer.
+
+### Warum Sequenznummer statt Frame-Hash als Referenz?
+
+Ein Hash des Daten-Frames (z.B. CRC32 des Bodys) wäre eindeutiger —
+aber 4 Byte Hash kostet Payload. Die Sequenznummer ist 2 Byte und
+reicht für den Anwendungsfall: der Empfänger hat den Frame noch im
+60-s-Puffer, eine Kollision zweier SEQ-Nummern im gleichen 60-s-Fenster
+ist bei normalen GUST-Senderate (~1 Frame/5 min) praktisch ausgeschlossen.
+
+### Ergänzung: Wann HMAC, wann ECDSA?
+
+HMAC (0x50 AUTH, GUST-S) und ECDSA (0x85+0x86 AUTH_EX, GUST-X) lösen
+verschiedene Probleme:
+
+**HMAC:** "Ist das wirklich mein Freund OE3GAS?" — nur der
+Schlüsselpartner kann prüfen. Richtig für bilaterale Beziehungen,
+geschlossene Notfunk-Gruppen, Ortsverbände. Jeder hat seinen eigenen
+Schlüssel pro Gegenstelle — Identitätsdiebstahl erfordert dass
+OE1XTU seinen eigenen Schlüssel weitergibt (widersinnig).
+
+**ECDSA:** "Ist das wirklich OE1XRK vom Roten Kreuz?" — jeder kann
+prüfen ohne vorherigen Kontakt. Richtig wenn unbekannte Empfänger
+die Herkunft verifizieren wollen: ein Gateway der noch nie mit OE1XRK
+kommuniziert hat, kann einen Notruf trotzdem authentifizieren
+(öffentlicher Schlüssel auf QRZ.com).
+
+Der symmetrische Schlüssel-Einwand ("Wer verifizieren kann, kann
+auch fälschen") gilt nur wenn der Schlüssel weitergegeben wird —
+was dem Inhaber selbst schadet. Für geschlossene Gruppen ist HMAC
+vollständig ausreichend und einfacher zu verwalten.
+ECDSA wird relevant wenn Traffic zunimmt, interessante Stationen
+(Expeditionen, Organisationen wie Rotes Kreuz) öffentlich
+verifizierbar sein wollen.
+
+---
+
+## 29. GUST-X Design-Entscheidungen (Juni 2026)
+
+> **Status:** Entwurf — GUST-X (P8-12) ist geplant, nicht implementiert.
+> Spezifikation: gust_spec.md §3.9, ADR-37.
+
+### Warum 7,5 Sekunden als Maximum?
+
+FT8 hat ~15 s Frames, GUST-S ~5 s. Die Diskussion:
+- 10 s: nähert sich FT8 an, schwächt das "GUST ist kurz"-Argument
+- 7,5 s: 50 % länger als GUST-S, immer noch 2× kürzer als FT8
+- Effizienz: +50 % Sendedauer liefert +120 % Payload — asymmetrisch vorteilhaft
+
+7,5 s ist das Maximum. Kürzere GUST-X Frames (< 44 Byte Payload)
+sind selbstverständlich möglich und üblich.
+
+### Warum Timestamp als Pflichtfeld?
+
+In einer Welt wo GUST-Frames über Relais, Gateways, MQTT-Broker
+und Datenbanken wandern, ist die Frage "wann wurde dieser Wert
+gemessen?" fundamental. Die Empfangszeit ist kein Ersatz:
+
+```
+Station sendet WEATHER @ 12:00:00 (Messung)
+Frame läuft über 2 Relais: +45 s
+Gateway empfängt @ 12:00:45
+Datenbank speichert Empfangszeit → falscher Messzeitpunkt
+```
+
+4 Byte GPS/NTP-Timestamp in jedem GUST-X Frame löst dieses Problem
+vollständig. Overhead: +0,3 s Sendedauer — vernachlässigbar.
+
+### Warum 9-Symbol-SYNC statt Mode-Bit im Header?
+
+Der FEC-Decoder muss wissen welches Verfahren (RS oder LDPC) und
+welche Datenblock-Länge erwartet wird — bevor er dekodiert.
+Ein Mode-Bit im Frame-Header liegt aber im FEC-geschützten Bereich
+→ Zirkelschluss. Das 9. SYNC-Symbol steht vor der FEC und ist
+ungeschützt dekodierbar. Einzelbit-Fehler im Variantensymbol werden
+durch den CRC am Frame-Ende erkannt.
+
+### Warum LDPC statt mehr RS-Parität?
+
+RS(255,191) (+32 Byte Parität) würde +62–86 % Sendedauer kosten
+(Shortened RS, siehe §22). LDPC n=256 bei Rate 3/4 gibt ~2 dB
+SNR-Gewinn ohne Sendezeitverlängerung — und nutzt den gewonnenen
+Platz (44 Byte statt 20 Byte) für echte Nutzlast.
+
+### Warum ECDSA für AUTH_EX, nicht HMAC?
+
+HMAC skaliert nicht auf öffentliche Verifikation — jeder Empfänger
+bräuchte einen bilateralen Schlüssel. ECDSA erlaubt dass jede Station
+weltweit einen Frame von OE1XRK verifizieren kann, ohne je Kontakt
+gehabt zu haben. Das ist der qualitative Sprung den GUST-X gegenüber
+GUST-S bietet: von Gruppen-Authentifizierung zu öffentlicher
+Authentifizierung.
+
+Eine vollständige ECDSA-P-256-Signatur (r + s = 64 Byte) passt nicht in
+ein einzelnes 44-Byte-GUST-X-Payload, und eine gekürzte Signatur ist
+nicht verifizierbar (Verifikation braucht r und s vollständig). Daher
+wird die Signatur über **zwei Frames** übertragen: 0x85 AUTH_EX (r) und
+0x86 AUTH_EX_B (s). Sicherheitsniveau ~128 Bit (P-256) — für Amateur-Funk
+ausreichend, da kein finanzieller Anreiz für aufwändige Angriffe besteht.
+Kosten: ein zusätzlicher Frame, akzeptabel weil Authentifizierung opt-in
+für wichtige bzw. Notruf-Frames ist.
+
+### Neue Frame-Typen 0x80–0xCF
+
+Der 0x80-Bereich ist im bisherigen GUST-S Namespace leer.
+Bit 7 gesetzt = GUST-X Frame — ein GUST-S Decoder der versehentlich
+ein solches TYPE-Byte sieht (nach Fehl-SYNC) erkennt es als
+unbekannten Typ und verwirft den Frame (CRC-Fehler tut den Rest).
+
+---
+
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*
+*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*

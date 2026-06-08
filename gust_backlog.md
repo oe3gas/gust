@@ -175,34 +175,121 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | P8-07 | 🟡 | feature | Docker-Deployment | `Dockerfile`, `docker-compose.yml`, `docker-entrypoint.sh`, `.dockerignore` im Repo-Root. Simulator-Modus out-of-the-box, Rufzeichen per `GUST_CALLSIGN`-Umgebungsvariable. Healthcheck auf `/api/status`. | ✅ |
 | P8-08 | 🟢 | docs | Docker RPi Audio-Passthrough | Anleitung für `--device /dev/snd` und USB-Audio in Docker auf Raspberry Pi ergänzen (für Hardware-TX im Container-Betrieb). | 🔲 |
 | P8-10 | 🟢 | research | FEC-Backend-Abstraktion + LDPC-Evaluierung | Flanschbares FEC-Modul, RS(255,223) bleibt produktiver Default. Nicht vor v1.0 (Protokollbruch). Details siehe unten; ADR-25. | 🔲 Phase 8/9 |
+| P8-11 | 🟢 | feature | AUTH 0x50 — HMAC-SHA256 Frame-Authentifizierung (GUST-S) | Bilaterale Authentifizierung: 0x50 AUTH-Frame (REF_SEQ + REF_TYPE + KEY_ID + HMAC-16 = 20 B), HMAC-SHA256 truncated, 60-s-Replay-Fenster über REF_SEQ, Schlüsselverwaltung in gateway.json. Spec §3.4/§3.5, gust_knowledge.md §28. Gegenstück: AUTH_EX (P8-12). Nicht vor v1.0. | 🔲 |
+| P8-12 | 🟢 | feature | GUST-X Protokollvariante — 9-Symbol-SYNC + LDPC + 44B Payload | GUST-X v1 implementieren: 9-Symbol-SYNC Erkennung, LDPC n=256 Integration, Timestamp-Pflichtfeld, neue Frame-Typen 0x81-0x87 (inkl. AUTH_EX 2-Frame ECDSA), gateway.json `protocol.variant`. Voraussetzung: Soft-Output-Demodulator (P8-13). Spec §3.9, ADR-37. | 🔲 |
+| P8-13 | 🟢 | research | Soft-Output-Demodulator für LDPC | _fft_detect_symbol() gibt LLR-Array statt Hard-Symbol zurück. Bin-Energien → bitweise Log-Likelihood-Ratios. Voraussetzung für LDPC SNR-Gewinn. | 🔲 |
 
 ### P8-10: FEC-Backend-Abstraktion + LDPC-Evaluierung
 
-**Ziel:** LDPC als Alternative zu RS(255,223) evaluieren ohne
-bestehenden Code zu riskieren. Flanschbares Modul — RS bleibt
-produktiver Default.
+**Status:** Etappen 1+2 abgeschlossen. Etappe 3 zurückgestellt.
 
-**Voraussetzung:** Stabile On-Air-Operation auf RS(255,223) Basis.
-Nicht vor v1.0.
+**Was bereits implementiert ist:**
+- `gust_fec.py` — FECBackend-Interface + ReedSolomonFEC-Wrapper ✅
+- `gust_ldpc.py` (n=48, Rate 3/4) — korrekt, kein SNR-Vorteil ✅
+- Blocklängen-Evaluation (ldpc_planung/) — abgeschlossen ✅
 
-**Schritte:**
-1. `gust_fec.py` mit `FECBackend`-Interface erstellen
-   (`encode()`, `decode()`, `overhead: int`)
-2. `ReedSolomonFEC(FECBackend)` als Wrapper um bestehenden RS-Code
-3. `gust_ldpc.py` mit `LDPCFecBackend` implementieren
-4. `gateway.json` Parameter `"fec": "rs"|"ldpc"` ergänzen
-5. Stresstest gegen beide Backends vergleichen (Schicht 3+4)
-6. Soft-decision Input in `_fft_detect_symbol()` evaluieren
-   (Log-Likelihood-Ratios statt Hard-Decisions)
+**Kernergebnis der Evaluation (Juni 2026):**
+LDPC ist auf dem Hard-Decision-Pfad für jede Blockgröße schlechter
+als RS(255,223). Kein SNR-Gewinn ohne Soft-Output-Demodulator.
+Details: `gust_knowledge.md` §27,
+         `ldpc_planung/ldpc_blocklen_eval_ergebnis.md`
 
-**Nicht umsetzen vor v1.0** — erfordert Protokollbruch +
-Frame-Header-Versionierung.
+**Voraussetzung für Etappe 3 (Integration):**
+1. Soft-Output-Demodulator: `_fft_detect_symbol()` → LLR statt Hard-Bytes
+2. gust_ldpc.py neu parametrisieren: n=256, Rate 3/4 (Sweetspot)
+3. Frame-Aggregation für kurze Payloads
 
-**Wichtig:** Nicht "mehr Parität bei RS" — das erhöht die Sendedauer
-linear (Shortened RS). Stattdessen kürzere Codes oder anderen
-FEC-Algorithmus. Siehe ADR-25 und gust_knowledge.md §22.
+**Nicht vor v1.0** — erfordert Protokollbruch + Frame-Header-Versionierung.
 
-**Referenz:** ADR-25, gust_knowledge.md §22
+**Wichtig:** `cc_ldpc_etappe3_integration.md` ist gesperrt bis
+Soft-Output-Demod existiert. Prompt nicht ausführen!
+
+**Referenz:** ADR-25, gust_knowledge.md §22+§27,
+             ldpc_planung/ldpc_blocklen_eval_ergebnis.md
+
+---
+
+### P8-11: AUTH 0x50 — HMAC-SHA256 Frame-Authentifizierung (GUST-S)
+
+**Ziel:** Bilaterale Authentifizierung für geschlossene Gruppen mit
+gemeinsamem Schlüssel. Gegenstück zum öffentlich verifizierbaren
+AUTH_EX (0x85/0x86, P8-12).
+
+**Frame-Layout (0x50, 20 Byte Payload — füllt GUST-S exakt):**
+- REF_SEQ (2 B)   — Sequenznummer des authentifizierten Daten-Frames
+- REF_TYPE (1 B)  — Frame-Typ des Daten-Frames
+- KEY_ID (1 B)    — Schlüssel-Identifier
+- HMAC (16 B)     — HMAC-SHA256(key, body + REF_SEQ) truncated
+
+**Implementierungsschritte:**
+1. `gust_frame.py`: Frame-Typ 0x50, encode/decode AUTH-Payload
+2. `gust_frame.py`: `auth_tag()` / `verify_auth()` (HMAC-SHA256, 16 B)
+3. Schlüsselverwaltung in `gateway.json` (KEY_ID → shared key, nie ins Repo)
+4. RX: REF_SEQ gegen 60-s-Empfangspuffer prüfen (Replay-Schutz)
+5. Web-UI: authentifizierte Frames mit [🔑]-Badge markieren
+
+**Kein Timestamp-Feld:** Replay-Schutz über REF_SEQ + 60-s-Fenster
+(kein Platz in 20 B). Siehe gust_knowledge.md §28.
+
+**Abhängigkeit:** keine externe Bibliothek (`hmac`/`hashlib` aus stdlib).
+
+**Referenz:** gust_spec.md §3.4/§3.5, gust_knowledge.md §28. Nicht vor v1.0.
+
+---
+
+### P8-12: GUST-X Protokollvariante
+
+**Ziel:** Optionale erweiterte Protokollvariante mit mehr Payload,
+LDPC-FEC und Pflicht-Timestamp. Rückwärtskompatibel zu GUST-S.
+
+**Kernmerkmale GUST-X v1:**
+- 9-Symbol-SYNC (Costas + Variantensymbol V=1)
+- LDPC n=256, Rate 3/4 (nach Soft-Demod: ~2 dB SNR-Gewinn)
+- Max. Payload: 44 Byte (vs. 20 Byte GUST-S)
+- Timestamp: 4-Byte-Pflichtfeld in jedem Frame
+- Sendedauer: ≤ 7,5 s (vs. ≤ 5 s GUST-S)
+
+**Neue Frame-Typen:**
+- 0x81 WEATHER_EX    (Wetter + Position kombiniert, 32 Byte)
+- 0x82 EMERG_EX      (Erweiterter Notfall + Freitext, 44 Byte)
+- 0x83 SENSOR_EX     (5-6 Sensor-Kanäle, 40 Byte)
+- 0x84 POSITION_EX   (Track 3 Punkte + Heading, 28 Byte)
+- 0x85 AUTH_EX       (ECDSA P-256 Signatur-Hälfte r, 2-Frame)
+- 0x86 AUTH_EX_B     (ECDSA P-256 Signatur-Hälfte s, 2. Frame zu 0x85)
+- 0x87 RELAY         (Mesh-Relay-Header, 20 Byte)
+
+**Implementierungsschritte:**
+1. `gust_modulator.py`: 9-Symbol-SYNC Erkennung in `_find_sync_candidates()`
+2. `gust_frame.py`: neue Frame-Typen 0x81–0x86, Timestamp-Pflichtfeld
+3. `gust_ldpc.py`: n=256 Parametrisierung (statt n=48)
+4. `gust.py`: `protocol.variant` aus gateway.json lesen
+5. Web-UI: GUST-X Frames mit [X]-Badge markieren
+6. Stresstest: GUST-X WAV-Generator + Decoder (analog Etappe 4)
+
+**Voraussetzung P8-13** für vollen SNR-Gewinn, aber:
+GUST-X ist auch ohne Soft-Demod sinnvoll (44 Byte + Timestamp).
+
+**Referenz:** gust_spec.md §3.9, ADR-37, gust_knowledge.md §29
+
+---
+
+### P8-13: Soft-Output-Demodulator
+
+**Ziel:** `_fft_detect_symbol()` in `gust_modulator.py` gibt statt
+einem Hard-Symbol (int 0–7) ein LLR-Array (8 float-Werte) zurück.
+
+**Warum:** LDPC Belief Propagation braucht Zuverlässigkeitsinformation.
+Ohne LLR degeneriert BP zu einem schlechten Bit-Flip-Decoder —
+schlechter als RS. Mit LLR: ~2 dB SNR-Gewinn gegenüber RS(255,223).
+
+**Konkret:**
+- Bin-Energien aller 8 FFT-Töne berechnen (bereits intern vorhanden)
+- LLR(bit_k) = log(P(bit_k=0) / P(bit_k=1)) aus Bin-Energien
+- Aufrufort: `demodulate()` → `_fft_detect_symbol()` → LLR-Array
+- Rückwärtskompatibel: Hard-Decision = argmax(LLR) für GUST-S
+
+**Referenz:** gust_knowledge.md §27 (LDPC Blocklängen-Evaluation),
+             cc_ldpc_etappe3_integration.md (gesperrt bis P8-13 fertig)
 
 ---
 
@@ -524,8 +611,33 @@ benutzerfreundlicher Fehlerübersetzung (roher HTTP-Body → JSON-error
 extrahiert). Unvollständige Multi-Frame-Nachrichten erhalten keinen
 Antwort-Bereich.
 
+### ADR-37: GUST-X — 9-Symbol-SYNC als Protokollvarianten-Erkennung 🔲 (Juni 2026, geplant)
+
+**Problem:** Eine erweiterte Protokollvariante (größere Payload, LDPC,
+Timestamp) muss vom Decoder erkannt werden bevor FEC angewendet wird —
+sonst Henne-Ei-Problem (FEC-Verfahren muss vor der FEC-Dekodierung bekannt sein).
+
+**Evaluierte Optionen:**
+- A: Mode-Bit im CHANNEL-Byte → nach FEC → Zirkelschluss ✗
+- B: 9. SYNC-Symbol → vor FEC → eindeutig ✓ (gewählt)
+- C: Zwei-Hypothesen-Dekodierung → doppelter CPU-Aufwand → RPi ✗
+
+**Entscheidung:** Option B — 9-Symbol-SYNC.
+Das 9. Symbol (Variantensymbol V) steht zwischen SYNC und FEC-Daten.
+V=0 und V=7 reserviert (SYNC-Stabilität), V=1 = GUST-X v1,
+V=2–6 für künftige Varianten (6 Slots total).
+
+**Eigenschaften:**
+- GUST-S Decoder: ignoriert GUST-X Frames (9-Symbol-SYNC nicht erkannt)
+- GUST-X Decoder: erkennt beide Varianten
+- Overhead: +1 Symbol = +32 ms — vernachlässigbar
+- Zukunftssicher: 6 Varianten-Slots verfügbar
+
+**Variantenname:** GUST-S (Slim, 8-Symbol-SYNC) / GUST-X (Extended, 9-Symbol-SYNC)
+**Referenz:** gust_spec.md §3.9, P8-12, P8-13
+
 ---
 
 *Dokument: gust_backlog.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — ADR-33–36: Deep-Decoder Thread-Prio · VITAL-Logging + print()→log.*() · Swimlane laufende Zeitachse/Canvas-Scroll · Inbox-Antwort*
+*Stand: Juni 2026 — ADR-33–36: Deep-Decoder Thread-Prio · VITAL-Logging + print()→log.*() · Swimlane laufende Zeitachse/Canvas-Scroll · Inbox-Antwort · ADR-37 GUST-X 9-Symbol-SYNC (geplant)*
