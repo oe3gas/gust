@@ -487,6 +487,89 @@ def run(args):
     logger   = TxLogger(args.log)
     tx_count = 0
 
+    # ── AUTH-Schlüssel laden (für --auth Flag, P8-11) ────────────────────
+    # load_gateway_config() reicht den auth-Block NICHT durch → gateway.json
+    # hier direkt lesen (CWD, dann Skript-Verzeichnis).
+    auth_keys = {}   # key_id (int) → bytes
+    if args.auth:
+        auth_cfg = {}
+        for _p in (args.config,
+                   os.path.join(os.path.dirname(__file__),
+                                os.path.basename(args.config))):
+            try:
+                with open(_p, encoding="utf-8") as _f:
+                    auth_cfg = json.load(_f).get("auth", {})
+                break
+            except Exception:
+                continue
+        if not auth_cfg.get("enabled", False):
+            print("  ⚠  --auth gesetzt, aber 'auth.enabled' fehlt/false in gateway.json")
+            print("     AUTH-Frames werden trotzdem erzeugt (für Testzwecke)")
+        for entry in auth_cfg.get("keys", []):
+            try:
+                kid = int(entry["key_id"])
+                auth_keys[kid] = bytes.fromhex(entry["key_hex"])
+                print(f"  AUTH-Schluessel: KEY_ID={kid}  "
+                      f"Gegenstelle={entry.get('callsign', '?')}")
+            except Exception as e:
+                print(f"  ⚠  AUTH-Schluessel KEY_ID={entry.get('key_id', '?')} "
+                      f"ungueltig: {e}")
+        if not auth_keys:
+            print("  ⚠  Keine gueltigen AUTH-Schluessel in gateway.json — "
+                  "--auth ohne Wirkung")
+
+    def send_auth(data_callsign, data_ft_int, frame_body, channel, gain_db):
+        """
+        Sendet einen AUTH-Frame (0x50) für den zuletzt gesendeten Daten-Frame.
+        TIMESTAMP + HMAC-SHA256-14 über (frame_body + TIMESTAMP). Gleicher
+        TX-Pfad (Audio/HackRF) wie der Daten-Frame; Dry-Run-fähig.
+        """
+        if not (args.auth and auth_keys):
+            return
+        from gust_frame import FrameType as _FT, auth_tag, encode_auth
+        key_id, key  = next(iter(auth_keys.items()))
+        ts_val       = int(time.time())
+        tag          = auth_tag(frame_body, ts_val, key)
+        auth_payload = encode_auth(ts_val, data_ft_int, key_id, tag)
+        auth_hdr = (f"{ts()}  AUTH #{tx_count:3d}  {data_callsign:<8}  "
+                    f"[AUTH      ]  Kanal {channel}  KEY_ID={key_id}  TS={ts_val}")
+        if args.dry_run:
+            print(f"{auth_hdr}  [DRY-RUN]", flush=True)
+            logger.write(nr=tx_count, callsign=data_callsign, frame_type="AUTH",
+                         channel=channel, status="DRY-RUN",
+                         notes=f"KEY_ID={key_id} REF_TYPE=0x{data_ft_int:02X}")
+            return
+        time.sleep(args.auth_pause)
+        try:
+            auth_audio, auth_ch, _ = transmit(
+                _FT.AUTH, data_callsign, auth_payload,
+                channel=channel, use_fec=True, window=True, add_silence_ms=100)
+        except Exception as e:
+            print(f"{auth_hdr}  Frame-Erzeugung fehlgeschlagen: {e}", flush=True)
+            return
+        t0 = time.monotonic()
+        try:
+            if args.device == "7610":
+                from gust_audio import AudioTransmitter
+                tx = AudioTransmitter(ptt=ptt, device=args.audio_device,
+                                      level=args.audio_level)
+                tx.transmit_audio(auth_audio, sample_rate=SAMPLE_RATE)
+            else:
+                from gust_hackrf import HackRFTransmitter
+                tx = HackRFTransmitter(freq_hz=args.freq, gain_db=gain_db)
+                tx.open(); tx.transmit(auth_audio); tx.close()
+            elapsed = (time.monotonic() - t0) * 1000
+            print(f"{auth_hdr}  {elapsed:.0f} ms  ✓", flush=True)
+            logger.write(nr=tx_count, callsign=data_callsign, frame_type="AUTH",
+                         channel=auth_ch, duration_ms=round(elapsed), status="OK",
+                         notes=f"KEY_ID={key_id} REF_TYPE=0x{data_ft_int:02X}")
+        except Exception as e:
+            try: tx.close()
+            except Exception: pass
+            print(f"{auth_hdr}  FEHLER: {e}", flush=True)
+            logger.write(nr=tx_count, callsign=data_callsign, frame_type="AUTH",
+                         channel=channel, status="ERROR", notes=str(e))
+
     print(flush=True)
     print("╔══════════════════════════════════════════════════════════╗", flush=True)
     print("║  GUST TX-Test  v1.3                                  ║", flush=True)
@@ -519,6 +602,13 @@ def run(args):
     print("╠══════════════════════════════════════════════════════════╣", flush=True)
     print("║  Stoppen   : Strg+C                                     ║", flush=True)
     print("╚══════════════════════════════════════════════════════════╝", flush=True)
+    if args.auth:
+        if auth_keys:
+            print(f"  AUTH-Modus  : aktiv ({len(auth_keys)} Schluessel), "
+                  f"Pause {args.auth_pause:.1f}s, Einzel-Kanal erzwungen", flush=True)
+        else:
+            print("  AUTH-Modus  : --auth gesetzt, aber keine Schluessel geladen",
+                  flush=True)
     print(flush=True)
 
     try:
@@ -562,7 +652,7 @@ def run(args):
                     frag_label = f"TEXT_{frag_idx+1}of{total_frags}"
 
                     try:
-                        audio, channel, _ = transmit(
+                        audio, channel, frame_body = transmit(
                             FrameType.TEXT, callsign, frag_payload,
                             channel=fixed_ch,
                             use_fec=True, window=True, add_silence_ms=100,
@@ -661,6 +751,11 @@ def run(args):
                     flush=True,
                 )
 
+                # AUTH-Frame nach der Freitext-Nachricht (referenziert das
+                # zuletzt gesendete Fragment als Daten-Frame, P8-11).
+                if args.auth and auth_keys and msg_ok and total_frags > 0:
+                    send_auth(callsign, FrameType.TEXT, frame_body, channel, gain_db)
+
             else:
                 # ══════════════════════════════════════════════════════
                 # NORMALER MODUS: Einzel- oder Dual-Kanal-Frame
@@ -717,7 +812,7 @@ def run(args):
                                 if args.fixed_channels else None)
 
                     try:
-                        audio, channel, _ = transmit(
+                        audio, channel, frame_body = transmit(
                             ft, callsign, payload, channel=fixed_ch,
                             use_fec=True, window=True, add_silence_ms=100,
                         )
@@ -789,6 +884,11 @@ def run(args):
                             nf_hz=nf_a, nf_hz_b=nf_b, rf_mhz=round(rf_mhz, 6),
                             status="ERROR", notes=str(e),
                         )
+
+                # AUTH-Frame nach dem Einzel-Kanal-Daten-Frame (P8-11).
+                # Dual-Kanal ist unter --auth deaktiviert → frame_body eindeutig.
+                if args.auth and auth_keys and not use_dual:
+                    send_auth(callsign, ft, frame_body, used_a, gain_db)
 
             # Pause (außer nach letzter Sendung)
             if args.count == 0 or tx_count < args.count:
@@ -899,6 +999,13 @@ Hinweise:
                         help="Exakte Gain-Folge, z.B. '28,26,24,22,20'")
     parser.add_argument("--dry-run",    action="store_true",
                         help="Kein TX — nur Frame-Erzeugung testen")
+    parser.add_argument("--auth",       action="store_true",
+                        help="Nach jedem Daten-Frame einen AUTH-Frame (0x50) senden "
+                             "(erfordert 'auth'-Block in gateway.json)")
+    parser.add_argument("--auth-pause", type=float, default=0.5,
+                        dest="auth_pause",
+                        help="Pause zwischen Daten-Frame und AUTH-Frame in Sekunden "
+                             "(Standard: 0.5)")
     args = parser.parse_args()
 
     # Falls --config explizit angegeben wurde und von GATEWAY_JSON abweicht,
@@ -940,6 +1047,12 @@ Hinweise:
     # --text-parts validieren
     if args.text_parts not in range(0, 5):
         parser.error("--text-parts muss 0 (zufällig) oder 1–4 sein")
+
+    # --auth referenziert genau EINEN Daten-Frame → Einzel-Kanal erzwingen
+    # (Dual-Kanal mischt zwei Frames im IQ → kein eindeutiger frame_body für HMAC).
+    if args.auth:
+        args.no_dual   = True
+        args.dual_only = False
 
     run(args)
 
