@@ -248,7 +248,30 @@ verdrahtet ist (heute nur im isolierten `ldpc_loopback_test.py` aktiv).
 
 | ID | Prio | Typ | Titel | Beschreibung | Status |
 |---|---|---|---|---|---|
-| P8-14 | 🟢 | feature | Soft-Decision in receive() | Modulator-RX (`receive`/`demodulate`/Multi-Try) um LLR-Sammlung (`_fft_detect_symbol_soft` → `symbols_to_bit_llr_array`) + `gust_ldpc.decode(llr_blocks=)` erweitern. Erst danach kann der LDPC-Stresstest (Etappe 4) den ~2-dB-Gewinn zeigen. Bis dahin LDPC-Hard < RS. | 🔲 |
+| P8-14 | 🟢 | feature | Soft-Decision in receive() | Modulator-RX (`receive`/`demodulate`/Multi-Try) um LLR-Sammlung (`_fft_detect_symbol_soft` → `symbols_to_bit_llr_array`) + `gust_ldpc.decode(llr_blocks=)` erweitern. Erst danach kann der LDPC-Stresstest (Etappe 4) den ~2-dB-Gewinn zeigen. Bis dahin LDPC-Hard < RS. | ✅ Direktmodus (Breitband: TODO) |
+
+**P8-14 umgesetzt (Juni 2026, nur Direktmodus):** `demodulate(collect_llr=True)`
+sammelt Ton-LLR pro Symbol; `_build_result_direct` baut LDPC-Bit-LLR-Blöcke
+(pro Symbol-Triple umgedreht → `symbols_to_bytes`-MSB-Reihenfolge) und ruft
+`_get_fec().decode(raw, llr_blocks=)`. **Nur aktiv wenn LDPC-Backend gesetzt**
+(LLR-Sammlung kostet CPU); RS-Pfad unverändert (verifiziert). Breitband-
+Multi-Hypothesen-Pfad bleibt vorerst Hard-Decision (TODO, Stresstest nutzt
+Direktmodus). Smoke-Baseline LDPC: 56 % → 81 %.
+
+**Etappe-4-Vergleichslauf (seed 42, 60 s, 5 Frames/Kanal):**
+
+| SNR | RS | LDPC-Soft | Bewertung |
+|---|---|---|---|
+| Baseline | 90,0 % | 75,0 % | RS stärker (seltene Fehler → 16-Byte-RS dominiert) |
+| −15 dB | 82,5 % | 80,0 % | ~gleich (Crossover) |
+| −10 dB | 32,5 % | **50,0 %** | **LDPC-Soft schlägt RS (+17,5 pp)** |
+| −6 dB | 0 % | 0 % | beide unter der Decoder-Schwelle |
+
+Fazit: Soft-Decision-Vorteil materialisiert sich **bei niedrigem SNR** (−10 dB),
+wie aus der Blocklängen-Eval erwartet. Bei Baseline trägt der ~2-dB-Vorteil nicht,
+weil RS bei seltenen Fehlern sehr stark ist. Absolute Raten sample-abhängig
+(40 Frames). Offene Stellschrauben für mehr Baseline-Rate: Tail-Block-Padding in
+`gust_ldpc.decode`, Soft im Breitband-Pfad — beide außerhalb des P8-14-Scopes.
 
 **Referenz:** ADR-25, gust_knowledge.md §22+§27,
              ldpc_planung/ldpc_blocklen_eval_ergebnis.md

@@ -595,6 +595,7 @@ def demodulate(
     sync_symbols:  list  = None,
     freq_offset:   float = 0.0,
     use_equalizer: bool  = False,
+    collect_llr:   bool  = False,
 ) -> tuple:
     """
     MFSK-8 Demodulator.
@@ -650,23 +651,19 @@ def demodulate(
         data_start = sync_pos_s + len(sync_symbols) * SAMPLES_PER_SYM
         data_audio = audio[data_start:]
         n_blocks   = len(data_audio) // SAMPLES_PER_SYM
+        blocks = [data_audio[i*SAMPLES_PER_SYM:(i+1)*SAMPLES_PER_SYM]
+                  for i in range(n_blocks)]
         if use_equalizer and sync_pos_s >= 0:
             eq = _build_equalizer(audio, sync_pos_s, tone_freqs)
-            data_syms = [
-                _fft_detect_symbol_eq(
-                    data_audio[i*SAMPLES_PER_SYM:(i+1)*SAMPLES_PER_SYM],
-                    tone_freqs, eq
-                )
-                for i in range(n_blocks)
-            ]
+            data_syms = [_fft_detect_symbol_eq(b, tone_freqs, eq) for b in blocks]
+            tone_llrs = ([_fft_detect_symbol_soft_eq(b, tone_freqs, eq)
+                          for b in blocks] if collect_llr else None)
         else:
-            data_syms = [
-                _fft_detect_symbol(
-                    data_audio[i*SAMPLES_PER_SYM:(i+1)*SAMPLES_PER_SYM],
-                    tone_freqs
-                )
-                for i in range(n_blocks)
-            ]
+            data_syms = [_fft_detect_symbol(b, tone_freqs) for b in blocks]
+            tone_llrs = ([_fft_detect_symbol_soft(b, tone_freqs)
+                          for b in blocks] if collect_llr else None)
+        if collect_llr:
+            return data_syms, True, sync_pos_s, nearest_ch, computed_offset, tone_llrs
         return data_syms, True, sync_pos_s, nearest_ch, computed_offset
 
     else:
@@ -692,24 +689,32 @@ def demodulate(
 
         if sync_pos is None:
             # Ohne gefundenen SYNC: use_equalizer wird ignoriert
+            if collect_llr:
+                return all_symbols, False, -1, channel, freq_offset, None
             return all_symbols, False, -1, channel, freq_offset
 
         sync_pos_s = sync_pos * SAMPLES_PER_SYM
+        data_start = sync_pos_s + sync_len * SAMPLES_PER_SYM
+        data_audio = audio[data_start:]
+        n_data     = len(data_audio) // SAMPLES_PER_SYM
         if use_equalizer and sync_pos_s >= 0:
             # Datensymbole mit Passband-Equalizer aus dem Costas-SYNC neu dekodieren
-            eq         = _build_equalizer(audio, sync_pos_s, tone_freqs)
-            data_start = sync_pos_s + sync_len * SAMPLES_PER_SYM
-            data_audio = audio[data_start:]
-            n_data     = len(data_audio) // SAMPLES_PER_SYM
-            data_syms  = [
-                _fft_detect_symbol_eq(
-                    data_audio[i*SAMPLES_PER_SYM:(i+1)*SAMPLES_PER_SYM],
-                    tone_freqs, eq
-                )
-                for i in range(n_data)
-            ]
+            eq     = _build_equalizer(audio, sync_pos_s, tone_freqs)
+            blocks = [data_audio[i*SAMPLES_PER_SYM:(i+1)*SAMPLES_PER_SYM]
+                      for i in range(n_data)]
+            data_syms = [_fft_detect_symbol_eq(b, tone_freqs, eq) for b in blocks]
+            tone_llrs = ([_fft_detect_symbol_soft_eq(b, tone_freqs, eq)
+                          for b in blocks] if collect_llr else None)
         else:
             data_syms = all_symbols[sync_pos + sync_len:]
+            if collect_llr:
+                blocks = [data_audio[i*SAMPLES_PER_SYM:(i+1)*SAMPLES_PER_SYM]
+                          for i in range(n_data)]
+                tone_llrs = [_fft_detect_symbol_soft(b, tone_freqs) for b in blocks]
+            else:
+                tone_llrs = None
+        if collect_llr:
+            return data_syms, True, sync_pos_s, channel, freq_offset, tone_llrs
         return data_syms, True, sync_pos_s, channel, freq_offset
 
 
@@ -718,8 +723,13 @@ def demodulate(
 # ═══════════════════════════════════════════════════════════════════════
 
 def _build_result_direct(data_symbols, sync_found, sync_offset, det_ch, det_offset,
-                         use_fec, rs_available, sym2bytes, rs_dec, pf, dp, RS_OH):
-    """Symbole → Ergebnis-Dict (Direktmodus ohne Multi-Hypothesen)."""
+                         use_fec, rs_available, sym2bytes, rs_dec, pf, dp, RS_OH,
+                         tone_llrs=None):
+    """Symbole → Ergebnis-Dict (Direktmodus ohne Multi-Hypothesen).
+
+    tone_llrs: optionale Ton-LLR-Liste (aus demodulate(collect_llr=True)). Bei
+    aktivem LDPC-Backend wird daraus Soft-Decision-BP genutzt (P8-14).
+    """
     result = {
         "sync_found":       sync_found,
         "sync_offset_s":    sync_offset / SAMPLE_RATE if sync_offset >= 0 else None,
@@ -733,12 +743,41 @@ def _build_result_direct(data_symbols, sync_found, sync_offset, det_ch, det_offs
     min_fb  = 9
     rs_min  = RS_OH + min_fb
     nb_max  = len(data_symbols) * 3 // 8
+
+    # ── Soft-Decision-LLR-Blöcke vorbereiten (nur bei aktivem LDPC-Backend) ──
+    # Die Multi-Try-Schleife dekodiert sonst Hard-Bytes; bei LDPC liefert das nur
+    # 1-Bit/Block-Korrektur (deutlich schwächer als RS). Mit Ton-LLR aus dem
+    # Demodulator wird Soft-Decision-BP genutzt (~2 dB Gewinn, P8-13/P8-14).
+    from gust_frame import _get_fec
+    _fec      = _get_fec()
+    _use_soft = (getattr(_fec, "name", None) == "ldpc") and bool(tone_llrs)
+    llr_blocks = None
+    if _use_soft:
+        arr = symbols_to_bit_llr_array(tone_llrs)
+        # symbols_to_bytes streamt pro Symbol MSB→LSB (Bit2,Bit1,Bit0),
+        # symbols_to_bit_llr_array liefert [Bit0,Bit1,Bit2] → pro Triple umdrehen,
+        # damit die LLR-Position zur LDPC-Bitposition passt.
+        if len(arr) >= 3:
+            arr = arr.reshape(-1, 3)[:, ::-1].reshape(-1)
+        N = int(getattr(_fec, "N_BITS", 255))
+        llr_blocks = []
+        for i in range(0, len(arr), N):
+            seg = arr[i:i + N]
+            if len(seg) < N:
+                seg = np.concatenate([seg, np.zeros(N - len(seg), dtype=np.float64)])
+            llr_blocks.append(seg)
+        if not llr_blocks:
+            llr_blocks = None
+
     if use_fec and rs_available:
         last_e = None
         for n in range(nb_max, rs_min - 1, -1):
             try:
                 raw  = sym2bytes(data_symbols, n)
-                dec  = rs_dec(raw)
+                if _use_soft and llr_blocks is not None:
+                    dec = _fec.decode(raw, llr_blocks=llr_blocks)
+                else:
+                    dec = rs_dec(raw)
                 pars = pf(dec)
                 if pars and pars["crc_ok"]:
                     result.update({
@@ -897,14 +936,27 @@ def receive(
 
     # ── Direktmodus ───────────────────────────────────────────────────
     if channel is not None:
-        data_symbols, sync_found, sync_offset, det_ch, det_offset = demodulate(
-            audio, channel=channel, freq_offset=freq_offset,
-            use_equalizer=use_equalizer,
-        )
+        # Soft-Decision nur bei aktivem LDPC-Backend (LLR-Sammlung kostet CPU:
+        # zusätzliche Soft-FFT-Auswertung pro Symbol). RS-Pfad bleibt Hard.
+        from gust_frame import _get_fec
+        _use_soft = getattr(_get_fec(), "name", None) == "ldpc"
+        if _use_soft:
+            (data_symbols, sync_found, sync_offset, det_ch, det_offset,
+             tone_llrs) = demodulate(
+                audio, channel=channel, freq_offset=freq_offset,
+                use_equalizer=use_equalizer, collect_llr=True,
+            )
+        else:
+            data_symbols, sync_found, sync_offset, det_ch, det_offset = demodulate(
+                audio, channel=channel, freq_offset=freq_offset,
+                use_equalizer=use_equalizer,
+            )
+            tone_llrs = None
         return _build_result_direct(
             data_symbols, sync_found, sync_offset, det_ch, det_offset,
             use_fec, _RS_AVAILABLE, symbols_to_bytes, rs_decode,
             parse_frame, decode_payload, RS_OVERHEAD,
+            tone_llrs=tone_llrs,
         )
 
     # ── Breitband-Modus: Multi-Hypothesen mit CRC-Verifikation ────────
@@ -960,6 +1012,10 @@ def receive(
 
         nb_max = len(data_syms) * 3 // 8
 
+        # TODO (P8-14): Breitband-Multi-Hypothesen-Pfad nutzt weiterhin
+        # Hard-Decision (rs_decode ohne LLR). Soft-Decision ist bisher nur im
+        # Direktmodus verdrahtet — der Stresstest (ldpc_stress_decode.py) läuft
+        # über channel=ch (Direktmodus), daher hier vorerst kein Soft-Pfad.
         if use_fec and _RS_AVAILABLE:
             last_fec_error = None
             for n_try in range(nb_max, rs_min - 1, -1):
