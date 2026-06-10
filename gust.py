@@ -56,6 +56,13 @@ from gust_eventbus import (
 )
 from gust_web import WebServer
 
+# MeshCore Bridge — optionaler Import (P6-19)
+try:
+    from gust_meshcore_bridge import MeshCoreBridge
+    _MESHCORE_AVAILABLE = True
+except ImportError:
+    _MESHCORE_AVAILABLE = False
+
 # SimAdapter: unterstützt alten (gust_weather.py) und neuen Dateinamen
 try:
     from gust_msg_simulator import SimAdapter, create_adapter
@@ -651,6 +658,30 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
             iq_rx.center_freq / 1e6,
         )
 
+    # ── MeshCore Bridge (optional, P6-19) ────────────────────────────
+    meshcore_task = None
+    mc_cfg = cfg.get("meshcore", {})
+    if mc_cfg.get("enabled", False) and _MESHCORE_AVAILABLE and not dry_run:
+        mc_config_path = mc_cfg.get("config", "meshcore.json")
+        try:
+            from pathlib import Path
+            import json as _json
+            mc_config = _json.loads(Path(mc_config_path).read_text(encoding="utf-8"))
+            _bridge = MeshCoreBridge(mc_config, bus)
+            meshcore_task = asyncio.create_task(
+                _bridge.start(), name="meshcore_bridge"
+            )
+            log.info("MeshCore Bridge gestartet  |  Companion: %s",
+                     mc_config.get("connection", {}).get("port", "?"))
+        except FileNotFoundError:
+            log.warning("MeshCore Bridge: %s nicht gefunden — Bridge deaktiviert",
+                        mc_config_path)
+        except Exception as e:
+            log.warning("MeshCore Bridge konnte nicht gestartet werden: %s", e)
+    elif mc_cfg.get("enabled", False) and not _MESHCORE_AVAILABLE:
+        log.warning("MeshCore Bridge: meshcore-Library nicht installiert "
+                    "(pip install meshcore) — Bridge deaktiviert")
+
     try:
         while True:
             # Fällige Frames vom Adapter holen und in den Bus publishen
@@ -668,12 +699,32 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
                 last_status = now
                 ci = _channel_info(cfg["callsign"],
                                    interval=cfg["gateway"]["interval_s"])
+                # MeshCore-Bridge-Status für WebGUI
+                _mc_cfg = cfg.get("meshcore", {})
+                _mc_status = {
+                    "enabled":   _mc_cfg.get("enabled", False),
+                    "port":      _mc_cfg.get("config", "meshcore.json"),
+                    "connected": (meshcore_task is not None
+                                  and not meshcore_task.done()),
+                }
+                # Port aus meshcore.json lesen falls verfügbar
+                try:
+                    import json as _j, pathlib as _pl
+                    _mc_conf = _j.loads(
+                        _pl.Path(_mc_cfg.get("config", "meshcore.json"))
+                        .read_text(encoding="utf-8"))
+                    _mc_status["port"] = _mc_conf.get(
+                        "connection", {}).get("port", "?")
+                except Exception:
+                    pass
+
                 await bus.publish(make_status_event(
-                    callsign    = cfg["callsign"],
-                    uptime_s    = now - start_time,
-                    home_channel= ci["channel"],
-                    audio_device= _get_tx_audio(cfg).get("device") or "–",
-                    ptt_backend = _get_tx_audio(cfg).get("ptt_backend", "null"),
+                    callsign       = cfg["callsign"],
+                    uptime_s       = now - start_time,
+                    home_channel   = ci["channel"],
+                    audio_device   = _get_tx_audio(cfg).get("device") or "–",
+                    ptt_backend    = _get_tx_audio(cfg).get("ptt_backend", "null"),
+                    meshcore_bridge= _mc_status,
                 ))
 
             wait = min(adapter.next_due_in() or 1.0, 0.5)
@@ -694,6 +745,12 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
             iq_rx_task.cancel()
             try:
                 await iq_rx_task
+            except asyncio.CancelledError:
+                pass
+        if meshcore_task and not meshcore_task.done():
+            meshcore_task.cancel()
+            try:
+                await meshcore_task
             except asyncio.CancelledError:
                 pass
         await gateway.stop()

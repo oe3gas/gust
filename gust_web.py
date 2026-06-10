@@ -659,6 +659,42 @@ h2:first-child { margin-top: 0; }
 }
 .hamlib-status-dot.ok  { background: var(--green); }
 .hamlib-status-dot.err { background: var(--red); }
+
+/* ── MeshCore Bridge Badge ───────────────────────────────── */
+/* ── Fragment-Collapsing ─────────────────────────────────── */
+.frag-row { display: none; }
+.frag-row.expanded { display: flex; }
+.frag-toggle {
+  cursor: pointer;
+  font-size: 0.7em;
+  color: var(--text2);
+  margin-right: 4px;
+  user-select: none;
+  flex-shrink: 0;
+  width: 12px;
+  display: inline-block;
+  text-align: center;
+}
+.assembled-row { cursor: pointer; }
+.assembled-row:hover { background: var(--bg3); }
+
+.mc-badge {
+  background: #5b4fcf;
+  color: #fff;
+  font-size: 0.65em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-right: 4px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  font-family: monospace;
+}
+.frame-row.meshcore {
+  border-left: 3px solid #5b4fcf;
+  padding-left: 4px;
+}
+.hb-warn .hb-dot { background: var(--yellow, #f5a623) !important; }
 </style>
 </head>
 <body>
@@ -670,6 +706,10 @@ h2:first-child { margin-top: 0; }
   <div id="daemon-hb" class="hb-unknown" title="GUST Daemon Status">
     <span class="hb-dot"></span>
     <span class="hb-label">DAEMON</span>
+  </div>
+  <div id="mc-bridge-status" class="hb-unknown" title="MeshCore Bridge" style="display:none">
+    <span class="hb-dot"></span>
+    <span class="hb-label">MC</span>
   </div>
   <button id="theme-btn" onclick="toggleTheme()" title="Theme wechseln">🌙 Light</button>
 </header>
@@ -3280,7 +3320,8 @@ function appendRxFrame(frame) {
 
   const ts  = new Date(frame.ts * 1000).toLocaleTimeString('de-AT');
   const ch  = frame.channel ?? frame.detected_channel ?? '?';
-  const frm = frame.from ?? '?';
+  const isMC = frame.source === 'meshcore';
+  const frm  = _esc(frame.from ?? '?');
   const typ = frame.type_name ?? '?';
   const dat = frameDataSummary(frame);
   const _ftype  = frame.frame_type ?? frame.type ?? 0;
@@ -3306,10 +3347,11 @@ function appendRxFrame(frame) {
       ? '<span title="Deep-Decode-Fund" style="font-size:10px;background:#8E44AD;color:#fff;'
         + 'border-radius:3px;padding:1px 4px;margin-left:4px">🔍</span>'
       : '';
-  row.className = 'frame-row' + (isEmerg ? ' emergency' : '') + (isTest ? ' testframe' : '');
+  row.className = 'frame-row' + (isEmerg ? ' emergency' : '') + (isTest ? ' testframe' : '') + (isMC ? ' meshcore' : '');
+  const mcBadge = isMC ? '<span class="mc-badge">MC</span>' : '';
   row.innerHTML = `<span class="ts">${ts}</span>
     <span class="ch">${ch}</span>
-    <span class="from">${frm}</span>
+    <span class="from">${mcBadge}${frm}</span>
     <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0"><span class="type" style="width:auto">${typ}</span>${isTest ? '<span class="test-pill">TEST</span>' : ''}${deepBadge}</span>
     <span class="snr ${snrCls}">${snr != null ? snrLabel(snr) : '–'}</span>
     <span class="off">${offStr}</span>
@@ -3325,34 +3367,101 @@ function appendRxFrame(frame) {
       const idx    = fd.frag_index ?? 0;
       const seqKey = `${frm}:${fd.seq_nr ?? 0}`;
       const dest   = fd.dest || fd.to || '?';
+
+      // Einzelframe als kollabierbare Zeile markieren
+      row.classList.add('frag-row');
+      row.dataset.seqKey = seqKey;
+
       if (!state.fragCache[seqKey])
-        state.fragCache[seqKey] = { total, frags: {}, ts, ch, frm, dest, t0: Date.now() };
+        state.fragCache[seqKey] = {
+          total, frags: {}, ts, ch, frm, dest,
+          t0: Date.now(), rows: [], assembledRow: null
+        };
       state.fragCache[seqKey].frags[idx] = fd.text || '';
+      state.fragCache[seqKey].rows.push(row);
 
       const cached   = state.fragCache[seqKey];
       const received = Object.keys(cached.frags).length;
 
       if (received >= total) {
-        // Alle Teile da → reassemblieren, als eine grüne Zeile anhängen
+        // Alle Teile da → reassemblieren
         const assembled = Object.keys(cached.frags)
           .sort((a, b) => Number(a) - Number(b))
           .map(k => cached.frags[k]).join('');
-        delete state.fragCache[seqKey];
+
+        // Synthetisches Frame-Objekt für das Detail-Modal
+        const assembledFrame = {
+          type_name:   'TEXT',
+          frame_type:  0x40,
+          from:        cached.frm,
+          source:      frame.source || null,
+          channel:     cached.ch,
+          ts:          cached.t0 / 1000,
+          snr_db:      null,
+          freq_offset_hz: null,
+          _assembled:  true,
+          _frag_total: total,
+          _frag_count: received,
+          data: {
+            dest:       cached.dest,
+            text:       assembled,
+            seq_nr:     fd.seq_nr ?? 0,
+            frag_total: total,
+            frag_index: total - 1,
+          },
+          payload_decoded: {
+            dest:       cached.dest,
+            text:       assembled,
+            seq_nr:     fd.seq_nr ?? 0,
+            frag_total: total,
+            frag_index: total - 1,
+          },
+        };
+
+        // Zusammenfassungszeile bauen
+        const isMCassembled = (frame.source === 'meshcore');
+        const mcBadgeA = isMCassembled ? '<span class="mc-badge">MC</span>' : '';
         const arow = document.createElement('div');
-        arow.className = 'frame-row';
+        arow.className = 'frame-row assembled-row' + (isMCassembled ? ' meshcore' : '');
+        arow.dataset.seqKey = seqKey;
+
+        // Toggle-Button + Inhalt
+        const toggleBtn = document.createElement('span');
+        toggleBtn.className = 'frag-toggle';
+        toggleBtn.textContent = '▶';
+        toggleBtn.title = 'Einzelframes ein-/ausklappen';
+
         arow.innerHTML = `<span class="ts">${cached.ts}</span>
           <span class="ch">${cached.ch}</span>
-          <span class="from">${cached.frm}</span>
-          <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0"><span class="type" style="width:auto;color:var(--green)">TEXT ✓</span></span>
+          <span class="from">${mcBadgeA}${_esc(cached.frm)}</span>
+          <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0">
+            <span class="type" style="width:auto;color:var(--green)">TEXT ✓</span>
+          </span>
           <span class="snr">–</span>
           <span class="off"></span>
-          <span class="data">→ ${cached.dest}  "${assembled}" <span style="color:var(--text2);font-size:var(--fs-xxs);">[${total}/${total} Frg. ✓]</span></span>`;
+          <span class="data">→ ${_esc(cached.dest)}  "${_esc(assembled)}"
+            <span style="color:var(--text2);font-size:var(--fs-xxs)">[${total}/${total} Frg. ✓]</span>
+          </span>`;
+
+        // Toggle-Button VOR dem ersten span einfügen
+        arow.insertBefore(toggleBtn, arow.firstChild);
+
+        // Toggle-Klick: Einzelframes ein-/ausklappen
+        toggleBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const fragRows = feed.querySelectorAll(`.frag-row[data-seq-key="${seqKey}"]`);
+          const expanded = toggleBtn.textContent === '▼';
+          fragRows.forEach(r => r.classList.toggle('expanded', !expanded));
+          toggleBtn.textContent = expanded ? '▶' : '▼';
+        });
+
+        // Zeilen-Klick: Detail-Modal öffnen
+        arow.addEventListener('click', () => openFrameModal(assembledFrame));
+
+        cached.assembledRow = arow;
         feed.appendChild(arow);
-      } else {
-        // Noch unvollständig → Fortschritt an die Fragment-Zeile hängen
-        const miss = total - received;
-        row.querySelector('.data')?.insertAdjacentHTML('beforeend',
-          ` <span style="color:var(--text2);font-size:var(--fs-xxs);">… warte auf ${miss} Frg.</span>`);
+
+        delete state.fragCache[seqKey];
       }
 
       // Verwaiste Cache-Einträge (> 120 s) verwerfen
@@ -3939,6 +4048,34 @@ function playNotify() {
 
 // ═══════════════════════════ MODAL ═══════════════════════════════
 function openFrameModal(frame) {
+  // Zusammengeführte TEXT-Nachricht: erweitertes Detail
+  if (frame._assembled) {
+    const fd  = frame.payload_decoded || frame.data || {};
+    const src = frame.source === 'meshcore' ? ' <span class="mc-badge">MC</span>' : '';
+    const ts  = frame.ts ? new Date(frame.ts * 1000).toLocaleTimeString('de-AT') : '?';
+    const rows = [
+      ['Von',        _esc(frame.from || '?') + src],
+      ['An',         _esc(fd.dest || '?')],
+      ['Kanal',      frame.channel ?? '?'],
+      ['Zeitpunkt',  ts],
+      ['Sequenz-Nr', fd.seq_nr ?? '?'],
+      ['Fragmente',  `${frame._frag_count} / ${frame._frag_total} empfangen`],
+      ['Quelle',     frame.source === 'meshcore' ? 'MeshCore Bridge' : 'HF RX'],
+      ['Volltext',   `<span style="font-family:monospace;word-break:break-all">${_esc(fd.text || '')}</span>`],
+    ];
+    const tableHtml = rows.map(([k, v]) =>
+      `<tr><td style="color:var(--text2);padding:3px 10px 3px 0;white-space:nowrap">${k}</td>`
+      + `<td style="padding:3px 0">${v}</td></tr>`
+    ).join('');
+    const el = document.getElementById('modal-content');
+    if (el) {
+      el.innerHTML = `<table style="border-collapse:collapse;width:100%">${tableHtml}</table>`;
+      document.getElementById('modal-title').textContent = 'TEXT-Nachricht (vollständig)';
+      document.getElementById('frame-modal').classList.add('open');
+    }
+    return;
+  }
+
   const d  = frame.payload_decoded || frame.data || {};
   const tn = frame.type_name || '?';
   const ch = frame.channel  ?? frame.detected_channel ?? '?';
@@ -4135,6 +4272,22 @@ function applyStatusPush(data) {
     if (el) el.value = data.ptt_delay_ms;
   }
   if (data.tx_available != null) applyTxAvailability(data.tx_available);
+
+  // MeshCore Bridge Status-Badge
+  if (data.meshcore_bridge != null) {
+    const mc  = data.meshcore_bridge;
+    const el  = document.getElementById('mc-bridge-status');
+    if (el) {
+      el.style.display = mc.enabled ? '' : 'none';
+      if (mc.enabled) {
+        const cls = mc.connected ? 'hb-ok' : 'hb-warn';
+        el.className = cls;
+        el.title = mc.connected
+          ? `MeshCore Bridge aktiv — ${mc.port}`
+          : `MeshCore Bridge getrennt — ${mc.port}`;
+      }
+    }
+  }
 }
 
 // Schaltet den Senden-Tab je nach TX-Verfügbarkeit (Daemon vs. Monitor-Modus).

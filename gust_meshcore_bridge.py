@@ -18,8 +18,10 @@ Abweichungen von der ursprünglichen P6-19-Skizze (nach Verifikation der
 echten APIs in gust_frame.py / gust_eventbus.py und der meshcore-Library):
 
   • TYPE_TEXT existiert nicht → gust_frame.FrameType.TEXT (0x40) wird genutzt.
-  • fragment_text(text, dest_call, seq_nr) erwartet Ziel + Sequenznummer —
-    die Skizze rief es einargumentig auf (hätte einen TypeError geworfen).
+  • Fragmentierung: lokales UTF-8-sicheres fragment_text() (BUG-MC-03) chunkt
+    auf Byte-Grenzen; die Chunks werden per encode_text_fragment() in GUST-
+    0x40-Payloads verpackt. gust_frame.fragment_text chunkt nach Zeichen und
+    trunkiert dann auf 14 Byte → zerreißt Emoji/Multibyte (deshalb nicht genutzt).
   • RX_FRAME-Events haben im GUST-EventBus die Form {"type":"rx_frame",
     "data": <Frame-Dict>} und werden im Web-Server via json.dumps serialisiert.
     Deshalb publizieren wir KEINE rohen bytes, sondern ein JSON-fähiges
@@ -56,7 +58,7 @@ try:
     from gust_frame import (
         FrameType,
         frame_type_name,
-        fragment_text,
+        encode_text_fragment,
         decode_text_fragment,
     )
 except ImportError as e:
@@ -128,6 +130,34 @@ def resolve_sender(pubkey_prefix: str, text: str, contacts: list,
     if guess:
         return guess[:6]
     return (own_callsign or "OE3GAS").upper()[:6]
+
+
+def fragment_text(text: str, chunk_size: int = 14) -> list[bytes]:
+    """
+    Zerlegt Text in Chunks à chunk_size Bytes, schneidet aber immer
+    auf UTF-8-Zeichengrenzen — kein Emoji/Multibyte-Zeichen wird zerrissen.
+    MeshCore-Limit: 130 Byte. GUST-Frame-Payload-Limit: 14 Byte Text.
+    BUG-MC-03 Fix.
+
+    Ersetzt gust_frame.fragment_text (chunkt nach Zeichen + trunkiert auf
+    14 Byte → zerreißt Multibyte). Die Byte-Chunks werden im Aufrufer per
+    encode_text_fragment() in GUST-0x40-Payloads verpackt.
+    """
+    encoded = text.encode("utf-8")
+    chunks = []
+    i = 0
+    while i < len(encoded):
+        end = i + chunk_size
+        if end >= len(encoded):
+            chunks.append(encoded[i:])
+            break
+        # Zurück bis zur nächsten UTF-8-Zeichengrenze
+        # Continuation-Bytes haben Muster 10xxxxxx (0x80–0xBF)
+        while end > i and (encoded[end] & 0xC0) == 0x80:
+            end -= 1
+        chunks.append(encoded[i:end])
+        i = end
+    return chunks if chunks else [b""]
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -330,8 +360,15 @@ class MeshCoreBridge:
                      ch_name, from_call, text[:60])
 
             # GUST-Text-Fragmente erzeugen (BROADCAST-Ziel, gemeinsame Seq-Nr)
+            # UTF-8-sichere Byte-Chunks (BUG-MC-03) → GUST-0x40-Payloads
             seq = self._next_seq()
-            fragments = fragment_text(full_text, dest_call="BROADCAST", seq_nr=seq)
+            text_chunks = fragment_text(full_text, chunk_size=14)
+            total = len(text_chunks)
+            fragments = [
+                encode_text_fragment("BROADCAST", chunk.decode("utf-8"),
+                                     seq, i, total)
+                for i, chunk in enumerate(text_chunks)
+            ]
 
             for frag_payload in fragments:
                 # Zurückdekodieren → JSON-fähiges payload_decoded fürs WebGUI
@@ -347,7 +384,7 @@ class MeshCoreBridge:
                     "payload_decoded": decoded,
                     "payload_hex":     frag_payload.hex(),
                     "synthetic":       True,
-                    "source":          "meshcore_bridge",
+                    "source":          "meshcore",
                     "meta": {
                         "channel_idx":   ch_idx,
                         "channel_name":  ch_name,
