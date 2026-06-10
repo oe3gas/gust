@@ -88,14 +88,18 @@ class ReedSolomonFEC(FECBackend):
     name = "rs"
 
     def __init__(self):
-        from gust_frame import rs_encode, rs_decode, RS_OVERHEAD, _RS_AVAILABLE
+        # WICHTIG: die ROHEN RS-Funktionen verwenden, NICHT rs_encode/rs_decode.
+        # Letztere leiten ans aktive FEC-Backend weiter — das wäre dieses Objekt
+        # selbst → Endlosrekursion. _rs_encode_raw/_rs_decode_raw sind immer RS.
+        from gust_frame import (_rs_encode_raw, _rs_decode_raw,
+                                 RS_OVERHEAD, _RS_AVAILABLE)
         if not _RS_AVAILABLE:
             raise RuntimeError(
                 "reedsolo nicht installiert — RS-FEC nicht verfügbar. "
                 "pip install reedsolo"
             )
-        self._encode    = rs_encode
-        self._decode    = rs_decode
+        self._encode    = _rs_encode_raw
+        self._decode    = _rs_decode_raw
         self.overhead   = RS_OVERHEAD   # 32
 
     def encode(self, data: bytes) -> bytes:

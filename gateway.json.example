@@ -1,5 +1,6 @@
 {
     "callsign": "OE3GAS",
+    "fec": "rs",
     "audio": {
         "device": 0,
         "ptt_backend": "hamlib",

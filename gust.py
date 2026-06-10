@@ -1388,6 +1388,17 @@ def main() -> None:
     cfg["_verbose"]     = args.verbose
     cfg["_config_path"] = args.config   # für WebServer (Audio-Settings speichern)
 
+    # FEC-Backend aus Konfiguration setzen (Standard: "rs")
+    fec_name = cfg.get("fec", "rs").lower()
+    if fec_name != "rs":
+        try:
+            from gust_frame import set_fec_backend
+            set_fec_backend(fec_name)
+            log.info("[FEC] Backend: %s (aus gateway.json)", fec_name)
+        except Exception as e:
+            log.warning("[FEC] Backend '%s' nicht verfügbar: %s — Fallback auf RS",
+                        fec_name, e)
+
     # Port-Override für daemon
     if args.cmd == "daemon" and hasattr(args, "port") and args.port:
         cfg["web"]["port"] = args.port

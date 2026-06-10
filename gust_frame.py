@@ -816,26 +816,91 @@ def decode_payload(frame_type: int, payload: bytes) -> Optional[dict]:
 if _RS_AVAILABLE:
     _rs_codec = reedsolo.RSCodec(RS_OVERHEAD)   # nsym=32 Fehlerkorrektur-Bytes
 
-def rs_encode(data: bytes) -> bytes:
+def _rs_encode_raw(data: bytes) -> bytes:
     """
-    Wendet Reed-Solomon(255,223) auf data an.
+    Rohe Reed-Solomon(255,223)-Kodierung — immer RS, KEIN Backend-Dispatch.
     Gibt data + 32 Byte RS-Parität zurück.
-    Fehler wenn reedsolo nicht installiert.
+
+    Wird vom RS-FEC-Backend (gust_fec.ReedSolomonFEC) intern verwendet.
+    Getrennt von rs_encode(), weil rs_encode() an das aktive Backend
+    weiterleitet — würde das RS-Backend rs_encode() aufrufen, entstünde
+    eine Endlosrekursion.
     """
     if not _RS_AVAILABLE:
         raise RuntimeError("reedsolo nicht installiert")
     return bytes(_rs_codec.encode(data))
 
-def rs_decode(data: bytes) -> bytes:
+def _rs_decode_raw(data: bytes) -> bytes:
     """
-    Dekodiert RS-geschützte Daten. Korrigiert bis zu 16 Byte-Fehler.
-    Gibt die originalen Nutzdaten zurück (ohne RS-Parität).
+    Rohe Reed-Solomon-Dekodierung — immer RS, KEIN Backend-Dispatch.
+    Korrigiert bis zu 16 Byte-Fehler, gibt die Nutzdaten zurück.
     Wirft reedsolo.ReedSolomonError bei nicht korrigierbarem Fehler.
     """
     if not _RS_AVAILABLE:
         raise RuntimeError("reedsolo nicht installiert")
     decoded, _, _ = _rs_codec.decode(data)
     return bytes(decoded)
+
+
+# ── FEC-Backend (ADR-24) ──────────────────────────────────────────────
+# Standard: RS (produktiv). LDPC: opt-in per set_fec_backend().
+# Wird von gust.py beim Start gesetzt wenn gateway.json "fec": "ldpc" enthält.
+#
+# rs_encode()/rs_decode() leiten an das aktive Backend weiter (Default RS),
+# damit die Schnittstelle für gust_modulator.py unverändert bleibt. Das
+# RS-Backend (gust_fec.ReedSolomonFEC) ruft INTERN _rs_encode_raw/_rs_decode_raw
+# auf — niemals rs_encode/rs_decode — sonst entstünde eine Endlosrekursion.
+_fec_backend = None   # None = lazy init beim ersten Aufruf → RS
+
+def set_fec_backend(name: str) -> None:
+    """
+    FEC-Backend global setzen.
+    Wird einmalig beim Daemon-Start aufgerufen (aus gust.py).
+
+    Args:
+        name: "rs" (Standard) oder "ldpc" (experimentell)
+    """
+    global _fec_backend
+    from gust_fec import get_fec_backend
+    _fec_backend = get_fec_backend(name)
+    import logging
+    logging.getLogger("gust.frame").info(
+        "[FEC] Backend gewechselt: %s  (overhead=%d B)",
+        name, _fec_backend.overhead
+    )
+
+def _get_fec():
+    """Lazy-Init: FEC-Backend holen, RS als Default."""
+    global _fec_backend
+    if _fec_backend is None:
+        from gust_fec import get_fec_backend
+        _fec_backend = get_fec_backend("rs")
+    return _fec_backend
+
+def get_fec_overhead() -> int:
+    """
+    Aktuellen FEC-Overhead in Bytes zurückgeben.
+    Für RS: RS_OVERHEAD (32). Für LDPC: abhängig von der Blockgröße
+    (variabel/shortened, erst nach dem ersten encode() bekannt → bis dahin
+    Fallback auf RS_OVERHEAD).
+    """
+    fec = _get_fec()
+    return fec.overhead if fec.overhead > 0 else RS_OVERHEAD
+
+def rs_encode(data: bytes) -> bytes:
+    """
+    FEC-Kodierung (Backend per set_fec_backend() wählbar, Standard: RS).
+    Gibt data + Paritätsbytes zurück.
+    """
+    return _get_fec().encode(data)
+
+def rs_decode(data: bytes) -> bytes:
+    """
+    FEC-Dekodierung (Backend per set_fec_backend() wählbar, Standard: RS).
+    Gibt die originalen Nutzdaten zurück.
+    Wirft backend-spezifische Exception bei nicht korrigierbaren Fehlern.
+    """
+    return _get_fec().decode(data)
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -885,7 +885,7 @@ def receive(
     """
     from gust_frame import (
         symbols_to_bytes, rs_decode, _RS_AVAILABLE,
-        RS_OVERHEAD, parse_frame, decode_payload,
+        RS_OVERHEAD, get_fec_overhead, parse_frame, decode_payload,
     )
 
     if audio.dtype == np.int16:
@@ -913,7 +913,7 @@ def receive(
         return {"sync_found": False, "freq_offset_hz": 0.0,
                 "error": "SYNC nicht gefunden"}
 
-    rs_min   = RS_OVERHEAD + 9
+    rs_min   = get_fec_overhead() + 9
     last_res = None
 
     for hyp_idx, (score, cand_pos, f0_coarse) in enumerate(candidates):
