@@ -233,6 +233,23 @@ Details: `gust_knowledge.md` §27,
 **Status Etappe 3:** `cc_ldpc_etappe3_integration.md` ist freigegeben.
 Alle Voraussetzungen erfuellt (P8-13 abgeschlossen, n=255 symbol-aligned).
 
+**Status Etappe 4 (Stresstest RS vs. LDPC) — BEFUND Juni 2026:**
+`ldpc_stress_gen.py` + `ldpc_stress_decode.py` erstellt (Kopien von
+`gust_stresstest.py`/`gust_stress_decode.py` + LDPC-opt-in via
+`set_fec_backend("ldpc")`). **Smoke-Test (seed 42, 30 s, 3 Frames/Kanal,
+kein Rauschen): nur 56 % Dekodierrate statt ≥95 %.** Ursache verifiziert:
+`gust_modulator.receive()`/Multi-Try dekodiert **Hard-Decision** (ruft
+`rs_decode` ohne LLR). LDPC-Hard korrigiert nur 1 Bit/255-Block, RS dagegen
+16 Byte/Block → schon ohne Rauschen verliert LDPC. Deckt sich mit
+`ldpc-blocklen-eval-2b`. **Voller SNR-Vergleich blockiert**, bis die
+Soft-Decision-Kette (P8-13 + `gust_ldpc.decode(llr_blocks=)`) in `receive()`
+verdrahtet ist (heute nur im isolierten `ldpc_loopback_test.py` aktiv).
+→ Neue Aufgabe **P8-14**: Soft-Decision in den Modulator-RX-Pfad integrieren.
+
+| ID | Prio | Typ | Titel | Beschreibung | Status |
+|---|---|---|---|---|---|
+| P8-14 | 🟢 | feature | Soft-Decision in receive() | Modulator-RX (`receive`/`demodulate`/Multi-Try) um LLR-Sammlung (`_fft_detect_symbol_soft` → `symbols_to_bit_llr_array`) + `gust_ldpc.decode(llr_blocks=)` erweitern. Erst danach kann der LDPC-Stresstest (Etappe 4) den ~2-dB-Gewinn zeigen. Bis dahin LDPC-Hard < RS. | 🔲 |
+
 **Referenz:** ADR-25, gust_knowledge.md §22+§27,
              ldpc_planung/ldpc_blocklen_eval_ergebnis.md
 
