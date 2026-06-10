@@ -165,59 +165,72 @@ def verify_crc(body: bytes, received_crc: bytes) -> bool:
 # HMAC-AUTHENTIFIZIERUNG  (Frame 0x50 — AUTH, GUST-S, Spec §3.5)
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Payload (20 Byte): REF_SEQ(2) | REF_TYPE(1) | KEY_ID(1) | HMAC(16)
-# HMAC-SHA256 über (Daten-Frame-Body + REF_SEQ), truncated auf 16 Byte.
+# Payload (20 Byte): TIMESTAMP(4) | REF_TYPE(1) | KEY_ID(1) | HMAC(14)
+# HMAC-SHA256 über (Daten-Frame-Body + TIMESTAMP), truncated auf 14 Byte.
+# Der TIMESTAMP referenziert den Daten-Frame (kein seq-Feld nötig) UND dient
+# als Replay-Schutz (verify_auth prüft |jetzt - TIMESTAMP| <= max_age_s).
 # stdlib hmac/hashlib — keine externen Abhängigkeiten.
 
-def auth_tag(frame_body: bytes, ref_seq: int, key: bytes) -> bytes:
+def auth_tag(frame_body: bytes, timestamp: int, key: bytes) -> bytes:
     """
-    Berechnet den 16-Byte HMAC-SHA256 Tag für einen AUTH-Frame.
+    HMAC-SHA256 über Daten-Frame-Body + TIMESTAMP, truncated auf 14 Byte.
 
     Args:
-        frame_body: Vollständiger Frame-Body des referenzierten Daten-Frames
-                    (TYPE + CHANNEL + FROM + PAYLOAD, ohne SYNC und ohne RS-Parität)
-        ref_seq:    Sequenznummer des Daten-Frames (uint16, big-endian)
+        frame_body: Frame-Body des Daten-Frames (TYPE+CHANNEL+FROM+PAYLOAD,
+                    ohne SYNC und ohne RS-Parität)
+        timestamp:  Unix-Timestamp (uint32) — derselbe Wert wie im AUTH-Frame
         key:        Gemeinsamer HMAC-Schlüssel (32 Byte empfohlen)
 
     Returns:
-        bytes: 16 Byte HMAC-SHA256 (truncated)
+        bytes: 14 Byte HMAC-SHA256 (truncated, ~112 Bit)
     """
-    msg = frame_body + struct.pack(">H", ref_seq)
-    return hmac.new(key, msg, hashlib.sha256).digest()[:16]
+    msg = frame_body + struct.pack(">I", timestamp)
+    return hmac.new(key, msg, hashlib.sha256).digest()[:14]
 
 
-def verify_auth(frame_body: bytes, ref_seq: int,
-                tag: bytes, key: bytes) -> bool:
+def verify_auth(frame_body: bytes, timestamp: int,
+                tag: bytes, key: bytes,
+                max_age_s: int = 60) -> bool:
     """
-    Prüft einen 16-Byte HMAC-SHA256 Tag.
+    Prüft einen AUTH-Frame: HMAC korrekt UND Timestamp nicht zu alt.
     Verwendet hmac.compare_digest() gegen Timing-Angriffe.
 
+    Args:
+        frame_body:  Frame-Body des Daten-Frames
+        timestamp:   Unix-Timestamp aus dem AUTH-Frame
+        tag:         14-Byte HMAC aus dem AUTH-Frame
+        key:         Gemeinsamer Schlüssel
+        max_age_s:   Maximales Alter des Timestamps (Standard: 60 s)
+
     Returns:
-        True wenn Tag korrekt, False sonst.
+        True wenn Tag korrekt UND Timestamp nicht zu alt, False sonst.
     """
-    expected = auth_tag(frame_body, ref_seq, key)
+    import time
+    if abs(time.time() - timestamp) > max_age_s:
+        return False   # Replay-Schutz (TIMESTAMP zu alt)
+    expected = auth_tag(frame_body, timestamp, key)
     return hmac.compare_digest(expected, tag)
 
 
-def encode_auth(ref_seq: int, ref_type: int,
+def encode_auth(timestamp: int, ref_type: int,
                 key_id: int, hmac_tag: bytes) -> bytes:
     """
     Kodiert den AUTH-Frame Payload (0x50), 20 Byte.
 
-    Aufbau: REF_SEQ(2) | REF_TYPE(1) | KEY_ID(1) | HMAC(16)
+    Aufbau: TIMESTAMP(4) | REF_TYPE(1) | KEY_ID(1) | HMAC(14)
 
     Args:
-        ref_seq:   Sequenznummer des authentifizierten Daten-Frames (0–65535)
+        timestamp: Unix-Timestamp des Daten-Frames (uint32)
         ref_type:  Frame-Typ des Daten-Frames (z.B. 0x01 für WEATHER)
         key_id:    Schlüssel-Identifier (0–255, bilateral vereinbart)
-        hmac_tag:  16-Byte HMAC-SHA256 (Ausgabe von auth_tag())
+        hmac_tag:  14-Byte HMAC-SHA256 (Ausgabe von auth_tag())
 
     Returns:
         bytes: 20 Byte Payload
     """
-    if len(hmac_tag) != 16:
-        raise ValueError(f"hmac_tag muss 16 Byte sein, erhalten: {len(hmac_tag)}")
-    return struct.pack(">HBB", ref_seq, ref_type, key_id) + hmac_tag
+    if len(hmac_tag) != 14:
+        raise ValueError(f"hmac_tag muss 14 Byte sein, erhalten: {len(hmac_tag)}")
+    return struct.pack(">IBB", timestamp, ref_type, key_id) + hmac_tag
 
 
 def decode_auth(payload: bytes) -> dict:
@@ -225,16 +238,16 @@ def decode_auth(payload: bytes) -> dict:
     Dekodiert den AUTH-Frame Payload (0x50).
 
     Returns:
-        dict mit: ref_seq, ref_type, key_id, hmac_tag
+        dict mit: timestamp, ref_type, key_id, hmac_tag
     """
     if len(payload) < 20:
         raise ValueError(f"AUTH-Payload zu kurz: {len(payload)} < 20 Byte")
-    ref_seq, ref_type, key_id = struct.unpack(">HBB", payload[:4])
+    timestamp, ref_type, key_id = struct.unpack(">IBB", payload[:6])
     return {
-        "ref_seq":  ref_seq,
-        "ref_type": ref_type,
-        "key_id":   key_id,
-        "hmac_tag": payload[4:20],
+        "timestamp": timestamp,
+        "ref_type":  ref_type,
+        "key_id":    key_id,
+        "hmac_tag":  payload[6:20],
     }
 
 

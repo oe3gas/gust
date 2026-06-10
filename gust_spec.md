@@ -270,10 +270,10 @@ verifizierbaren AUTH_EX 0x85/0x86 in §3.9). Der AUTH-Frame folgt dem
 Daten-Frame und referenziert ihn über dessen Sequenznummer.
 ```
 Offset  Größe  Inhalt
-  0       2    REF_SEQ    Sequenznummer des authentifizierten Daten-Frames
-  2       1    REF_TYPE   Frame-Typ des Daten-Frames
-  3       1    KEY_ID     Schlüssel-Identifier (welcher gemeinsame Schlüssel)
-  4      16    HMAC       HMAC-SHA256(key, …) truncated auf 16 Byte
+  0       4    TIMESTAMP  Unix-Timestamp des Daten-Frames (uint32, big-endian)
+  4       1    REF_TYPE   Frame-Typ des Daten-Frames (z.B. 0x01 für WEATHER)
+  5       1    KEY_ID     Schlüssel-Identifier (welcher gemeinsame Schlüssel)
+  6      14    HMAC       HMAC-SHA256(key, frame_body + TIMESTAMP), 14 Byte
 ```
 Gesamt: 20 Byte — füllt die GUST-S-Payload exakt aus.
 
@@ -281,19 +281,30 @@ Gesamt: 20 Byte — füllt die GUST-S-Payload exakt aus.
 ```python
 import hashlib, hmac, struct
 
-def auth_tag(frame_body: bytes, ref_seq: int, key: bytes) -> bytes:
-    """HMAC-SHA256 über Daten-Frame-Body + REF_SEQ, truncated auf 16 Byte."""
-    msg = frame_body + struct.pack(">H", ref_seq)
-    return hmac.new(key, msg, hashlib.sha256).digest()[:16]
+def auth_tag(frame_body: bytes, timestamp: int, key: bytes) -> bytes:
+    """HMAC-SHA256 über Frame-Body + TIMESTAMP, truncated auf 14 Byte."""
+    import struct
+    msg = frame_body + struct.pack(">I", timestamp)
+    return hmac.new(key, msg, hashlib.sha256).digest()[:14]
 
-def verify_auth(frame_body: bytes, ref_seq: int, tag: bytes, key: bytes) -> bool:
-    return hmac.compare_digest(tag, auth_tag(frame_body, ref_seq, key))
+def verify_auth(frame_body: bytes, timestamp: int,
+                tag: bytes, key: bytes, max_age_s: int = 60) -> bool:
+    import time
+    if abs(time.time() - timestamp) > max_age_s:
+        return False   # Replay-Schutz (TIMESTAMP zu alt)
+    return hmac.compare_digest(tag, auth_tag(frame_body, timestamp, key))
 ```
 
-**Replay-Schutz:** Kein eigenes Timestamp-Feld (kein Platz in 20 Byte).
-Der Empfänger akzeptiert einen AUTH-Frame nur, wenn der referenzierte
-Daten-Frame (REF_SEQ) noch in seinem 60-s-Empfangspuffer liegt — siehe
-gust_knowledge.md §28 (60-s-Fenster, Sequenznummer statt Frame-Hash).
+**Replay-Schutz:** Der TIMESTAMP im AUTH-Frame dient gleichzeitig als
+Referenz und als Replay-Schutz. Der Empfänger prüft:
+  `abs(time.time() - TIMESTAMP) <= 60 s`
+Frames älter als 60 s werden abgewiesen, auch wenn der HMAC stimmt.
+TX und RX müssen auf GPS/NTP synchronisiert sein (Toleranz: ±30 s).
+
+Puffer-Schlüssel am Empfänger: Rufzeichen + REF_TYPE
+Der Empfänger puffert den letzten Frame jedes Typs pro Station
+(60-s-Fenster). Für TEXT-Fragmente: der zuletzt empfangene Daten-Frame.
+Siehe gust_knowledge.md §28.
 
 **Sicherheitsniveau:** ~128 Bit gegen Fälschung (HMAC-16). Nur der
 Schlüsselpartner kann verifizieren — bewusst, für geschlossene Gruppen.

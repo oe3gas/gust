@@ -1480,13 +1480,26 @@ Kompromiss zwischen:
 
 60 s entspricht 12 × dem TX-Zyklus bei 300-s-Intervall — genug Puffer.
 
-### Warum Sequenznummer statt Frame-Hash als Referenz?
+### Warum Timestamp statt Sequenznummer?
 
-Ein Hash des Daten-Frames (z.B. CRC32 des Bodys) wäre eindeutiger —
-aber 4 Byte Hash kostet Payload. Die Sequenznummer ist 2 Byte und
-reicht für den Anwendungsfall: der Empfänger hat den Frame noch im
-60-s-Puffer, eine Kollision zweier SEQ-Nummern im gleichen 60-s-Fenster
-ist bei normalen GUST-Senderate (~1 Frame/5 min) praktisch ausgeschlossen.
+Ein REF_SEQ-Feld würde eine Sequenznummer im Daten-Frame-Header
+voraussetzen — die GUST-S v0.5 nicht hat (kein seq-Feld in
+TYPE|CHANNEL|FROM|PAYLOAD|CRC). Eine Sequenznummer im CHANNEL-Byte
+(Bits 4-6, Werteraum 0-7) wäre für Wetter und Position ausreichend,
+aber für TEXT-QSO mit Fragmentierung problematisch: TEXT-Frames
+haben bereits eine eigene Sequenznummer im Payload (für Reassembly).
+Zwei verschiedene Sequenznummern würden verwirren.
+
+Der TIMESTAMP löst das Problem universell:
+- Kein neues Feld im Daten-Frame-Header nötig
+- Funktioniert für alle Frame-Typen gleichermassen
+- Dient gleichzeitig als Referenz UND Replay-Schutz
+- Voraussetzung: GPS/NTP-Synchronisation (Toleranz ±30 s)
+
+Puffer-Schlüssel: Rufzeichen + REF_TYPE (letzter Frame dieses Typs).
+
+(Damit ist auch der frühere P8-11-RX-Blocker — fehlendes seq-Feld —
+gegenstandslos; die RX-Integration braucht kein Frame-Sequencing mehr.)
 
 ### Ergänzung: Wann HMAC, wann ECDSA?
 
