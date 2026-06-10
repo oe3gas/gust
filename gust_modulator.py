@@ -428,6 +428,64 @@ def llr_to_symbol(llr: np.ndarray) -> int:
     return int(np.argmax(llr))
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Ton-LLR → Bit-LLR (P8-13 → LDPC-Brücke)
+#
+# _fft_detect_symbol_soft() liefert pro MFSK-8-Symbol 8 Ton-LLR. LDPC
+# (gust_ldpc._decode_block) braucht per-Bit-LLR. Jedes Symbol kodiert 3 Bit:
+# Bit k = (s >> k) & 1. Max-Log-Approximation:
+#   bit_llr[k] = max(tone_llr[s] | bit_k(s)=0) - max(tone_llr[s] | bit_k(s)=1)
+# Positiv → Bit k wahrscheinlich 0, negativ → Bit k wahrscheinlich 1.
+#
+# Vorberechnete Symbol-Indexmengen je Bit (k=0..2):
+# ─────────────────────────────────────────────────────────────────────
+_MFSK8_BIT0 = [
+    np.array([s for s in range(8) if ((s >> 0) & 1) == 0], dtype=int),
+    np.array([s for s in range(8) if ((s >> 1) & 1) == 0], dtype=int),
+    np.array([s for s in range(8) if ((s >> 2) & 1) == 0], dtype=int),
+]
+_MFSK8_BIT1 = [
+    np.array([s for s in range(8) if ((s >> 0) & 1) == 1], dtype=int),
+    np.array([s for s in range(8) if ((s >> 1) & 1) == 1], dtype=int),
+    np.array([s for s in range(8) if ((s >> 2) & 1) == 1], dtype=int),
+]
+
+
+def symbol_llr_to_bit_llr(tone_llr: np.ndarray) -> np.ndarray:
+    """
+    Wandelt einen Ton-LLR-Vektor (shape (8,), aus _fft_detect_symbol_soft())
+    in 3 Bit-LLR (shape (3,)) um — Max-Log-Approximation.
+
+    Returns:
+        np.ndarray shape (3,) float64 — Bit-LLR [bit0, bit1, bit2].
+        Positiv → Bit wahrscheinlich 0, negativ → Bit wahrscheinlich 1.
+    """
+    bit_llr = np.empty(3, dtype=np.float64)
+    for k in range(3):
+        bit_llr[k] = np.max(tone_llr[_MFSK8_BIT0[k]]) \
+                   - np.max(tone_llr[_MFSK8_BIT1[k]])
+    return bit_llr
+
+
+def symbols_to_bit_llr_array(tone_llr_list) -> np.ndarray:
+    """
+    Wendet symbol_llr_to_bit_llr() auf jedes Ton-LLR der Liste an und gibt
+    ein flaches Bit-LLR-Array zurück.
+
+    Args:
+        tone_llr_list: Sequenz von Ton-LLR-Vektoren (je shape (8,)), ein
+                       Eintrag pro MFSK-8-Symbol.
+
+    Returns:
+        np.ndarray shape (N*3,) float64 — verkettete Bit-LLR in Symbolreihenfolge:
+        [bit0_s0, bit1_s0, bit2_s0, bit0_s1, bit1_s1, bit2_s1, ...].
+        Für die spätere LDPC-Block-Aufteilung (je N_BITS/3 Symbole pro Block).
+    """
+    if len(tone_llr_list) == 0:
+        return np.empty(0, dtype=np.float64)
+    return np.concatenate([symbol_llr_to_bit_llr(t) for t in tone_llr_list])
+
+
 def _find_sync_candidates(audio: np.ndarray) -> list:
     """
     Energie-basierte SYNC-Kandidatensuche — alle 8 Kanäle (v0.5), vollvektorisiert.
@@ -1134,6 +1192,36 @@ def _run_tests():
         errors.append("Soft-Output: argmax(LLR) != Hard-Symbol")
     if not pos_llr_ok:
         errors.append("Soft-Output: LLR des richtigen Tons nicht > 0")
+
+    # ── Test 3d: Ton-LLR → Bit-LLR (P8-13 → LDPC-Brücke) ──────────
+    print("\n── Test 3d: Ton-LLR → Bit-LLR (Max-Log-Approximation) ──")
+    shape_ok  = True
+    sign_ok   = True
+    tone_llrs = []
+    for s in range(N_TONES):
+        tllr = _fft_detect_symbol_soft(
+            audio_8sym[s*SAMPLES_PER_SYM:(s+1)*SAMPLES_PER_SYM], tf)
+        tone_llrs.append(tllr)
+        bllr = symbol_llr_to_bit_llr(tllr)
+        if bllr.shape != (3,):
+            shape_ok = False
+        for k in range(3):
+            bit = (s >> k) & 1
+            if bit == 0 and not (bllr[k] > 0):
+                sign_ok = False
+            if bit == 1 and not (bllr[k] < 0):
+                sign_ok = False
+    flat   = symbols_to_bit_llr_array(tone_llrs)
+    arr_ok = (flat.shape == (N_TONES * 3,))
+    print(f"  shape (3,) für alle 8 Symbole:                   {'✓' if shape_ok else '✗'}")
+    print(f"  Vorzeichen korrekt (bit=0 → +, bit=1 → −):       {'✓' if sign_ok else '✗'}")
+    print(f"  symbols_to_bit_llr_array shape == (24,):         {'✓' if arr_ok else '✗'}  ({flat.shape[0]})")
+    if not shape_ok:
+        errors.append("Bit-LLR: falsche shape")
+    if not sign_ok:
+        errors.append("Bit-LLR: Vorzeichen falsch")
+    if not arr_ok:
+        errors.append("Bit-LLR: symbols_to_bit_llr_array shape falsch")
 
     # ── Test 3b: Raised Cosine Windowing (Phase 3) ────────────────
     print("\n── Test 3b: Raised Cosine Windowing — Spektralvergleich ──")
