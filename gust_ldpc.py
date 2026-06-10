@@ -6,7 +6,7 @@ Low-Density Parity-Check Code für GUST — experimentelles FEC-Backend.
 
 Konfiguration:
   Code-Rate:    3/4  (Overhead +33 % relativ zur Payload)
-  Blockgröße:   256 Bit (32 Byte) pro LDPC-Codeword  (k=192 Daten, m=64 Parität)
+  Blockgröße:   255 Bit (= 3 × 85 MFSK-8 Symbole) pro Codeword  (k=191 Daten, m=64 Parität)
   Konstruktion: systematisch  H = [P | I_m],  P spärlich (Spaltengewicht 3)
   Dekodierung:  Soft-Decision-BP (python-ldpc, LLR aus P8-13) + exaktes GF(2)-Syndrom-Decoding
   Bibliothek:   python-ldpc (optional, Soft-Decision) — sonst reines numpy
@@ -15,18 +15,20 @@ Vorteile gegenüber RS(255,223):
   - Deutlich kürzere Frames: Rate 3/4 → weniger Overhead als RS bei kleinen
     Payloads (RS hat IMMER +32 B, LDPC nur ~+1/3 der Payload).
 
-WICHTIG — Blocklänge n=256 (Sweetspot, Blocklängen-Evaluation):
-  n=256 mit m=64 Prüfgleichungen ist der per Evaluation ermittelte Sweetspot:
-  groß genug, dass Belief-Propagation einen echten Coding-Gain liefert, aber
-  noch kompakt genug für GUST-Frames. **n=256 Sweetspot, Soft-Decision (LLR aus
-  dem Demodulator, P8-13) für ~2 dB Gewinn erforderlich** — der reine
-  Hard-Decision-Pfad korrigiert weiterhin garantiert genau 1 Bitfehler pro
-  256-Bit-Block (Mindestdistanz ≥ 3 durch paarweise verschiedene, von 0
-  verschiedene Spalten). Ohne Soft-Input fällt LDPC gegenüber RS zurück; mit
-  Soft-Input + n≥256 zieht es vorbei (siehe gust_backlog.md, LDPC-Blocklängen-Eval).
+WICHTIG — Blocklänge n=255 (≈256-Sweetspot, MFSK-8-symbolaligned):
+  n=255 mit m=64 Prüfgleichungen liegt am per Evaluation ermittelten Sweetspot
+  (~256): groß genug, dass Belief-Propagation einen echten Coding-Gain liefert,
+  aber noch kompakt genug für GUST-Frames. 255 statt 256, weil 255 = 3 × 85 ein
+  Vielfaches von 3 Bit/MFSK-8-Symbol ist → 85 Symbole/Block ohne Padding.
+  **n≈256 Sweetspot, Soft-Decision (LLR aus dem Demodulator, P8-13) für ~2 dB
+  Gewinn erforderlich** — der reine Hard-Decision-Pfad korrigiert weiterhin
+  garantiert genau 1 Bitfehler pro 255-Bit-Block (Mindestdistanz ≥ 3 durch
+  paarweise verschiedene, von 0 verschiedene Spalten). Ohne Soft-Input fällt LDPC
+  gegenüber RS zurück; mit Soft-Input + n≈256 zieht es vorbei (siehe
+  gust_backlog.md, LDPC-Blocklängen-Eval).
 
 Einschränkungen:
-  - Hard-Decision: nur 1 Bitfehler je 256-Bit-Block garantiert korrigierbar.
+  - Hard-Decision: nur 1 Bitfehler je 255-Bit-Block garantiert korrigierbar.
     Voller Gewinn nur mit Soft-Decision (LLR via decode(..., llr_blocks=...)).
   - Burst-Fehler: kein Vorteil gegenüber RS.
   - Protokollbruch: TX+RX müssen dasselbe Backend (und dieselbe Matrix-Seed)
@@ -132,9 +134,9 @@ class LDPCFecBackend:
     encode() fügt Paritätsbits hinzu, decode() korrigiert Fehler.
 
     Block-Struktur (systematisch, H = [P | I_m]):
-      BLOCK_BITS    = 192 Bit Daten     (n * rate = 256 * 0.75)
-      PARITY_BITS   = 64 Bit Parität    (n * (1-rate) = 256 * 0.25)
-      CODEWORD_BITS = 256 Bit gesamt    (n) → [d_0..d_191 | p_0..p_63]
+      BLOCK_BITS    = 191 Bit Daten     (23,875 B — aufgerundet 24 B)
+      PARITY_BITS   = 64 Bit Parität    (n * (1-rate) = round(255 * 0.25))
+      CODEWORD_BITS = 255 Bit gesamt    (= 3 × 85 MFSK-8 Symbole) → [d_0..d_190 | p_0..p_63]
 
     Codewort-Eigenschaft: H · c = 0 (mod 2) per Konstruktion
     (p = P · d mod 2) → Syndrom eines fehlerfreien Codeworts ist 0.
@@ -143,8 +145,9 @@ class LDPCFecBackend:
     name = "ldpc"
 
     # LDPC-Parameter
-    N_BITS    = 256     # Codelänge in Bit (Sweetspot, Blocklängen-Evaluation)
-    RATE      = 0.75    # Code-Rate → k=192 Daten, m=64 Parität
+    N_BITS    = 255     # 3 × 85 Symbole/Block — kein Padding im MFSK-8 RX-Pfad nötig
+                        # k = 191 Daten-Bit (23,875 B), m = 64 Parität-Bit
+    RATE      = 0.75    # nominelle Code-Rate; echte Rate 191/255 = 0,749
     MAX_ITER  = 50      # Bit-Flipping / BP Max-Iterationen
     SEED      = 42      # Reproduzierbare Matrix (TX und RX MÜSSEN gleich sein)
 
@@ -285,7 +288,7 @@ class LDPCFecBackend:
             raise LDPCDecodeError(
                 f"Decoding nicht konvergiert nach {self.MAX_ITER} Iterationen "
                 f"(Syndrom-Gewicht={int(((self._H @ flip) % 2).sum())}) — "
-                f"vermutlich > 1 Bitfehler im 256-Bit-Block"
+                f"vermutlich > 1 Bitfehler im 255-Bit-Block"
             )
         return flip[:self.k_bits]
 
