@@ -667,6 +667,104 @@ HackRF-TX-Offset: konstant, vom Decoder automatisch kompensiert.
 
 ---
 
+---
+
+## Modul 11 — MeshCore Bridge Tests (MC)
+
+### T-MC-01 Companion Verbindung + Node-Info (IT) ✅
+**Datum:** Juni 2026
+**Infrastruktur:** Heltec V4 Companion, COM18, Firmware v1.16.0-07a3ca9
+
+**Methode:** `py meshcore_smoketest.py --port COM18 --timeout 30`
+
+**Ergebnis:**
+- Verbindung: ✅
+- Node-Name: `AT-HL-OE3GAS-🦚` ✅
+- Rufzeichen-Extraktion: `OE3GAS` ✅
+- pubkey_prefix: `332f9faf62bd` ✅
+- Kanäle: 6 (Public, at-hl, hollabrunn, noe, test, vienna) ✅
+- CHANNEL_MSG_RECV: nicht getestet (USB/BLE-Einschränkung) ⏭
+
+**Hinweis:** CHANNEL_MSG_RECV-Verifikation erfolgt in T-MC-03.
+
+---
+
+### T-MC-02 Bridge Standalone-Betrieb (IT) ✅
+**Datum:** Juni 2026
+**Infrastruktur:** Companion COM18, Repeater COM19
+
+**Methode:** `py gust_meshcore_bridge.py --verbose`
+
+**Ergebnis:**
+- Verbindung + Kanal-Load: ✅
+- Auto-Message-Fetching: ✅
+- is_connected als Property (nicht Methode): ✅ (BUG behoben)
+- Ctrl+C sauberes Shutdown: ✅
+
+---
+
+### T-MC-03 Ende-zu-Ende: MeshCore → RX_FRAME → WebGUI (IT) ✅
+**Datum:** Juni 2026
+**Infrastruktur:** Companion COM18, Repeater COM19, OE3TEC als Testpartner
+
+**Methode:**
+1. `py gust.py --sim daemon` (gateway.json: meshcore.enabled=true)
+2. OE3TEC sendet Textnachricht auf #test
+3. Prüfung im WebGUI Monitor-Tab
+
+**Ergebnis:**
+- Bridge-Start im Daemon: ✅ "MeshCore Bridge gestartet | Companion: COM18"
+- CHANNEL_MSG_RECV empfangen: ✅ (von OE3TEC, ch=test)
+- RX_FRAME-Events auf EventBus: ✅ (4 Fragmente)
+- Frames im WebGUI sichtbar: ✅
+- TEXT ✓ Sammelzeile mit ▶/▼: ✅
+- Detail-Modal: Von, An, Kanal, Volltext, Quelle "MeshCore Bridge": ✅
+- MC-Badge [MC] lila: ✅
+
+---
+
+### T-MC-04 UTF-8 Fragment-Roundtrip (UT) ✅
+**Datum:** Juni 2026
+**Infrastruktur:** Keine Hardware
+
+**Methode:** Inline-Test via `py -c "from gust_meshcore_bridge import fragment_text..."`
+
+**Testfälle:**
+- Emoji 🧸 in "AT-MA-H1🧸: Test vom Brenntenriegel" → 4 Fragmente, Emoji ganz: ✅
+- ASCII-Text → identisch reassembliert: ✅
+- Kyrillisch/Griechisch (Μεš⚡Bοt): ✅
+- Jedes Fragment ≤ 14 Byte Text: ✅
+
+**Befund:** BUG-MC-03 behoben. chunk_size=14 Bytes (nicht Zeichen),
+UTF-8-Zeichengrenzen werden respektiert.
+
+---
+
+### T-MC-05 MC-Badge + Status-Badge WebGUI (IT) ✅
+**Datum:** Juni 2026
+**Infrastruktur:** Browser, Daemon mit MeshCore-Bridge
+
+**Methode:** Visueller Browser-Test
+
+**Ergebnis:**
+- Header-Badge [MC ●] grün wenn Bridge connected: ✅
+- Header-Badge [MC ●] unsichtbar wenn enabled=false: ✅
+- Lila MC-Badge auf MeshCore-Frames im Feed: ✅
+- Lila Randbalken auf MeshCore-Frame-Zeilen: ✅
+
+---
+
+### Offene Tests
+
+| ID | Titel | Voraussetzung |
+|---|---|---|
+| T-MC-06 | CHANNEL_MSG_RECV bei BLE-Companion | Gerät mit companion_radio_ble |
+| T-MC-07 | TX-Pfad GUST → MeshCore | P6-20 implementiert |
+| T-MC-08 | Repeater-Steuerung via CLI | P6-22 dokumentiert |
+| T-MC-09 | Auto-Reconnect nach Verbindungsabbruch | Companion kurz trennen |
+
+---
+
 *Dokument: gust_testplan.md*
 *Autor: OE3GAS*
 *Stand: Juni 2026 — T-10.5 Live-Decoder VAC-Stresstest + Deep-Decoder (86–90 % PASS) · Modul 12 SDR-Profile-System (T-12.1–T-12.5); davor: Phase 7 Empfänger-Robustheit + SNR-Baseline (T-10.2); Modul 9 Connector Layer / MQTT (T-9.1–T-9.10): 3-Ebenen-Teststrategie (offline / öffentlicher Broker / amqtt lokal)*

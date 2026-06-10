@@ -74,6 +74,10 @@ Statt einer einfachen MQTT-Brücke wird ein vollständiger Connector Layer
 implementiert, der semantisches Bridging für beliebige externe Protokolle
 ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 
+MeshCore-Anbindung (P6-17–P6-19) erfolgt via USB-Serial-Bridge + lokalem MQTT-Broker
+als zentrale Drehscheibe — kein WiFi-Companion erforderlich (kein fertiges Binary für
+Heltec V4, Stand Juni 2026). Siehe gust_knowledge.md §31.
+
 | ID | Prio | Typ | Titel | Beschreibung | Status |
 |---|---|---|---|---|---|
 | P6-01 | 🟡 | feature | `gust_mqtt.py` — MQTTConnector Outbound | RX_FRAME Events → SemanticMapping.map_outbound() → MQTT publish; ersetzt alte MQTTBridge-Outbound-Logik | 🔲 |
@@ -107,6 +111,31 @@ ermöglicht. Siehe §11 im Connector-Konzept-Dokument.
 | P6-14 | feature | `WebhookConnector` | aiohttp POST-Handler, kein Broker nötig |
 | P6-15 | feature | `MeshtasticConnector` | LoRa-Mesh-Bridge (siehe P7-09); from_call aus Node-ID |
 | P6-16 | feature | `APRSConnector` | APRS-IS oder TNC; `position_from_aprs_json` bereits in gust_transforms.py |
+
+### MeshCore-Anbindung (USB-Serial + MQTT-Bridge)
+
+| ID | Prio | Typ | Titel | Beschreibung | Status |
+|---|---|---|---|---|---|
+| P6-17 | 🟢 | feature | MeshCore↔GUST Gateway | Bidirektionale Bridge zwischen MeshCore LoRa-Mesh und GUST HF-Backbone. Architektur: `gust_meshcore_bridge.py` (Serial→MQTT) + `MeshCoreConnector` in `gust_connector.py` (MQTT→Event-Bus). Transforms: `text_from_meshcore()`, `position_from_meshcore()`, `meshcore_from_text()`. MQTT als zentrale Drehscheibe — alle weiteren Connector-Anbindungen nutzen dieselbe Infrastruktur. Voraussetzung: P6-18 (mosquitto), P6-19 (Bridge), P6-06 (GustConnector ABC), P6-01/02 (MQTTConnector). | 🔲 |
+| P6-18 | 🟢 | feature | MQTT-Broker Setup (mosquitto) | mosquitto als zentrale MQTT-Drehscheibe auf GUST-Gateway (RPi oder PC). Installation, Konfiguration, Autostart (systemd). `gateway.json`-Erweiterung: `"mqtt": {"host": "127.0.0.1", "port": 1883}`. Basis für alle Connector-Anbindungen (MeshCore, Wetterstation, APRS, Meshtastic). Testbar mit `mosquitto_pub`/`mosquitto_sub`. | 🔲 |
+| P6-19 | 🟢 | feature | `gust_meshcore_bridge.py` | Eigenständiges Bridge-Skript: liest MeshCore-Companion-Node per USB-Serial (`/dev/ttyUSB0` bzw. `COMx`, Bibliothek: `meshcore` + `pyserial`), parsed eingehende Nachrichten (Text, Position, Telemetry) und publiziert auf MQTT-Topics (`meshcore/rx/text`, `meshcore/rx/position`). Abonniert `meshcore/tx/text` und schreibt ausgehende Nachrichten per Serial auf den Node. Konfigurationsblock in `gateway.json`: `"meshcore_bridge": {"port": "/dev/ttyUSB0", "baudrate": 115200, "broker_host": "127.0.0.1", "broker_port": 1883}`. Autostart als systemd-Service auf RPi. Abhängigkeit: P6-18. **Umgesetzt Juni 2026:** Standalone-Modus (StandaloneEventBus) + Daemon-Integration (P6-19b: meshcore-Task in `cmd_daemon`, gesteuert via `gateway.json` `"meshcore.enabled"`). WebGUI-Integration: MC-Badge `[MC]` lila im Feed, STATUS-Badge im Header, TEXT-Fragment-Collapsing mit ▶/▼, Detail-Modal. Konfiguration: `meshcore.json`. Hinweis: tatsächlich EventBus-direkt statt MQTT realisiert (MQTT-Pfad → P6-20). | ✅ |
+| P6-21 | 🟡 | feature | `meshcore_smoketest.py` — Companion Smoke-Test | Verbindung COM18, self_info, get_channel(i)-Loop, CHANNEL_MSG_RECV. PASS Juni 2026. | ✅ |
+
+### MeshCore — Offene Punkte (aus Session Juni 2026)
+
+| ID | Prio | Typ | Titel | Beschreibung | Status |
+|---|---|---|---|---|---|
+| P6-20 | 🟢 | feature | MeshCore TX-Pfad: GUST → MQTT → MeshCore | GUST RX_FRAME (TEXT) → MQTTConnector Outbound → MQTT: `meshcore/tx/text` → `gust_meshcore_bridge.py` → USB-Serial → Heltec V4 → LoRa-Netz. Voraussetzung: P6-19 ✅, P6-01 (MQTTConnector Outbound). Hinweis: zwei `fragment_text`-Versionen (`gust_frame.py` + Bridge-Fallback) — beide bei Änderungen synchron halten. | 🔲 |
+| P6-22 | 🟢 | feature | Repeater-Steuerung via Text-CLI | Zweiter Heltec V4 (COM19) läuft als Repeater-Firmware. Steuerung nur via `meshcore-cli -r -s COM19` (Text-CLI). Nicht über meshcore-Python-Library ansprechbar. Dokumentation der CLI-Befehle in `gust_knowledge.md`. | 🔲 |
+
+### MeshCore — Bugs (aus Session Juni 2026)
+
+| ID | Typ | Beschreibung | Status |
+|---|---|---|---|
+| BUG-MC-01 | bug | `self_info` hat keinen `ver`-Key — Firmware-Version aus `send_device_query().payload['ver']` lesen, nicht aus self_info | 🔲 |
+| BUG-MC-02 | bug | `get_channel(i)`-Loop bricht nicht bei leeren Slots ab — Abbruch wenn `channel_name == ""` implementieren | 🔲 |
+| BUG-MC-03 | bug | UTF-8-Schnitt mitten in Multibyte-Zeichen (Emoji) — **BEHOBEN** in `gust_meshcore_bridge.py` (Juni 2026). `fragment_text()` in `gust_frame.py` noch nicht gefixt (chunk_size=14 Zeichen statt Bytes). | ✅ Bridge-Fix |
+| BUG-MC-04 | bug | Channel-Messages haben kein `pubkey_prefix` im Wire-Format — Sender-Auflösung basiert auf Kontaktliste. Bei unbekanntem Sender: Fallback auf `unknown_sender_policy`. Kein Bug, dokumentiertes MeshCore-Verhalten. | ℹ️ Won't fix |
 
 ---
 

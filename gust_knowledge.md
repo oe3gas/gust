@@ -774,6 +774,8 @@ Home Assistant: Auto-Discovery via `homeassistant/sensor/gust_*/config`
 | `gust_decode.py`       | Standalone Decoder, Breitband-Scan CLI    | 0.2.0   |
 | `gust_tx_test.py`         | TX-Mess-Skript (--channels, --gain-sequence)| 1.1.0 |
 | `gust.py`              | CLI-Einstiegspunkt                        | 0.1.1   |
+| `gust_meshcore_bridge.py` | MeshCore USB-Serial Bridge → RX_FRAME EventBus (P6-19) | 1.0.0 |
+| `meshcore_smoketest.py`   | MeshCore Companion Smoke-Test (P6-21)     | 1.0.0   |
 | `requirements.txt`        | Python-Abhängigkeiten                     | —       |
 
 ### Getestete Funktionen
@@ -1584,6 +1586,143 @@ unbekannten Typ und verwirft den Frame (CRC-Fehler tut den Rest).
 
 ---
 
+## 30. MQTT als zentrale Drehscheibe (Architektur-Entscheidung, Juni 2026)
+
+**Prinzip:** Alle externen Datenquellen (MeshCore, Wetterstation, APRS, Meshtastic,
+künftige Quellen) kommunizieren ausschließlich über MQTT mit GUST. Kein Connector hat
+direkten Zugriff auf Hardware — das ist Aufgabe der jeweiligen Bridge-Skripte.
+
+**Warum nicht direkt Serial→GUST:** Eine direkte Serial-Anbindung wäre eine
+Insellösung. MQTT als Zwischenschicht ermöglicht:
+- Mehrere Quellen gleichzeitig ohne GUST-Codeänderung
+- Einfaches Hinzufügen neuer Quellen (neues Bridge-Skript + neues Topic)
+- Debugging via `mosquitto_sub -v -t '#'`
+- Spätere Verteilung auf mehrere Hosts
+
+**Komponenten-Hierarchie:**
+```
+Hardware/Quelle
+    → Bridge-Skript (Serial/HTTP/UDP → MQTT publish)
+    → mosquitto (localhost:1883)
+    → GustConnector (MQTT subscribe → Event-Bus)
+    → GUST Core → HF TX
+```
+
+**Rückrichtung (HF → extern):**
+```
+HF RX → RX_FRAME Event
+    → GustConnector (Event-Bus → MQTT publish)
+    → mosquitto
+    → Bridge-Skript (MQTT subscribe → Serial/HTTP/UDP)
+    → Hardware/Ziel
+```
+
+**Referenz:** P6-17, P6-18, P6-19, gust_connector_konzept.md §2
+
+---
+
+## 31. MeshCore-Anbindung via USB-Serial + MQTT-Bridge (Juni 2026)
+
+**Hintergrund:** Für den Heltec WiFi LoRa 32 V4 existiert kein offizielles
+WiFi/TCP-Companion-Binary im MeshCore-Flasher (Stand Juni 2026 — v1.16.0).
+Nur `companion_radio_ble` und `companion_radio_usb` sind verfügbar.
+Eine WiFi-direkte MQTT-Verbindung vom Node zum Broker ist daher nicht möglich.
+
+**Gewählte Architektur:** USB-Serial + lokale Bridge
+
+```
+MeshCore-Node (Heltec V4, Firmware: companion_radio_usb)
+    → USB-Kabel (/dev/ttyUSB0 oder COMx)
+    → gust_meshcore_bridge.py
+        liest: meshcore-Bibliothek (pypi: meshcore≥2.3.7)
+        publiziert: meshcore/rx/text, meshcore/rx/position
+        abonniert: meshcore/tx/text
+    → mosquitto (localhost:1883)
+    → MeshCoreConnector (gust_connector.py)
+    → GUST Event-Bus → HF TX
+```
+
+**Getestetes Setup (Juni 2026):**
+- Hardware: Heltec WiFi LoRa 32 V4, EU868, 869.618 MHz / BW 62.5 / SF8 / CR8
+- Firmware: MeshCore v1.16.0-07a3ca9, Rolle: companion_radio_usb
+- Konfiguration: meshcore-cli v1.5.7 via `meshcore-cli -s COMx`
+- Kanäle: Public, #at-hl, #hollabrunn, #noe, #test, #vienna
+- Node-Name: AT-HL-OE3GAS-🦚
+
+**meshcore-cli Kurzreferenz (Windows):**
+```powershell
+# Installation
+pip install meshcore-cli
+
+# Node-Info
+meshcore-cli -s COM18 infos
+
+# Kanäle anzeigen
+meshcore-cli -s COM18 get_channels
+
+# Kanal setzen
+meshcore-cli -s COM18 set_channel 0 "Public" "KEY"
+
+# Parameter setzen
+meshcore-cli -s COM18 set name "AT-HL-OE3GAS"
+meshcore-cli -s COM18 set radio "869.618,62.5,8,8"
+meshcore-cli -s COM18 set tx 20
+
+# Hilfe
+meshcore-cli -s COM18 set help
+```
+
+**Bekannte Einschränkung:** `config.meshcore.io` (Web-UI) funktioniert nur
+mit Repeater/Room-Server-Firmware, nicht mit Companion-Firmware —
+Command-timeout-Fehler ist erwartetes Verhalten.
+
+**Referenz:** P6-17, P6-18, P6-19, gust_knowledge.md §30
+
+**Verifizierte meshcore-Python-Library API (v≥2.3, Juni 2026):**
+
+| Was | Wie | Anmerkung |
+|---|---|---|
+| Node-Name | `mc.self_info['name']` | Wird ~2s nach Verbindung befüllt |
+| Public Key | `mc.self_info['public_key']` | 64-Zeichen Hex; `[:12]` = pubkey_prefix |
+| Firmware | `send_device_query().payload['ver']` | Nicht in self_info! (BUG-MC-01) |
+| Radio-Parameter | `mc.self_info['radio_freq/bw/sf/cr']` | Direkt lesbar |
+| Kanal-Info | `mc.commands.get_channel(i)` | Einzelabfrage; leere Slots haben `channel_name==""` |
+| `get_channels()` | **EXISTIERT NICHT** | Immer `get_channel(i)`-Loop verwenden |
+| Message-Empfang | `mc.start_auto_message_fetching()` + `mc.subscribe(EventType.CHANNEL_MSG_RECV, cb)` | Background-Polling |
+| `is_connected` | Property, nicht Methode | `if not mc.is_connected:` — kein `()` |
+| Sender-Identität | **Kein pubkey_prefix im Wire-Format** | Nur über Kontaktliste auflösbar |
+
+**Zwei fragment_text-Versionen — synchron halten:**
+- `gust_frame.fragment_text(text, dest_call, seq_nr, chunk_size=14)` — produktiv
+- `gust_meshcore_bridge.fragment_text(text, chunk_size=14)` — Bridge-Fallback, andere Signatur
+- Beide wurden für BUG-MC-03 (UTF-8-Zeichengrenze) gefixt
+- Bei Änderungen immer beide Versionen prüfen
+
+**UTF-8 in GUST-Frames (BUG-MC-03, behoben Juni 2026):**
+Frame 0x40 Payload-Limit: 14 Byte Text. chunk_size=14 bezieht sich auf **Bytes**,
+nicht auf Zeichen. Multibyte-Zeichen (Emoji 4B, Kyrillisch 2B, Griechisch 2B) müssen
+auf Zeichengrenzen geschnitten werden. Algorithmus: zurückgehen bis
+`(encoded[end] & 0xC0) != 0x80` (kein Continuation-Byte).
+
+**MeshCore-Kanal-Namenskonvention:**
+Node-Namen folgen dem Muster `REGION-ORT-RUFZEICHEN-EMOJI`, z.B. `AT-HL-OE3GAS-🦚`.
+Rufzeichen-Extraktion via Regex: `re.search(r'([A-Z]{1,3}[0-9][A-Z]{1,4})', name.upper())`.
+
+**USB/BLE-Firmware-Einschränkung:**
+`companion_radio_usb` und `companion_radio_ble` sind separate Builds.
+Kein gleichzeitiger USB-Python-Zugriff + BLE-App-Verbindung möglich.
+Für Tests: entweder USB-Bridge ODER App, nicht beides gleichzeitig.
+
+**Repeater (zweiter Heltec V4, COM19):**
+Repeater-Firmware ist nicht über meshcore-Python-Library ansprechbar.
+Nur Text-CLI via `meshcore-cli -r -s COM19`. Konfiguration:
+```powershell
+meshcore-cli -r -s COM19    # Verbinden
+# Dann interaktive Befehle: set radio, set name, etc.
+```
+
+---
+
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*
+*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*
