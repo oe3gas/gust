@@ -1444,6 +1444,9 @@ Voraussetzungen für eine sinnvolle LDPC-Integration:
 > **Status:** Entwurf — AUTH-Frames sind spezifiziert, aber nicht implementiert.
 > 0x50 AUTH (GUST-S, HMAC): §3.4/§3.5, P8-11. 0x85+0x86 AUTH_EX (GUST-X, ECDSA):
 > §3.9, P8-12. Implementierung nicht vor v1.0.
+> Crypto-Kern implementiert (Juni 2026): encode_auth(), decode_auth(),
+> auth_tag(), verify_auth() in gust_frame.py. RX-Integration blockiert
+> durch fehlendes Frame-Sequencing (kein seq-Feld in v0.5) — siehe P8-11/P8-15.
 
 ### Warum zwei verschiedene AUTH-Verfahren?
 

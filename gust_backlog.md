@@ -204,9 +204,10 @@ Heltec V4, Stand Juni 2026). Siehe gust_knowledge.md §31.
 | P8-07 | 🟡 | feature | Docker-Deployment | `Dockerfile`, `docker-compose.yml`, `docker-entrypoint.sh`, `.dockerignore` im Repo-Root. Simulator-Modus out-of-the-box, Rufzeichen per `GUST_CALLSIGN`-Umgebungsvariable. Healthcheck auf `/api/status`. | ✅ |
 | P8-08 | 🟢 | docs | Docker RPi Audio-Passthrough | Anleitung für `--device /dev/snd` und USB-Audio in Docker auf Raspberry Pi ergänzen (für Hardware-TX im Container-Betrieb). | 🔲 |
 | P8-10 | 🟢 | research | FEC-Backend-Abstraktion + LDPC-Evaluierung | Flanschbares FEC-Modul, RS(255,223) bleibt produktiver Default. Nicht vor v1.0 (Protokollbruch). Details siehe unten; ADR-25. | 🔲 Phase 8/9 |
-| P8-11 | 🟢 | feature | AUTH 0x50 — HMAC-SHA256 Frame-Authentifizierung (GUST-S) | Bilaterale Authentifizierung: 0x50 AUTH-Frame (REF_SEQ + REF_TYPE + KEY_ID + HMAC-16 = 20 B), HMAC-SHA256 truncated, 60-s-Replay-Fenster über REF_SEQ, Schlüsselverwaltung in gateway.json. Spec §3.4/§3.5, gust_knowledge.md §28. Gegenstück: AUTH_EX (P8-12). Nicht vor v1.0. | 🔲 |
+| P8-11 | 🟢 | feature | AUTH 0x50 — HMAC-SHA256 Frame-Authentifizierung (GUST-S) | Bilaterale Authentifizierung: 0x50 AUTH-Frame (REF_SEQ + REF_TYPE + KEY_ID + HMAC-16 = 20 B), HMAC-SHA256 truncated, 60-s-Replay-Fenster über REF_SEQ, Schlüsselverwaltung in gateway.json. Spec §3.4/§3.5, gust_knowledge.md §28. Gegenstück: AUTH_EX (P8-12). Nicht vor v1.0. | 🟡 Crypto ✅, RX blockiert (→P8-15) |
 | P8-12 | 🟢 | feature | GUST-X Protokollvariante — 9-Symbol-SYNC + LDPC + 44B Payload | GUST-X v1 implementieren: 9-Symbol-SYNC Erkennung, LDPC n=256 Integration, Timestamp-Pflichtfeld, neue Frame-Typen 0x81-0x87 (inkl. AUTH_EX 2-Frame ECDSA), gateway.json `protocol.variant`. Voraussetzung: Soft-Output-Demodulator (P8-13). Spec §3.9, ADR-37. | 🔲 |
 | P8-13 | 🟢 | research | Soft-Output-Demodulator für LDPC | _fft_detect_symbol() gibt LLR-Array statt Hard-Symbol zurück. Bin-Energien → bitweise Log-Likelihood-Ratios. Voraussetzung für LDPC SNR-Gewinn. | 🔲 |
+| P8-15 | 🟢 | feature | Frame-Sequencing für AUTH-RX | Sequenznummer im Frame-Header einführen (z.B. 1 Byte im CHANNEL-Byte Bits 7-4, oder separates Feld). Voraussetzung für gust_rx.py AUTH-Puffer (P8-11 RX-Integration). | 🔲 |
 
 ### P8-10: FEC-Backend-Abstraktion + LDPC-Evaluierung
 
@@ -307,6 +308,24 @@ AUTH_EX (0x85/0x86, P8-12).
 **Abhängigkeit:** keine externe Bibliothek (`hmac`/`hashlib` aus stdlib).
 
 **Referenz:** gust_spec.md §3.4/§3.5, gust_knowledge.md §28. Nicht vor v1.0.
+
+**Status: Crypto-Kern fertig, RX-Integration blockiert (Juni 2026)**
+
+Implementiert:
+- FrameType.AUTH=0x50, encode_auth(), decode_auth() ✅
+- auth_tag(), verify_auth() (HMAC-SHA256, compare_digest) ✅
+- gateway.json auth-Block + Schlüsselverwaltung ✅
+
+Blocker für RX-Integration:
+GUST v0.5 hat kein Sequenznummer-Feld im Frame-Header
+(TYPE|CHANNEL|FROM|PAYLOAD|CRC). REF_SEQ hat keine Quelle
+im aktuellen Protokoll. Ein 60-s-Puffer der auf seq=0 keyt
+würde nie authentifizieren — funktionsloser Code.
+
+Nächster Schritt (v1.0): Frame-Sequencing einführen
+(eigene Backlog-Aufgabe P8-15). Dann gust_rx.py-Integration mit
+den fertigen Crypto-Bausteinen (auth_tag/verify_auth +
+cfg["_auth_keys"]).
 
 ---
 
