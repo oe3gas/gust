@@ -6,29 +6,28 @@ Low-Density Parity-Check Code für GUST — experimentelles FEC-Backend.
 
 Konfiguration:
   Code-Rate:    3/4  (Overhead +33 % relativ zur Payload)
-  Blockgröße:   48 Bit (6 Byte) pro LDPC-Codeword  (k=36 Daten, m=12 Parität)
+  Blockgröße:   256 Bit (32 Byte) pro LDPC-Codeword  (k=192 Daten, m=64 Parität)
   Konstruktion: systematisch  H = [P | I_m],  P spärlich (Spaltengewicht 3)
-  Dekodierung:  exaktes GF(2)-Syndrom-Decoding (+ optionale BP via python-ldpc)
+  Dekodierung:  Soft-Decision-BP (python-ldpc, LLR aus P8-13) + exaktes GF(2)-Syndrom-Decoding
   Bibliothek:   python-ldpc (optional, Soft-Decision) — sonst reines numpy
 
 Vorteile gegenüber RS(255,223):
   - Deutlich kürzere Frames: Rate 3/4 → weniger Overhead als RS bei kleinen
     Payloads (RS hat IMMER +32 B, LDPC nur ~+1/3 der Payload).
 
-WICHTIG — Realistische Einordnung der Fehlerkorrektur (empirisch verifiziert):
-  Die Blockgröße n=48 Bit ist für Belief-Propagation VIEL zu kurz; bei nur
-  m=12 Prüfgleichungen liefert BP keinen Coding-Gain und kann Einzelfehler
-  sogar fehlkorrigieren. Die hier verwendete Konstruktion (paarweise
-  verschiedene, von 0 verschiedene Spalten) garantiert dafür Mindestdistanz
-  ≥ 3 → **exakte Korrektur von genau 1 Bitfehler pro 48-Bit-Block**.
-  Mehrfachfehler je Block sind nicht garantiert korrigierbar (Best-Effort).
-  Der in frühen Entwürfen genannte "+3–5 dB SNR-Gewinn" gilt ERST bei
-  Blocklängen in der Größenordnung n≈10³–10⁴ und steht hier ausdrücklich
-  NICHT zur Verfügung. Vor einer Protokoll-Festlegung (Etappe 3 / v1.0) ist
-  daher eine größere Blocklänge zu evaluieren — siehe gust_backlog.md.
+WICHTIG — Blocklänge n=256 (Sweetspot, Blocklängen-Evaluation):
+  n=256 mit m=64 Prüfgleichungen ist der per Evaluation ermittelte Sweetspot:
+  groß genug, dass Belief-Propagation einen echten Coding-Gain liefert, aber
+  noch kompakt genug für GUST-Frames. **n=256 Sweetspot, Soft-Decision (LLR aus
+  dem Demodulator, P8-13) für ~2 dB Gewinn erforderlich** — der reine
+  Hard-Decision-Pfad korrigiert weiterhin garantiert genau 1 Bitfehler pro
+  256-Bit-Block (Mindestdistanz ≥ 3 durch paarweise verschiedene, von 0
+  verschiedene Spalten). Ohne Soft-Input fällt LDPC gegenüber RS zurück; mit
+  Soft-Input + n≥256 zieht es vorbei (siehe gust_backlog.md, LDPC-Blocklängen-Eval).
 
 Einschränkungen:
-  - Nur 1 Bitfehler je 48-Bit-Block sicher korrigierbar (Blocklänge zu klein).
+  - Hard-Decision: nur 1 Bitfehler je 256-Bit-Block garantiert korrigierbar.
+    Voller Gewinn nur mit Soft-Decision (LLR via decode(..., llr_blocks=...)).
   - Burst-Fehler: kein Vorteil gegenüber RS.
   - Protokollbruch: TX+RX müssen dasselbe Backend (und dieselbe Matrix-Seed)
     verwenden. LDPC ist nicht kompatibel mit RS.
@@ -133,9 +132,9 @@ class LDPCFecBackend:
     encode() fügt Paritätsbits hinzu, decode() korrigiert Fehler.
 
     Block-Struktur (systematisch, H = [P | I_m]):
-      BLOCK_BITS    = 36 Bit Daten      (n * rate = 48 * 0.75)
-      PARITY_BITS   = 12 Bit Parität    (n * (1-rate) = 48 * 0.25)
-      CODEWORD_BITS = 48 Bit gesamt     (n) → [d_0..d_35 | p_0..p_11]
+      BLOCK_BITS    = 192 Bit Daten     (n * rate = 256 * 0.75)
+      PARITY_BITS   = 64 Bit Parität    (n * (1-rate) = 256 * 0.25)
+      CODEWORD_BITS = 256 Bit gesamt    (n) → [d_0..d_191 | p_0..p_63]
 
     Codewort-Eigenschaft: H · c = 0 (mod 2) per Konstruktion
     (p = P · d mod 2) → Syndrom eines fehlerfreien Codeworts ist 0.
@@ -144,8 +143,8 @@ class LDPCFecBackend:
     name = "ldpc"
 
     # LDPC-Parameter
-    N_BITS    = 48      # Codelänge in Bit
-    RATE      = 0.75    # Code-Rate
+    N_BITS    = 256     # Codelänge in Bit (Sweetspot, Blocklängen-Evaluation)
+    RATE      = 0.75    # Code-Rate → k=192 Daten, m=64 Parität
     MAX_ITER  = 50      # Bit-Flipping / BP Max-Iterationen
     SEED      = 42      # Reproduzierbare Matrix (TX und RX MÜSSEN gleich sein)
 
@@ -210,13 +209,17 @@ class LDPCFecBackend:
         p = (self._P @ d) % 2
         return np.concatenate([d, p]).astype(np.uint8)
 
-    def _decode_block(self, rx_bits: np.ndarray) -> np.ndarray:
+    def _decode_block(self, rx_bits: np.ndarray, llr=None) -> np.ndarray:
         """
         Einen LDPC-Block dekodieren.
         rx_bits: n_bits empfangene Bits (Hard-Decision).
+        llr:     optionaler Soft-Output-Vektor (N_BITS LLR-Werte, aus P8-13).
+                 Wenn vorhanden UND python-ldpc verfügbar, wird zuerst eine
+                 Soft-Decision-BP versucht (~2 dB Gewinn ggü. Hard-Decision).
         Gibt k_bits dekodierte Datenbits zurück.
 
         Strategie (in dieser Reihenfolge):
+          0. Soft-Decision-BP (nur mit llr + python-ldpc) — voller Coding-Gain.
           1. Syndrom 0 → bereits gültiges Codewort.
           2. Syndrom = bekannte Spalte → exakte Einzelfehlerkorrektur (garantiert).
           3. Best-Effort Mehrfachfehler: optional python-ldpc BP, dann numpy
@@ -228,6 +231,25 @@ class LDPCFecBackend:
 
         r = rx_bits.astype(np.uint8).copy()
         syndrome = (self._H @ r) % 2
+
+        # 0) Soft-Decision-BP zuerst — nur wenn LLR übergeben UND python-ldpc da.
+        #    Die LLR-Beträge liefern BP per-Bit-Zuverlässigkeiten (Soft-Decision):
+        #    Flip-Wahrscheinlichkeit pro Bit = sigmoid(-|llr|). Der Decoder ist
+        #    syndrom-basiert (input_vector_type="syndrome") → channel_probs setzen,
+        #    dann decode(syndrome). Syndrom-Check verifiziert das Ergebnis.
+        if llr is not None and self._bp is not None and syndrome.any():
+            try:
+                llr_arr = np.asarray(llr, dtype=np.float64).ravel()
+                if llr_arr.shape[0] == self.N_BITS:
+                    probs = 1.0 / (1.0 + np.exp(np.abs(llr_arr)))
+                    probs = np.clip(probs, 1e-6, 0.49)
+                    self._bp.update_channel_probs(probs)
+                    err  = self._bp.decode(syndrome.astype(np.uint8))
+                    cand = (r ^ np.asarray(err, dtype=np.uint8)) % 2
+                    if not ((self._H @ cand) % 2).any():
+                        return cand[:self.k_bits]
+            except Exception as e:   # pragma: no cover - lib-abhängig
+                log.debug("[LDPC] Soft-BP-Versuch fehlgeschlagen: %s", e)
 
         # 1) Fehlerfrei
         if not syndrome.any():
@@ -263,7 +285,7 @@ class LDPCFecBackend:
             raise LDPCDecodeError(
                 f"Decoding nicht konvergiert nach {self.MAX_ITER} Iterationen "
                 f"(Syndrom-Gewicht={int(((self._H @ flip) % 2).sum())}) — "
-                f"vermutlich > 1 Bitfehler im 48-Bit-Block"
+                f"vermutlich > 1 Bitfehler im 256-Bit-Block"
             )
         return flip[:self.k_bits]
 
@@ -299,9 +321,13 @@ class LDPCFecBackend:
                   n_bytes, len(result), self.overhead, len(codewords))
         return result
 
-    def decode(self, data: bytes) -> bytes:
+    def decode(self, data: bytes, llr_blocks=None) -> bytes:
         """
         LDPC-Dekodierung blockweise.
+
+        llr_blocks: optionale Liste von LLR-Vektoren (je N_BITS Werte, ein
+                    Eintrag pro Block, aus dem Soft-Output-Demodulator P8-13).
+                    Wenn vorhanden, nutzt jeder Block die Soft-Decision-BP.
         Wirft LDPCDecodeError wenn ein Block nicht konvergiert.
         """
         bits = self._data_to_bits(data)
@@ -311,10 +337,11 @@ class LDPCFecBackend:
         bits_pad = np.concatenate([bits, np.zeros(pad, dtype=np.uint8)])
 
         n_blocks     = len(bits_pad) // self.N_BITS
-        decoded_bits = [
-            self._decode_block(bits_pad[i * self.N_BITS:(i + 1) * self.N_BITS])
-            for i in range(n_blocks)
-        ]
+        decoded_bits = []
+        for i in range(n_blocks):
+            block = bits_pad[i * self.N_BITS:(i + 1) * self.N_BITS]
+            llr   = llr_blocks[i] if llr_blocks else None
+            decoded_bits.append(self._decode_block(block, llr=llr))
 
         raw = self._bits_to_data(np.concatenate(decoded_bits))
 
