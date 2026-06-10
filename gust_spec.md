@@ -524,7 +524,7 @@ vollständig. Daher wird die Signatur über zwei Frames übertragen:
 - **0x85 AUTH_EX**   → r (32 Byte, vollständig)
 - **0x86 AUTH_EX_B** → s (32 Byte, vollständig)
 
-Beide Frames tragen denselben REF_SEQ / KEY_ID / TIMESTAMP und werden vom
+Beide Frames tragen denselben TIMESTAMP / KEY_ID und werden vom
 Empfänger im 60-s-Fenster zusammengeführt; danach erfolgt eine normale
 ECDSA-Verifikation.
 
@@ -538,12 +538,11 @@ verifiziert: dieser Notruf kommt wirklich von OE1XRK.
 ```
 Offset  Länge  Inhalt
 ──────────────────────────────────────────────────────
-  0       2    REF_SEQ    Sequenznummer des Daten-Frames
-  2       1    REF_TYPE   Frame-Typ des Daten-Frames
-  3       1    KEY_ID     Schlüssel-Identifier (welcher Public Key)
-  4       4    TIMESTAMP  Unix-Timestamp (32 Bit) — Replay-Schutz
-  8      32    SIG_HALF   0x85: r[0:32]  |  0x86: s[0:32]  (jeweils vollständig)
- 40       4    reserviert
+  0       4    TIMESTAMP  Unix-Timestamp des Daten-Frames (uint32)
+  4       1    REF_TYPE   Frame-Typ des Daten-Frames
+  5       1    KEY_ID     Schlüssel-Identifier (welcher Public Key)
+  6      32    SIG_HALF   0x85: r[0:32]  |  0x86: s[0:32]  (jeweils vollständig)
+ 38       6    reserviert
 ──────────────────────────────────────────────────────
 Gesamt: 44 Byte Payload je Frame
 ```
@@ -558,20 +557,20 @@ from cryptography.hazmat.primitives.asymmetric.utils import (
     encode_dss_signature, decode_dss_signature)
 import struct, time
 
-def sign_frame_ecdsa(frame_body: bytes, ref_seq: int, timestamp: int,
+def sign_frame_ecdsa(frame_body: bytes, timestamp: int,
                      private_key) -> tuple:
     """
     Signiert einen Daten-Frame mit ECDSA P-256.
     Gibt (r_bytes, s_bytes) zurück — je 32 Byte, vollständig.
     r_bytes → AUTH_EX (0x85),  s_bytes → AUTH_EX_B (0x86).
     """
-    msg = frame_body + struct.pack(">HI", ref_seq, timestamp)
+    msg = frame_body + struct.pack(">I", timestamp)
     sig_der = private_key.sign(msg, ec.ECDSA(hashes.SHA256()))
     r, s = decode_dss_signature(sig_der)
     return r.to_bytes(32, "big"), s.to_bytes(32, "big")
 
 def verify_frame_ecdsa(frame_body: bytes, r_bytes: bytes, s_bytes: bytes,
-                       ref_seq: int, timestamp: int, public_key,
+                       timestamp: int, public_key,
                        max_age_s: int = 60) -> bool:
     """
     Verifiziert AUTH_EX (0x85) + AUTH_EX_B (0x86) zusammen.
@@ -583,7 +582,7 @@ def verify_frame_ecdsa(frame_body: bytes, r_bytes: bytes, s_bytes: bytes,
     r = int.from_bytes(r_bytes, "big")
     s = int.from_bytes(s_bytes, "big")
     sig_der = encode_dss_signature(r, s)
-    msg = frame_body + struct.pack(">HI", ref_seq, timestamp)
+    msg = frame_body + struct.pack(">I", timestamp)
     try:
         public_key.verify(sig_der, msg, ec.ECDSA(hashes.SHA256()))
         return True
