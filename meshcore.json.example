@@ -1,0 +1,83 @@
+{
+  "_doc": "MeshCore-Konfiguration für gust_meshcore_bridge.py — BEISPIELDATEI",
+  "_version": "1.0",
+  "_setup": "Kopiere diese Datei nach meshcore.json und trage deine Werte ein. meshcore.json ist in .gitignore eingetragen.",
+
+  "connection": {
+    "_doc": "USB-Serial-Verbindung zum Companion-Node",
+    "port": "COM18",
+    "_comment_port": "Windows: COM18 — Linux/RPi: /dev/ttyUSB0 oder /dev/ttyACM0",
+    "baudrate": 115200,
+    "timeout_s": 10,
+    "auto_reconnect": true,
+    "reconnect_delay_s": 30
+  },
+
+  "node": {
+    "_doc": "Lokale Node-Identität — wird beim Start via send_device_query() verifiziert",
+    "expected_name": "AT-HL-MEINRUF-🦚",
+    "callsign": "OE3XYZ",
+    "firmware": "",
+    "pubkey_prefix": "",
+    "_comment_pubkey": "Wird beim ersten Bridge-Start automatisch via send_device_query() eingetragen"
+  },
+
+  "channels": {
+    "_doc": "Abonnierte Kanäle. Index = Slot-Nummer im Companion (0-basiert).",
+    "_howto": "Slot-Nummern und Schlüssel ermitteln: meshcore-cli -s COM18 get_channels",
+    "slots": [
+      {
+        "index": 0,
+        "name": "Public",
+        "key": "KANALSCHLUESSEL_32_HEX_ZEICHEN",
+        "gust_forward": false,
+        "_comment": "Öffentlicher Kanal — typischerweise nicht nach GUST-HF weiterleiten"
+      },
+      {
+        "index": 1,
+        "name": "meinkanal",
+        "key": "KANALSCHLUESSEL_32_HEX_ZEICHEN",
+        "gust_forward": true
+      }
+    ]
+  },
+
+  "contacts": {
+    "_doc": "Auflösung pubkey_prefix (6-Byte hex) → Node-Name + Rufzeichen für GUST FROM-Feld.",
+    "_update": "Wird automatisch ergänzt wenn neue Nodes via ADVERTISEMENT-Events gesehen werden.",
+    "known": [
+      {
+        "pubkey_prefix": "aabbccddeeff",
+        "node_name": "AT-HL-OE3XYZ-🦚",
+        "callsign": "OE3XYZ",
+        "_comment": "Eigener Companion-Node"
+      },
+      {
+        "pubkey_prefix": "112233445566",
+        "node_name": "AT-VIE-OE1XYZ",
+        "callsign": "OE1XYZ"
+      }
+    ]
+  },
+
+  "bridge": {
+    "_doc": "Betriebsparameter der Bridge",
+    "mqtt_host": "127.0.0.1",
+    "mqtt_port": 1883,
+    "topic_prefix": "meshcore",
+    "auto_fetch_interval_s": 5,
+    "forward_public_channel": false,
+    "unknown_sender_policy": "pubkey_prefix",
+    "_comment_policy": "Unbekannter Absender: 'pubkey_prefix' = erste 6 Hex-Zeichen als Pseudo-Rufzeichen | 'skip' = verwerfen | 'placeholder' = UNKNWN",
+    "log_raw_frames": false
+  },
+
+  "repeater": {
+    "_doc": "Zweiter Heltec V4 als Repeater — nur Konfigurationszwecke via meshcore-cli -r -s COMx",
+    "port": "COM??",
+    "_comment": "COM-Port nach Anschluss eintragen. Steuerung via: meshcore-cli -r -s <port>",
+    "name": "AT-HL-MEINRUF-REP",
+    "radio": "869.618,62.5,8,8",
+    "_comment_radio": "Frequenz MHz, BW kHz, SF, CR — muss mit Companion übereinstimmen"
+  }
+}

@@ -31,6 +31,11 @@ gust_sources.txt
 # Die Vorlage (gateway.json.example) UND das Schema werden versioniert.
 gateway.json
 
+# ── Konfiguration mit Secrets für Meshcore Anbindung ──────────────────────────────────────────
+# Die echte Datei NICHT committen (Rufzeichen, Kanal-Keys).
+# Die Vorlage (meshcore.json.example) UND das Schema werden versioniert.
+meshcore.json
+
 # ── Bereits vorhandene Ausschlüsse ─────────────────────────────────────
 SNR Test Files/
 archiv/
