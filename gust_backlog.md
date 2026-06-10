@@ -230,8 +230,8 @@ Details: `gust_knowledge.md` §27,
 
 **Nicht vor v1.0** — erfordert Protokollbruch + Frame-Header-Versionierung.
 
-**Wichtig:** `cc_ldpc_etappe3_integration.md` ist gesperrt bis
-Soft-Output-Demod existiert. Prompt nicht ausführen!
+**Status Etappe 3:** `cc_ldpc_etappe3_integration.md` ist freigegeben.
+Alle Voraussetzungen erfuellt (P8-13 abgeschlossen, n=255 symbol-aligned).
 
 **Referenz:** ADR-25, gust_knowledge.md §22+§27,
              ldpc_planung/ldpc_blocklen_eval_ergebnis.md
@@ -318,7 +318,7 @@ schlechter als RS. Mit LLR: ~2 dB SNR-Gewinn gegenüber RS(255,223).
 - Rückwärtskompatibel: Hard-Decision = argmax(LLR) für GUST-S
 
 **Referenz:** gust_knowledge.md §27 (LDPC Blocklängen-Evaluation),
-             cc_ldpc_etappe3_integration.md (gesperrt bis P8-13 fertig)
+             cc_ldpc_etappe3_integration.md (freigegeben, P8-13 fertig)
 
 ---
 
