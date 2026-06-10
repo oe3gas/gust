@@ -371,6 +371,63 @@ def _fft_detect_symbol_eq(block: np.ndarray, tone_freqs: np.ndarray,
     return int(np.argmax(magnitudes * eq))
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Soft-Output-Demodulation (P8-13) — LLR-Werte für LDPC
+#
+# _fft_detect_symbol() liefert nur das Hard-Symbol (argmax). Für eine
+# künftige LDPC-Soft-Decision werden Log-Likelihood-Ratios (LLR) je Ton
+# gebraucht. Die folgenden Funktionen laufen PARALLEL zum Hard-Pfad —
+# _fft_detect_symbol() bleibt unverändert, kein Breaking Change.
+#
+# LLR-Definition: log( E_i / (Σ E - E_i) ) — Energie des Tons i gegen die
+# Summe aller anderen Töne. argmax(LLR) == argmax(Energie) == Hard-Symbol.
+# ─────────────────────────────────────────────────────────────────────
+
+def _fft_detect_symbol_soft(block: np.ndarray,
+                            tone_freqs: np.ndarray) -> np.ndarray:
+    """
+    Soft-Output-Variante von _fft_detect_symbol(): LLR statt Hard-Symbol.
+
+    Args:
+        block:      256-Sample-Audioblock
+        tone_freqs: 8 Tonfrequenzen (Hz)
+
+    Returns:
+        np.ndarray shape (8,) float64 — LLR pro Ton (höher = wahrscheinlicher).
+    """
+    spectrum = np.abs(np.fft.rfft(block, n=FFT_PAD_N))
+    energies = np.array([spectrum[round(f / SAMPLE_RATE * FFT_PAD_N)]
+                         for f in tone_freqs], dtype=np.float64)
+    eps = 1e-12
+    total = np.sum(energies) + eps
+    return np.log((energies + eps) / (total - energies + eps))
+
+
+def _fft_detect_symbol_soft_eq(block: np.ndarray, tone_freqs: np.ndarray,
+                               eq: np.ndarray) -> np.ndarray:
+    """
+    Soft-Output mit Passband-Equalizer (vgl. _fft_detect_symbol_eq()).
+
+    Identisch zu _fft_detect_symbol_soft(), aber die Ton-Energien werden
+    vor der LLR-Berechnung mit eq[i] multipliziert.
+
+    Returns:
+        np.ndarray shape (8,) float64 — LLR pro Ton.
+    """
+    spectrum = np.abs(np.fft.rfft(block, n=FFT_PAD_N))
+    energies = np.array([spectrum[round(f / SAMPLE_RATE * FFT_PAD_N)]
+                         for f in tone_freqs], dtype=np.float64)
+    energies = energies * eq
+    eps = 1e-12
+    total = np.sum(energies) + eps
+    return np.log((energies + eps) / (total - energies + eps))
+
+
+def llr_to_symbol(llr: np.ndarray) -> int:
+    """Hard-Decision aus LLR-Vektor — numerisch identisch zu _fft_detect_symbol()."""
+    return int(np.argmax(llr))
+
+
 def _find_sync_candidates(audio: np.ndarray) -> list:
     """
     Energie-basierte SYNC-Kandidatensuche — alle 8 Kanäle (v0.5), vollvektorisiert.
@@ -1056,6 +1113,27 @@ def _run_tests():
     print(f"  Empfangen:  {detected}  {'✓' if ok else '✗'}")
     if not ok:
         errors.append(f"Symbolerkennung falsch: {detected}")
+
+    # ── Test 3c: Soft-Output-Demodulator (P8-13) ──────────────────
+    print("\n── Test 3c: Soft-Output (LLR) — Konsistenz mit Hard-Symbol ──")
+    soft_ok    = True
+    pos_llr_ok = True
+    for i in range(N_TONES):
+        blk  = audio_8sym[i*SAMPLES_PER_SYM:(i+1)*SAMPLES_PER_SYM]
+        llr  = _fft_detect_symbol_soft(blk, tf)
+        hard = _fft_detect_symbol(blk, tf)
+        # 1) argmax(soft) == hard
+        if llr_to_symbol(llr) != hard:
+            soft_ok = False
+        # 2) LLR des tatsächlich gesendeten Tons > 0
+        if not (llr[i] > 0):
+            pos_llr_ok = False
+    print(f"  hard == llr_to_symbol(soft) für alle 8 Symbole:  {'✓' if soft_ok else '✗'}")
+    print(f"  LLR des richtigen Tons > 0 für alle 8 Symbole:   {'✓' if pos_llr_ok else '✗'}")
+    if not soft_ok:
+        errors.append("Soft-Output: argmax(LLR) != Hard-Symbol")
+    if not pos_llr_ok:
+        errors.append("Soft-Output: LLR des richtigen Tons nicht > 0")
 
     # ── Test 3b: Raised Cosine Windowing (Phase 3) ────────────────
     print("\n── Test 3b: Raised Cosine Windowing — Spektralvergleich ──")
