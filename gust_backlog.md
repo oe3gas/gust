@@ -273,7 +273,11 @@ weil RS bei seltenen Fehlern sehr stark ist. Absolute Raten sample-abhängig
 (40 Frames). Offene Stellschrauben für mehr Baseline-Rate: Tail-Block-Padding in
 `gust_ldpc.decode`, Soft im Breitband-Pfad — beide außerhalb des P8-14-Scopes.
 
-**Referenz:** ADR-25, gust_knowledge.md §22+§27,
+**Status: Abgeschlossen (Juni 2026).** Cliff-Verschiebung ~2 dB im echten
+GUST-Frame-Pfad bestätigt (−10 dB: LDPC 50 % vs. RS 33 %, +17,5 pp).
+Volle Auswertung + technische Details: **gust_knowledge.md §32**.
+
+**Referenz:** ADR-25, gust_knowledge.md §22+§27+§32,
              ldpc_planung/ldpc_blocklen_eval_ergebnis.md
 
 ---

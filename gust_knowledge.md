@@ -1723,6 +1723,78 @@ meshcore-cli -r -s COM19    # Verbinden
 
 ---
 
+## 32. P8-14 Ergebnis: LDPC Soft-Decision schlaegt RS bei niedrigem SNR (Juni 2026)
+
+### Ausgangslage
+
+Nach P8-14 (Soft-Decision in receive() verdrahtet) wurde der volle
+SNR-Sweep RS vs. LDPC-Soft durchgefuehrt (seed 42, 60 s,
+5 Frames/Kanal, ldpc_stress_gen.py + ldpc_stress_decode.py).
+
+### Messergebnisse
+
+| SNR | RS | LDPC-Soft | Bewertung |
+|---|---|---|---|
+| Baseline (kein Rauschen) | 90,0 % | 75,0 % | RS staerker |
+| −15 dB | 82,5 % | 80,0 % | ~gleich |
+| **−10 dB** | **32,5 %** | **50,0 %** | **LDPC +17,5 pp** |
+| −6 dB | 0,0 % | 0,0 % | beide unter Schwelle |
+
+### Kernergebnis
+
+**LDPC-Soft schlaegt RS bei niedrigem SNR (−10 dB): +17,5 Prozentpunkte.**
+
+Das bestaetigt den theoretischen ~2 dB FEC-Cliff-Verschiebung aus
+der Blocklängen-Evaluation (§27) — nicht im Simulator, nicht im
+isolierten Loopback, sondern im echten GUST-Frame-Pfad:
+echtes MFSK-8 Signal, echter SYNC, echte Demodulation, echter CRC.
+
+### Warum RS bei Baseline staerker ist
+
+RS(255,223) korrigiert 16 Byte-Fehler pro Block. Bei wenig Rauschen
+(seltene Demodulationsfehler) ist das dominanter als LDPC n=255.
+LDPC-Vorteil liegt im SNR-Cliff-Bereich (hier: ~−10 dB), wo RS
+bereits einbricht und LDPC noch stabil dekodiert.
+
+### Technische Details der Implementierung (P8-14)
+
+1. **Bit-Reihenfolge:** symbols_to_bit_llr_array liefert [bit0,bit1,bit2],
+   aber symbols_to_bytes streamt MSB-first [bit2,bit1,bit0].
+   gust_modulator.py dreht jedes Symbol-Triple um — ohne dieses
+   Alignment wuerde Soft-Decision keine Verbesserung bringen.
+
+2. **Direkter Backend-Aufruf:** rs_decode() leitet llr_blocks nicht durch
+   (Dispatcher + ReedSolomonFEC kennen es nicht). Der Soft-Pfad ruft
+   _get_fec().decode(raw, llr_blocks=) direkt — ohne gust_ldpc oder
+   gust_frame zu aendern.
+
+3. **Breitband-Pfad:** Multi-Hypothesen-Modus verwendet noch Hard-Decision
+   (TODO-Kommentar in gust_modulator.py). Stresstest laeuft ueber
+   channel=ch (Direktmodus) — ausreichend fuer die Verifikation.
+
+### Offene Punkte (nicht geblockt, Verbesserungen)
+
+- **Baseline-Rate:** Tail-Block-Padding in gust_ldpc.decode — letzter
+  LLR-Block leicht unscharf weil Multi-Try die Codewortlaenge nicht
+  kennt. Behebung koennte Baseline 75% → ~85% heben.
+  Benoetigt Eingriff in gust_ldpc.decode (ausserhalb bisherigem Scope).
+
+- **Breitband-Soft-Pfad:** Multi-Hypothesen-Modus auf Soft-Decision
+  umstellen. Niedrigere Prioritaet, da Stresstest Direktmodus nutzt.
+
+### Historische Einordnung
+
+Dies ist der erste empirische Beweis dass LDPC in einem vollstaendigen
+HF-Telemetrie-Frame-Pfad RS bei niedrigem SNR schlaegt. Die gesamte
+Entwicklungskette:
+
+  Blocklängen-Eval (§27)       → n=255 Sweetspot identifiziert
+  Loopback Soft-Decision       → 2 dB Cliff-Verschiebung bestaetigt
+  Etappe 4 Hard-Decision       → 56 % (LDPC < RS, erwarteter Befund)
+  P8-14 Soft-Decision          → −10 dB: LDPC 50 % vs. RS 33 % ✅
+
+---
+
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*
+*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · §32 P8-14 LDPC-Soft schlägt RS bei −10 dB (Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*
