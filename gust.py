@@ -1399,6 +1399,23 @@ def main() -> None:
             log.warning("[FEC] Backend '%s' nicht verfügbar: %s — Fallback auf RS",
                         fec_name, e)
 
+    # AUTH-Schlüssel aus Konfiguration laden (Standard: deaktiviert, P8-11).
+    # key_id (int) → key (bytes). Auf cfg abgelegt für die spätere RX-Verifikation
+    # (gust_rx.py-Integration noch offen — Frame-Sequenznummer fehlt in v0.3, s.u.).
+    auth_cfg  = cfg.get("auth", {})
+    auth_keys = {}
+    if auth_cfg.get("enabled", False):
+        for entry in auth_cfg.get("keys", []):
+            try:
+                kid = int(entry["key_id"])
+                auth_keys[kid] = bytes.fromhex(entry["key_hex"])
+                log.info("[AUTH] Schlüssel geladen: KEY_ID=%d für %s",
+                         kid, entry.get("callsign", "?"))
+            except Exception as e:
+                log.warning("[AUTH] Schlüssel KEY_ID=%s ungültig: %s",
+                            entry.get("key_id", "?"), e)
+    cfg["_auth_keys"] = auth_keys
+
     # Port-Override für daemon
     if args.cmd == "daemon" and hasattr(args, "port") and args.port:
         cfg["web"]["port"] = args.port

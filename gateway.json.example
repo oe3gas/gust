@@ -1,6 +1,18 @@
 {
     "callsign": "OE3GAS",
     "fec": "rs",
+    "auth": {
+        "_comment": "Bilaterale HMAC-Schlüssel (Frame 0x50 AUTH). Nie ins Repo! In .gitignore.",
+        "enabled": false,
+        "keys": [
+            {
+                "key_id": 1,
+                "callsign": "OE1XTU",
+                "key_hex": "ERSETZEN_MIT_32_ZUFALLSBYTES_HEX",
+                "_comment": "Schlüssel generieren: python -c \"import os,binascii; print(binascii.hexlify(os.urandom(32)).decode())\""
+            }
+        ]
+    },
     "audio": {
         "device": 0,
         "ptt_backend": "hamlib",

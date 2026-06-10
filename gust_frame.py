@@ -25,6 +25,7 @@ Schnittstelle zu Phase 1 (Modulator):
 
 import struct
 import hashlib
+import hmac
 from dataclasses import dataclass
 from typing import Optional
 
@@ -74,6 +75,7 @@ class FrameType:
     SENSOR         = 0x30   # Generische Sensor-TLV       (variabel)
     TEXT           = 0x40   # Freitext / QSO-Fragment     (variabel)
     CQ             = 0x41   # CQ-Anruf                    ( 5 Byte)
+    AUTH           = 0x50   # HMAC-SHA256 Authentifizierung (bilateral, 20 Byte)
     MGMT           = 0xF0   # Protokoll-Management        (variabel)
 
 # Reverse-Mapping für Anzeige
@@ -157,6 +159,83 @@ def crc16_bytes(data: bytes) -> bytes:
 def verify_crc(body: bytes, received_crc: bytes) -> bool:
     """Prüft ob CRC über body mit received_crc übereinstimmt."""
     return crc16(body) == struct.unpack('>H', received_crc)[0]
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# HMAC-AUTHENTIFIZIERUNG  (Frame 0x50 — AUTH, GUST-S, Spec §3.5)
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Payload (20 Byte): REF_SEQ(2) | REF_TYPE(1) | KEY_ID(1) | HMAC(16)
+# HMAC-SHA256 über (Daten-Frame-Body + REF_SEQ), truncated auf 16 Byte.
+# stdlib hmac/hashlib — keine externen Abhängigkeiten.
+
+def auth_tag(frame_body: bytes, ref_seq: int, key: bytes) -> bytes:
+    """
+    Berechnet den 16-Byte HMAC-SHA256 Tag für einen AUTH-Frame.
+
+    Args:
+        frame_body: Vollständiger Frame-Body des referenzierten Daten-Frames
+                    (TYPE + CHANNEL + FROM + PAYLOAD, ohne SYNC und ohne RS-Parität)
+        ref_seq:    Sequenznummer des Daten-Frames (uint16, big-endian)
+        key:        Gemeinsamer HMAC-Schlüssel (32 Byte empfohlen)
+
+    Returns:
+        bytes: 16 Byte HMAC-SHA256 (truncated)
+    """
+    msg = frame_body + struct.pack(">H", ref_seq)
+    return hmac.new(key, msg, hashlib.sha256).digest()[:16]
+
+
+def verify_auth(frame_body: bytes, ref_seq: int,
+                tag: bytes, key: bytes) -> bool:
+    """
+    Prüft einen 16-Byte HMAC-SHA256 Tag.
+    Verwendet hmac.compare_digest() gegen Timing-Angriffe.
+
+    Returns:
+        True wenn Tag korrekt, False sonst.
+    """
+    expected = auth_tag(frame_body, ref_seq, key)
+    return hmac.compare_digest(expected, tag)
+
+
+def encode_auth(ref_seq: int, ref_type: int,
+                key_id: int, hmac_tag: bytes) -> bytes:
+    """
+    Kodiert den AUTH-Frame Payload (0x50), 20 Byte.
+
+    Aufbau: REF_SEQ(2) | REF_TYPE(1) | KEY_ID(1) | HMAC(16)
+
+    Args:
+        ref_seq:   Sequenznummer des authentifizierten Daten-Frames (0–65535)
+        ref_type:  Frame-Typ des Daten-Frames (z.B. 0x01 für WEATHER)
+        key_id:    Schlüssel-Identifier (0–255, bilateral vereinbart)
+        hmac_tag:  16-Byte HMAC-SHA256 (Ausgabe von auth_tag())
+
+    Returns:
+        bytes: 20 Byte Payload
+    """
+    if len(hmac_tag) != 16:
+        raise ValueError(f"hmac_tag muss 16 Byte sein, erhalten: {len(hmac_tag)}")
+    return struct.pack(">HBB", ref_seq, ref_type, key_id) + hmac_tag
+
+
+def decode_auth(payload: bytes) -> dict:
+    """
+    Dekodiert den AUTH-Frame Payload (0x50).
+
+    Returns:
+        dict mit: ref_seq, ref_type, key_id, hmac_tag
+    """
+    if len(payload) < 20:
+        raise ValueError(f"AUTH-Payload zu kurz: {len(payload)} < 20 Byte")
+    ref_seq, ref_type, key_id = struct.unpack(">HBB", payload[:4])
+    return {
+        "ref_seq":  ref_seq,
+        "ref_type": ref_type,
+        "key_id":   key_id,
+        "hmac_tag": payload[4:20],
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -794,6 +873,7 @@ def decode_payload(frame_type: int, payload: bytes) -> Optional[dict]:
         FrameType.EMERG_RSRC:   decode_emerg_rsrc,
         FrameType.TEXT:         decode_text_fragment,
         FrameType.CQ:           decode_cq,
+        FrameType.AUTH:         decode_auth,
     }
     decoder = decoders.get(frame_type)
     if decoder:
