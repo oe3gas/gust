@@ -786,6 +786,23 @@ class AudioRXLoop:
                                     result.get("detected_channel", "?"), snr,
                                 )
 
+                                # AUTH-Puffer auch im Deep-Pfad befüllen —
+                                # synchron, VOR dem Publish. Der Short-Decoder
+                                # ruft _verify_auth() (das puffert), der
+                                # Deep-Decoder nicht; ohne diesen Store findet
+                                # ein später eintreffender AUTH-Frame den nur
+                                # vom Deep-Decoder gefundenen Daten-Frame nicht
+                                # ("Kein gepufferter Frame fuer ...").
+                                if self._auth_keys:
+                                    _tn = result.get("type_name", "")
+                                    _rb = result.get("_raw_frame_body")
+                                    if _rb and _tn != "AUTH":
+                                        _ti = result.get("type", 0)
+                                        self._auth_buf.store(callsign, _ti, _rb)
+                                        log.debug("[AUTH] Deep-Decode: %s 0x%02X "
+                                                  "im Puffer abgelegt",
+                                                  callsign, _ti)
+
                                 if self._bus is not None:
                                     event = make_rx_frame_event(result)
                                     await self._bus.publish(event)

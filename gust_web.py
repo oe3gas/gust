@@ -3342,9 +3342,20 @@ function markFrameAuthenticated(d) {
         badge.className = 'auth-pill';
         badge.title = `HMAC verifiziert (KEY_ID=${d.key_id ?? '?'})`;
         badge.textContent = '🔑';
-        const typeSpan = row.querySelector('.type');
-        if (typeSpan) typeSpan.appendChild(badge);
-        else row.appendChild(badge);
+        const container = row.querySelector('.badge-container');
+        if (container) {
+          // Reihenfolge: TEST → 🔑 → 🔍, also vor das Deep-Badge einfügen
+          const deep = container.querySelector('[title*="Deep"]');
+          if (deep) container.insertBefore(badge, deep);
+          else      container.appendChild(badge);
+        } else {
+          // Fallback für ältere Zeilen ohne Container: nach der .type-Span
+          const typeSpan = row.querySelector('.type');
+          if (typeSpan && typeSpan.parentNode)
+            typeSpan.parentNode.insertBefore(badge, typeSpan.nextSibling);
+          else
+            row.appendChild(badge);
+        }
       }
       break;  // nur den jüngsten passenden Frame markieren
     }
@@ -3402,7 +3413,7 @@ function appendRxFrame(frame) {
   row.innerHTML = `<span class="ts">${ts}</span>
     <span class="ch">${ch}</span>
     <span class="from">${mcBadge}${frm}</span>
-    <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0"><span class="type" style="width:auto">${typ}</span>${isTest ? '<span class="test-pill">TEST</span>' : ''}${authBadge}${deepBadge}</span>
+    <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0"><span class="type" style="width:auto">${typ}</span><span class="badge-container" style="display:flex;align-items:center;gap:3px">${isTest ? '<span class="test-pill">TEST</span>' : ''}${authBadge}${deepBadge}</span></span>
     <span class="snr ${snrCls}">${snr != null ? snrLabel(snr) : '–'}</span>
     <span class="off">${offStr}</span>
     <span class="data">${dat}</span>`;
