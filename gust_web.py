@@ -300,6 +300,10 @@ main { padding: 16px; max-width: 1200px; }
 .test-pill { display:inline-block; background:#1f6feb; color:#fff !important;
   font-size:var(--fs-xxs); font-weight:bold; padding:1px 6px; border-radius:3px;
   letter-spacing:.5px; white-space:nowrap; vertical-align:middle; flex-shrink:0; }
+/* AUTH-Badge: bewusst grün (≠ blaues TEST) — authentifiziert = verifiziert */
+.auth-pill { display:inline-block; background:#2e7d32; color:#fff !important;
+  font-size:var(--fs-xxs); font-weight:bold; padding:1px 5px; border-radius:3px;
+  white-space:nowrap; vertical-align:middle; flex-shrink:0; cursor:help; }
 .frame-row { cursor: pointer; }
 .frame-row:hover { background: rgba(255,255,255,.04); }
 
@@ -660,7 +664,6 @@ h2:first-child { margin-top: 0; }
 .hamlib-status-dot.ok  { background: var(--green); }
 .hamlib-status-dot.err { background: var(--red); }
 
-/* ── MeshCore Bridge Badge ───────────────────────────────── */
 /* ── Fragment-Collapsing ─────────────────────────────────── */
 .frag-row { display: none; }
 .frag-row.expanded { display: flex; }
@@ -678,6 +681,7 @@ h2:first-child { margin-top: 0; }
 .assembled-row { cursor: pointer; }
 .assembled-row:hover { background: var(--bg3); }
 
+/* ── MeshCore Bridge Badge ───────────────────────────────── */
 .mc-badge {
   background: #5b4fcf;
   color: #fff;
@@ -3342,6 +3346,11 @@ function appendRxFrame(frame) {
 
   const row = document.createElement('div');
   const isTest = !!frame.test;
+  // AUTH-Badge: gesetzt wenn ein AUTH-Frame (0x50) diesen Daten-Frame
+  // per HMAC verifiziert hat (gust_rx._verify_auth, P8-11).
+  const authBadge = frame.authenticated
+      ? '<span class="auth-pill" title="HMAC-authentifiziert — Herkunft verifiziert">🔑</span>'
+      : '';
   // Deep-Decode-Fund (vom parallelen 20s-Decoder nachgeliefert)
   const deepBadge = frame.deep
       ? '<span title="Deep-Decode-Fund" style="font-size:10px;background:#8E44AD;color:#fff;'
@@ -3352,7 +3361,7 @@ function appendRxFrame(frame) {
   row.innerHTML = `<span class="ts">${ts}</span>
     <span class="ch">${ch}</span>
     <span class="from">${mcBadge}${frm}</span>
-    <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0"><span class="type" style="width:auto">${typ}</span>${isTest ? '<span class="test-pill">TEST</span>' : ''}${deepBadge}</span>
+    <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0"><span class="type" style="width:auto">${typ}</span>${isTest ? '<span class="test-pill">TEST</span>' : ''}${authBadge}${deepBadge}</span>
     <span class="snr ${snrCls}">${snr != null ? snrLabel(snr) : '–'}</span>
     <span class="off">${offStr}</span>
     <span class="data">${dat}</span>`;
@@ -4096,6 +4105,9 @@ function openFrameModal(frame) {
   add('Offset',   frame.freq_offset_hz != null ? `${frame.freq_offset_hz.toFixed(1)} Hz` : '–');
   add('RS-Fehler', frame.rs_errors ?? '–');
   if (frame.test) add('🔬 Testframe', 'JA — Frame ist als Test gekennzeichnet');
+  if (frame.authenticated)
+    add('🔑 Authentifizierung',
+        '<span style="color:#2e7d32">✓ HMAC verifiziert (KEY_ID im AUTH-Frame)</span>');
 
   // Payload-Felder
   if (Object.keys(d).length) {

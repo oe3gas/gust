@@ -405,6 +405,11 @@ def make_rx_frame_event(frame: dict,
     data = dict(frame)
     if channel is not None and "channel" not in data:
         data["channel"] = channel
+    # Interne RX-Diagnosefelder nicht auf den Bus legen: _raw_frame_body
+    # sind rohe bytes (für die AUTH-HMAC-Verifikation in gust_rx._verify_auth)
+    # und nicht JSON-serialisierbar — sie würden den WebSocket-Broadcast,
+    # /api/log und den Session-Export sprengen.
+    data.pop("_raw_frame_body", None)
     return {
         "type": EventType.RX_FRAME,
         "data": data,
