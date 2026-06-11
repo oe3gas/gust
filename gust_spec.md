@@ -267,7 +267,7 @@ Offset  Größe  Inhalt
 Bilaterale Authentifizierung eines zuvor gesendeten Daten-Frames für
 geschlossene Gruppen mit gemeinsamem Schlüssel (Gegenstück zum öffentlich
 verifizierbaren AUTH_EX 0x85/0x86 in §3.9). Der AUTH-Frame folgt dem
-Daten-Frame und referenziert ihn über dessen Sequenznummer.
+Daten-Frame und referenziert ihn über dessen TIMESTAMP.
 ```
 Offset  Größe  Inhalt
   0       4    TIMESTAMP  Unix-Timestamp des Daten-Frames (uint32, big-endian)
