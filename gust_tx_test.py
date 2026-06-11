@@ -220,22 +220,6 @@ def random_callsign() -> str:
     return random.choice(OE_PREFIXES) + "".join(random.choices(LETTERS, k=3))
 
 
-def _get_callsign_for_key(auth_cfg: dict, key_id: int) -> str:
-    """
-    Gibt das in gateway.json (auth.keys[].callsign) konfigurierte Rufzeichen
-    fuer einen KEY_ID zurueck, oder "" falls keines hinterlegt ist.
-    """
-    for entry in auth_cfg.get("keys", []):
-        try:
-            if int(entry.get("key_id", -1)) == key_id:
-                cs = entry.get("callsign", "")
-                if cs:
-                    return cs
-        except (TypeError, ValueError):
-            continue
-    return ""
-
-
 def _weather_payload():
     from gust_frame import encode_weather
     return encode_weather(
@@ -506,7 +490,7 @@ def run(args):
     # ── AUTH-Schlüssel laden (für --auth Flag, P8-11) ────────────────────
     # load_gateway_config() reicht den auth-Block NICHT durch → gateway.json
     # hier direkt lesen (CWD, dann Skript-Verzeichnis).
-    auth_keys = {}   # key_id (int) → bytes
+    auth_keys = {}   # Rufzeichen (str) → bytes
     auth_cfg  = {}   # auth-Block aus gateway.json (für Rufzeichen-Zuordnung)
     if args.auth:
         for _p in (args.config,
@@ -523,46 +507,47 @@ def run(args):
             print("     AUTH-Frames werden trotzdem erzeugt (für Testzwecke)")
         for entry in auth_cfg.get("keys", []):
             try:
-                kid = int(entry["key_id"])
-                auth_keys[kid] = bytes.fromhex(entry["key_hex"])
-                print(f"  AUTH-Schluessel: KEY_ID={kid}  "
-                      f"Gegenstelle={entry.get('callsign', '?')}")
+                cs  = str(entry.get("callsign", "")).strip().upper()
+                key = bytes.fromhex(entry["key_hex"])
+                if cs:
+                    auth_keys[cs] = key
+                    print(f"  AUTH-Schluessel: {cs}")
             except Exception as e:
-                print(f"  ⚠  AUTH-Schluessel KEY_ID={entry.get('key_id', '?')} "
-                      f"ungueltig: {e}")
+                print(f"  ⚠  AUTH-Schluessel ungueltig: {e}")
         if not auth_keys:
             print("  ⚠  Keine gueltigen AUTH-Schluessel in gateway.json — "
                   "--auth ohne Wirkung")
 
     def send_auth(data_callsign, data_ft_int, frame_body, channel, gain_db,
-                  auth_key_id=None, auth_key=None):
+                  auth_key=None):
         """
         Sendet einen AUTH-Frame (0x50) für den zuletzt gesendeten Daten-Frame.
         TIMESTAMP + HMAC-SHA256-14 über (frame_body + TIMESTAMP). Gleicher
         TX-Pfad (Audio/HackRF) wie der Daten-Frame; Dry-Run-fähig.
 
-        auth_key_id / auth_key: explizit zu verwendender Schlüssel. None =
-        ersten verfügbaren Key nehmen (Altverhalten). Für den realistischen
-        Test wird hier bewusst auch eine unbekannte KEY_ID (99) durchgereicht,
-        damit der Empfänger sie als "Unbekannter KEY_ID" abweist.
+        Lookup beim Empfänger erfolgt per Rufzeichen; die KEY_ID im Payload ist
+        nur noch Wire-Format-Konstante (0). auth_key: explizit zu verwendender
+        Schlüssel; None = Schlüssel des Daten-Rufzeichens. Für den realistischen
+        Test wird bewusst auch ein zufälliges Rufzeichen ohne Schlüssel
+        gesendet, das der Empfänger nicht verifizieren kann.
         """
         if not (args.auth and auth_keys):
             return
         from gust_frame import FrameType as _FT, auth_tag, encode_auth
-        if auth_key_id is not None and auth_key is not None:
-            key_id, key = auth_key_id, auth_key
-        else:
-            key_id, key = next(iter(auth_keys.items()))
+        key = auth_key if auth_key is not None \
+            else auth_keys.get(str(data_callsign).strip().upper())
+        if key is None:
+            key = os.urandom(32)   # unbekannte Station → Empfänger verwirft
         ts_val       = int(time.time())
         tag          = auth_tag(frame_body, ts_val, key)
-        auth_payload = encode_auth(ts_val, data_ft_int, key_id, tag)
+        auth_payload = encode_auth(ts_val, data_ft_int, 0, tag)
         auth_hdr = (f"{ts()}  AUTH #{tx_count:3d}  {data_callsign:<8}  "
-                    f"[AUTH      ]  Kanal {channel}  KEY_ID={key_id}  TS={ts_val}")
+                    f"[AUTH      ]  Kanal {channel}  TS={ts_val}")
         if args.dry_run:
             print(f"{auth_hdr}  [DRY-RUN]", flush=True)
             logger.write(nr=tx_count, callsign=data_callsign, frame_type="AUTH",
                          channel=channel, status="DRY-RUN",
-                         notes=f"KEY_ID={key_id} REF_TYPE=0x{data_ft_int:02X}")
+                         notes=f"REF_TYPE=0x{data_ft_int:02X}")
             return
         time.sleep(args.auth_pause)
         try:
@@ -587,7 +572,7 @@ def run(args):
             print(f"{auth_hdr}  {elapsed:.0f} ms  ✓", flush=True)
             logger.write(nr=tx_count, callsign=data_callsign, frame_type="AUTH",
                          channel=auth_ch, duration_ms=round(elapsed), status="OK",
-                         notes=f"KEY_ID={key_id} REF_TYPE=0x{data_ft_int:02X}")
+                         notes=f"REF_TYPE=0x{data_ft_int:02X}")
         except Exception as e:
             try: tx.close()
             except Exception: pass
@@ -633,7 +618,7 @@ def run(args):
                   f"Pause {args.auth_pause:.1f}s, Einzel-Kanal erzwungen", flush=True)
             _known = [e.get("callsign", "?") for e in auth_cfg.get("keys", [])]
             print(f"  AUTH-Bekannt: {', '.join(_known)} → verifiziert", flush=True)
-            print(f"  AUTH-Fremd  : zufaellige Rufzeichen KEY_ID=99 "
+            print(f"  AUTH-Fremd  : zufaellige Rufzeichen ohne Schluessel "
                   f"→ schlaegt fehl", flush=True)
         else:
             print("  AUTH-Modus  : --auth gesetzt, aber keine Schluessel geladen",
@@ -651,26 +636,21 @@ def run(args):
             tx_count += 1
 
             # ── AUTH-Test-Identität pro Sendung (P8-11) ───────────────
-            # Abwechselnd: bekannte Station (Key aus gateway.json → Empfänger
-            # verifiziert ✓) und fremde Station (KEY_ID=99 → Empfänger kennt
-            # den Key nicht → "Unbekannter KEY_ID" ✗). So zeigt der Live-Test
-            # beide Fälle. auth_force_callsign = None → random_callsign greift.
+            # Abwechselnd: bekannte Station (Rufzeichen aus gateway.json →
+            # Empfänger verifiziert ✓) und fremde Station (zufälliges
+            # Rufzeichen ohne Schlüssel → Empfänger verwirft ✗). Lookup
+            # erfolgt per Rufzeichen. auth_force_callsign = None → random.
             auth_force_callsign = None
-            auth_send_key_id    = None
             auth_send_key       = None
             if args.auth and auth_keys:
                 if tx_count % 2 == 1:
-                    # Bekannte Station — durch konfigurierte Keys rotieren
-                    _kids = list(auth_keys.keys())
-                    auth_send_key_id = _kids[(tx_count // 2) % len(_kids)]
-                    auth_send_key    = auth_keys.get(auth_send_key_id)
-                    auth_force_callsign = (
-                        _get_callsign_for_key(auth_cfg, auth_send_key_id)
-                        or f"OE{auth_send_key_id}TST")
+                    # Bekannte Station — durch konfigurierte Rufzeichen rotieren
+                    _calls = list(auth_keys.keys())
+                    auth_force_callsign = _calls[(tx_count // 2) % len(_calls)]
+                    auth_send_key       = auth_keys.get(auth_force_callsign)
                 else:
-                    # Fremde Station — unbekannte KEY_ID, beliebiger Key
-                    auth_send_key_id = 99
-                    auth_send_key    = os.urandom(32)
+                    # Fremde Station — zufälliges Rufzeichen, beliebiger Key
+                    auth_send_key       = os.urandom(32)
 
             # ── Frame-Typ wählen ──────────────────────────────────────
             if args.text_only:
@@ -806,7 +786,7 @@ def run(args):
                 # zuletzt gesendete Fragment als Daten-Frame, P8-11).
                 if args.auth and auth_keys and msg_ok and total_frags > 0:
                     send_auth(callsign, FrameType.TEXT, frame_body, channel, gain_db,
-                              auth_key_id=auth_send_key_id, auth_key=auth_send_key)
+                              auth_key=auth_send_key)
 
             else:
                 # ══════════════════════════════════════════════════════
@@ -943,7 +923,7 @@ def run(args):
                 # Dual-Kanal ist unter --auth deaktiviert → frame_body eindeutig.
                 if args.auth and auth_keys and not use_dual:
                     send_auth(callsign, ft, frame_body, used_a, gain_db,
-                              auth_key_id=auth_send_key_id, auth_key=auth_send_key)
+                              auth_key=auth_send_key)
 
             # Pause (außer nach letzter Sendung)
             if args.count == 0 or tx_count < args.count:

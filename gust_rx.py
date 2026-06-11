@@ -168,7 +168,7 @@ class PendingAuthBuffer:
     def store(self, callsign: str, ref_type: int, auth_data: dict) -> None:
         """
         Noch nicht verifizierten AUTH-Frame speichern.
-        auth_data muss enthalten: timestamp, ref_type, key_id, hmac_tag.
+        auth_data muss enthalten: timestamp, ref_type, hmac_tag.
         """
         self._buf[(callsign, ref_type)] = (auth_data, time.time())
 
@@ -463,7 +463,7 @@ class AudioRXLoop:
         # AUTH-Frame-Verifikation (P8-11)
         self._auth_buf   = AuthFrameBuffer()
         self._pending_auth_buf = PendingAuthBuffer()   # AUTH wartet auf Daten-Frame
-        self._auth_keys  = {}     # key_id -> bytes; von set_auth_keys() gesetzt
+        self._auth_keys  = {}     # Rufzeichen -> bytes; von set_auth_keys() gesetzt
         self._auth_count = 0      # Anzahl erfolgreicher AUTH-Verifikationen
 
         # Letztes Decode-Ergebnis für Diagnose
@@ -486,9 +486,9 @@ class AudioRXLoop:
 
     def set_auth_keys(self, keys: dict) -> None:
         """
-        AUTH-Schluessel setzen (key_id -> bytes).
+        AUTH-Schluessel setzen.
         Wird von gust.py nach load_config() aufgerufen.
-        keys = cfg.get("_auth_keys", {})
+        keys = {cs: bytes} — Rufzeichen → HMAC-Schlüssel
         """
         self._auth_keys = keys or {}
         log.debug("[AUTH] %d Schluessel geladen", len(self._auth_keys))
@@ -520,7 +520,7 @@ class AudioRXLoop:
                 # AUTH-Payload aus dem rohen Body schneiden (Offset 6 … -2).
                 auth_data = result.get("payload_decoded") or {}
                 if not all(k in auth_data for k in
-                           ("timestamp", "ref_type", "key_id", "hmac_tag")):
+                           ("timestamp", "ref_type", "hmac_tag")):
                     if raw_body and len(raw_body) >= 28:
                         auth_data = decode_auth(raw_body[6:-2])
                     else:
@@ -529,14 +529,15 @@ class AudioRXLoop:
                     return
 
                 ref_type  = auth_data["ref_type"]
-                key_id    = auth_data["key_id"]
                 timestamp = auth_data["timestamp"]
                 hmac_tag  = auth_data["hmac_tag"]
 
-                key = self._auth_keys.get(key_id)
+                # Schluessel per Rufzeichen des Absenders nachschlagen
+                sender = callsign.strip().upper()
+                key = self._auth_keys.get(sender)
                 if key is None:
-                    log.debug("[AUTH] Unbekannter KEY_ID=%d von %s",
-                              key_id, callsign)
+                    log.debug("[AUTH] Kein Schluessel fuer %s — "
+                              "AUTH-Frame ignoriert", sender)
                     return
 
                 ref_body = self._auth_buf.lookup(callsign, ref_type)
@@ -547,7 +548,6 @@ class AudioRXLoop:
                     self._pending_auth_buf.store(callsign, ref_type, {
                         "timestamp": timestamp,
                         "ref_type":  ref_type,
-                        "key_id":    key_id,
                         "hmac_tag":  hmac_tag,
                     })
                     log.debug("[AUTH] Kein gepufferter Frame fuer %s "
@@ -557,8 +557,8 @@ class AudioRXLoop:
                     self._auth_count += 1
                     result["authenticated"] = True
                     log.info("[AUTH] ✓ Frame von %s authentifiziert "
-                             "(KEY_ID=%d REF_TYPE=0x%02X #%d)",
-                             callsign, key_id, ref_type, self._auth_count)
+                             "(REF_TYPE=0x%02X #%d)",
+                             callsign, ref_type, self._auth_count)
                     # Separates Event, damit die GUI das 🔑 retroaktiv am
                     # Daten-Frame setzt (der AUTH-Frame selbst wird im Feed
                     # gefiltert). Siehe gust_web.markFrameAuthenticated.
@@ -568,12 +568,11 @@ class AudioRXLoop:
                             "data": {
                                 "from":     callsign,
                                 "ref_type": ref_type,
-                                "key_id":   key_id,
                             },
                         })
                 else:
                     log.warning("[AUTH] ✗ HMAC-Verifikation fehlgeschlagen: "
-                                "%s KEY_ID=%d", callsign, key_id)
+                                "%s", callsign)
             except Exception as e:
                 log.debug("[AUTH] Verifikationsfehler: %s", e)
 
@@ -603,32 +602,31 @@ class AudioRXLoop:
             return
 
         timestamp = auth_data["timestamp"]
-        key_id    = auth_data["key_id"]
         hmac_tag  = auth_data["hmac_tag"]
 
-        key = self._auth_keys.get(key_id)
+        # Schluessel per Rufzeichen des Absenders nachschlagen
+        sender = callsign.strip().upper()
+        key = self._auth_keys.get(sender)
         if key is None:
-            log.debug("[AUTH] Pending: Unbekannter KEY_ID=%d von %s",
-                      key_id, callsign)
+            log.debug("[AUTH] Pending: Kein Schluessel fuer %s", sender)
             return
 
         if verify_auth(raw_body, timestamp, hmac_tag, key):
             self._auth_count += 1
             log.info("[AUTH] ✓ Rueckwirkend: Frame von %s authentifiziert "
-                     "(KEY_ID=%d REF_TYPE=0x%02X #%d)",
-                     callsign, key_id, type_int, self._auth_count)
+                     "(REF_TYPE=0x%02X #%d)",
+                     callsign, type_int, self._auth_count)
             if self._bus is not None:
                 await self._bus.publish({
                     "type": "frame_authenticated",
                     "data": {
                         "from":     callsign,
                         "ref_type": type_int,
-                        "key_id":   key_id,
                     },
                 })
         else:
             log.warning("[AUTH] ✗ Rueckwirkende Verifikation fehlgeschlagen: "
-                        "%s KEY_ID=%d", callsign, key_id)
+                        "%s", callsign)
 
     # ── Statistik ────────────────────────────────────────────────────
 

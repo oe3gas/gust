@@ -1400,7 +1400,7 @@ def main() -> None:
                         fec_name, e)
 
     # AUTH-Schlüssel aus Konfiguration laden (Standard: deaktiviert, P8-11).
-    # key_id (int) → key (bytes). Auf cfg["_auth_keys"] abgelegt; build_rx_loop()
+    # Rufzeichen (str) → key (bytes). Auf cfg["_auth_keys"] abgelegt; build_rx_loop()
     # uebergibt sie via set_auth_keys() an den RX-Loop (HMAC-Verifikation gegen
     # TIMESTAMP, kein Frame-Sequenznummer-Feld noetig).
     auth_cfg  = cfg.get("auth", {})
@@ -1408,13 +1408,13 @@ def main() -> None:
     if auth_cfg.get("enabled", False):
         for entry in auth_cfg.get("keys", []):
             try:
-                kid = int(entry["key_id"])
-                auth_keys[kid] = bytes.fromhex(entry["key_hex"])
-                log.info("[AUTH] Schlüssel geladen: KEY_ID=%d für %s",
-                         kid, entry.get("callsign", "?"))
+                cs  = str(entry.get("callsign", "")).strip().upper()
+                key = bytes.fromhex(entry["key_hex"])
+                if cs:
+                    auth_keys[cs] = key
+                    log.debug("[AUTH] Schluessel geladen: %s", cs)
             except Exception as e:
-                log.warning("[AUTH] Schlüssel KEY_ID=%s ungültig: %s",
-                            entry.get("key_id", "?"), e)
+                log.warning("[AUTH] Schluessel-Eintrag ungueltig: %s", e)
     cfg["_auth_keys"] = auth_keys
 
     # Port-Override für daemon
