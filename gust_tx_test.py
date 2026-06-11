@@ -1057,10 +1057,10 @@ Hinweise:
     parser.add_argument("--auth",       action="store_true",
                         help="Nach jedem Daten-Frame einen AUTH-Frame (0x50) senden "
                              "(erfordert 'auth'-Block in gateway.json)")
-    parser.add_argument("--auth-pause", type=float, default=0.5,
+    parser.add_argument("--auth-pause", type=float, default=1.5,
                         dest="auth_pause",
                         help="Pause zwischen Daten-Frame und AUTH-Frame in Sekunden "
-                             "(Standard: 0.5)")
+                             "(Standard: 1.5)")
     args = parser.parse_args()
 
     # Falls --config explizit angegeben wurde und von GATEWAY_JSON abweicht,

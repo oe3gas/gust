@@ -306,6 +306,25 @@ Der Empfänger puffert den letzten Frame jedes Typs pro Station
 (60-s-Fenster). Für TEXT-Fragmente: der zuletzt empfangene Daten-Frame.
 Siehe gust_knowledge.md §28.
 
+### Zweiseitiger AUTH-Puffer (RX-Implementierung)
+
+Die RX-Implementierung verwendet zwei komplementäre Puffer mit
+je 60-Sekunden-TTL:
+
+**_auth_buf** (Daten-Frame-Puffer):
+Speichert empfangene Daten-Frames (Short- und Deep-Decoder).
+Schlüssel: (Rufzeichen, Frame-Typ). AUTH-Frame schlägt hier nach.
+
+**_pending_auth_buf** (wartende AUTH-Frames):
+Speichert AUTH-Frames die bei Ankunft keinen Daten-Frame im
+_auth_buf fanden. Wird abgefragt wenn ein Daten-Frame neu
+eingespeichert wird — auch vom Deep-Decoder nachgeliefert.
+
+Damit kann ein AUTH-Frame noch bis zu 60 Sekunden nach seinem
+Eintreffen rückwirkend verifiziert werden, sobald der zugehörige
+Daten-Frame (z.B. durch den parallelen Deep-Decoder) nachgeliefert
+wird.
+
 **Sicherheitsniveau:** ~128 Bit gegen Fälschung (HMAC-16). Nur der
 Schlüsselpartner kann verifizieren — bewusst, für geschlossene Gruppen.
 

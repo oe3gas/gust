@@ -1538,6 +1538,61 @@ Verarbeitungspfad.
 Merksatz: Interne Diagnosefelder (Unterstrich-Prefix) nie ueber den
 EventBus weitergeben wenn sie nicht JSON-serialisierbar sind.
 
+### Implementierungsnotiz: AUTH-Puffer im Deep-Decoder
+
+gust_rx.py hat zwei Decode-Pfade. Der Short-Decoder ruft _verify_auth() auf,
+das Non-AUTH-Frames in _auth_buf ablegt. Der parallele Deep-Decoder (rx.
+deep_decode) publiziert seine Funde aber direkt und ruft _verify_auth() NICHT
+auf. Folge: ein nur vom Deep-Decoder gefundener Daten-Frame (z.B. eine schwache
+POSITION) lag nie im Puffer — der wenige Sekunden spaeter eintreffende
+AUTH-Frame meldete "Kein gepufferter Frame fuer ... REF_TYPE=0x..".
+
+Fix: Der Deep-Pfad ruft self._auth_buf.store() synchron, direkt vor dem
+await bus.publish(), fuer jeden Non-AUTH-Frame mit _raw_frame_body — dieselbe
+Pufferlogik wie in _verify_auth(), nur explizit. So ist der Frame gepuffert,
+bevor der AUTH-Frame ankommt.
+
+Merksatz: Jeder Pfad der RX-Frames produziert muss den AUTH-Puffer fuellen,
+sonst haengt die Verifikation am Timing zwischen den Pfaden.
+
+#### Rückwirkende Verifikation (_pending_auth_buf)
+
+Problem: Der Deep-Decoder-Zyklus (15 s) kann einen Daten-Frame
+erst NACH dem AUTH-Frame liefern. Der AUTH-Frame findet dann
+keinen gepufferten Daten-Frame und schlägt fehl.
+
+Lösung: zweiseitiger Puffer.
+- AUTH-Frame kommt, kein Daten-Frame da →
+  AUTH-Daten in _pending_auth_buf speichern
+- Daten-Frame kommt nachträglich (Short- oder Deep-Decoder) →
+  _auth_buf.store() + _check_pending_auth():
+  gibt es einen wartenden AUTH-Frame? → sofort verifizieren
+  → frame_authenticated-Event → retroaktives 🔑-Badge
+
+Beide Puffer haben 60-s-TTL. AUTH-Frames die nach 60 s noch
+keinen Daten-Frame gefunden haben, verfallen (Replay-Schutz
+bleibt damit erhalten — kein AUTH-Frame kann ewig warten).
+Unbekannte KEY_IDs landen gar nicht erst im pending-Puffer
+(Key-Lookup vor dem Puffern), schlagen also nie rückwirkend an.
+
+Merksatz: AUTH-Verifikation ist bidirektional — nicht nur
+Daten vor AUTH (normal), sondern auch AUTH vor Daten (Deep-Decode).
+
+### Implementierungsnotiz: Badge-Container im RX-Feed (🔑/🔍-Darstellung)
+
+Das retroaktive 🔑-Badge wird per markFrameAuthenticated() nachtraeglich an
+den verifizierten Daten-Frame gehaengt (der AUTH-Frame selbst ist aus dem Feed
+gefiltert). Urspruenglich landete das 🔑 INNERHALB der .type-Span (also im
+Typ-Text), waehrend das Deep-Badge 🔍 dahinter stand — inkonsistent.
+
+Fix: Alle Badges liegen jetzt in einem eigenen .badge-container (Flex) hinter
+der .type-Span. markFrameAuthenticated() fuegt das 🔑 dort vor dem Deep-Badge
+([title*="Deep"]) ein → feste Reihenfolge TEST → 🔑 → 🔍.
+
+Merksatz: dynamisch nachgereichte Badges brauchen einen stabilen Container —
+nicht in den Text-Span haengen, sonst ist die Reihenfolge vom Einfuegezeitpunkt
+abhaengig.
+
 ---
 
 ## 29. GUST-X Design-Entscheidungen (Juni 2026)
@@ -1823,6 +1878,93 @@ Entwicklungskette:
 
 ---
 
+## 33. MeshCore Bridge-Repeater & KISS-Protokoll (Juni 2026)
+
+### Hintergrund
+
+Im Rahmen der MeshCore-Integration (§31) wurde die Bridge-Repeater-Funktionalität
+der MeshCore-Firmware analysiert. Die Erkenntnisse sind relevant für GUST weil
+sie erklären warum die gewählte Architektur (Python-Library direkt via USB-Serial)
+der KISS-Alternative überlegen ist.
+
+### MeshCore-interne Bridge-Typen
+
+MeshCore-Firmware kennt drei optionale Bridge-Modi (compile-time, Build-Flags):
+
+| Typ | Medium | Build-Flag | Hauptzweck |
+|---|---|---|---|
+| RS232 Bridge | Hardware-UART seriell | `WITH_RS232_BRIDGE` | Pakete an Legacy-Systeme/Logger weiterleiten |
+| ESPNow Bridge | WiFi ESP-NOW (ESP32-only) | `WITH_ESPNOW_BRIDGE` | Mesh-Segment-Kopplung über kurze Distanz |
+| KISS TNC Mode | Seriell, KISS-gerahmt | `WITH_KISS_MODEM` | Standard-TNC-Schnittstelle für Packet-Radio-Software |
+
+Alle drei sind **Repeater-Firmware-Erweiterungen** — nicht auf Companion-Firmware
+verfügbar. Der eigene Heltec V4 (COM18) läuft als Companion, nicht als Bridge-Repeater.
+
+### KISS-Protokoll: Was wirklich transportiert wird
+
+KISS (KA9Q/K3MC) ist ein **transparenter serieller Rahmen** ohne Inhaltsvorgabe:
+
+```
++------+-----------+-------------------------+------+
+| 0xC0 | Type Byte |  Nutzdaten (escaped)    | 0xC0 |
+| FEND |  1 Byte   |  max. 255 Byte (MTU)    | FEND |
++------+-----------+-------------------------+------+
+Escape: 0xC0 → 0xDB 0xDC  |  0xDB → 0xDB 0xDD
+```
+
+Im MeshCore-KISS-Modus enthält der Nutzdatenbereich **rohe MeshCore-Binärpakete**
+direkt vom LoRa-PHY — kein AX.25, kein lesbarer Text, kein APRS.
+
+### Kritisches Missverständnis: Direwolf und KISS
+
+Die MeshCore-Dokumentation nennt Direwolf, APRSdroid und YAAC als
+"KISS-kompatible Clients". Das beschreibt ausschließlich die
+**Transportkompatibilität** (KISS-Framing), nicht die Inhaltsebene.
+
+Direwolf ist ein AX.25-Stack. Empfängt es MeshCore-KISS-Frames, erwartet
+es darin AX.25-Pakete. Da der Inhalt ein fremdes Binärprotokoll ist,
+werden die Pakete verworfen. **Direwolf versteht MeshCore-Inhalte nicht.**
+
+### Warum GUST nicht via KISS an MeshCore ankoppelt
+
+**ADR-17 (implizit): GUST nutzt meshcore-Python-Library direkt, nicht KISS.**
+
+Begründung:
+- KISS liefert rohe MeshCore-Binärpakete ohne Dekodierung
+- Die Python-Library (`meshcore≥2.3.7`) dekodiert vollständig und liefert
+  strukturierte Events (CHANNEL_MSG_RECV, ADVERTISEMENT)
+- Kanal-Filterung ist via `meshcore.json` `gust_forward: true/false` realisiert
+- KISS bietet keine Kanal-Filterung (alle Pakete werden ausgegeben)
+- KISS-Modus ist compile-time — nicht auf vorhandener Companion-Firmware aktiv
+
+### Grenzen des Bridge-Repeaters für externe Interoperabilität
+
+| Szenario | Möglich? | Grund |
+|---|:---:|---|
+| MeshCore KISS → eigenes Python-Decoder-Script | ✅ | Manueller Decoder nötig |
+| MeshCore KISS → Direwolf | ❌ | Direwolf erwartet AX.25 |
+| MeshCore KISS → Hardware-TNC (PK232 o.ä.) | ❌ | TNC erwartet AX.25 |
+| Packet-Radio/AX.25 → MeshCore via Bridge | ❌ | Kein MeshCore-Stack auf PR-Seite |
+| Kanal-selektive KISS-Ausgabe | ❌ | Nicht in Firmware vorgesehen |
+| RS232-Bridge als passiver Monitoring-Tap | ✅ | Alle Pakete, kein Filter |
+
+**Fazit:** Der Bridge-Repeater ist primär ein Monitoring/Logging-Feature.
+Eine echte Zwei-Wege-Interoperabilität mit AX.25/Packet-Radio ist nicht
+realisierbar. GUST's direkte Companion-API-Anbindung bleibt die richtige Wahl.
+
+### GUST-Kanal in MeshCore (Betriebsinfo)
+
+Der GUST-Kanal wurde in Slot 6 des Companion-Nodes eingetragen:
+
+```powershell
+meshcore-cli -s COM18 set_channel 6 "GUST" "68cdfbf043375cc6bbd23c370534cf2d"
+```
+
+Weiterleitungssteuerung in `meshcore.json` unter `channels.slots[index=6]`:
+`"gust_forward": true` aktiviert die HF-Weiterleitung für diesen Kanal.
+
+---
+
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · §32 P8-14 LDPC-Soft schlägt RS bei −10 dB (Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*
+*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · §32 P8-14 LDPC-Soft schlägt RS bei −10 dB (Juni 2026) · §33 MeshCore Bridge-Repeater & KISS (Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*

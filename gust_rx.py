@@ -149,6 +149,51 @@ class AuthFrameBuffer:
             del self._buf[k]
 
 
+class PendingAuthBuffer:
+    """
+    Puffer fuer AUTH-Frames die noch auf ihren Daten-Frame warten (P8-11).
+
+    Speichert empfangene AUTH-Frames (0x50) fuer 60 s, wenn bei ihrer
+    Ankunft kein passender Daten-Frame im AuthFrameBuffer lag (z.B. weil
+    der Deep-Decoder den Daten-Frame erst spaeter nachliefert).
+    Schluessel: (callsign, ref_type_int). Wird rueckwaerts geprueft, sobald
+    ein Daten-Frame neu in _auth_buf landet.
+    """
+
+    AUTH_WINDOW_S = 60.0
+
+    def __init__(self):
+        self._buf: dict = {}   # (callsign, ref_type) -> (auth_data, ts)
+
+    def store(self, callsign: str, ref_type: int, auth_data: dict) -> None:
+        """
+        Noch nicht verifizierten AUTH-Frame speichern.
+        auth_data muss enthalten: timestamp, ref_type, key_id, hmac_tag.
+        """
+        self._buf[(callsign, ref_type)] = (auth_data, time.time())
+
+    def pop(self, callsign: str, ref_type: int):
+        """
+        Gespeicherten AUTH-Frame holen UND entfernen.
+        Gibt None zurueck wenn nicht vorhanden oder abgelaufen.
+        """
+        entry = self._buf.pop((callsign, ref_type), None)
+        if entry is None:
+            return None
+        auth_data, stored_at = entry
+        if time.time() - stored_at > self.AUTH_WINDOW_S:
+            return None   # abgelaufen
+        return auth_data
+
+    def purge_expired(self) -> None:
+        """Abgelaufene Eintraege entfernen. Periodisch aufrufen."""
+        now = time.time()
+        expired = [k for k, (_, ts) in self._buf.items()
+                   if now - ts > self.AUTH_WINDOW_S]
+        for k in expired:
+            del self._buf[k]
+
+
 def _set_low_priority() -> None:
     """
     Setzt die Priorität des aktuellen Threads auf
@@ -417,6 +462,7 @@ class AudioRXLoop:
 
         # AUTH-Frame-Verifikation (P8-11)
         self._auth_buf   = AuthFrameBuffer()
+        self._pending_auth_buf = PendingAuthBuffer()   # AUTH wartet auf Daten-Frame
         self._auth_keys  = {}     # key_id -> bytes; von set_auth_keys() gesetzt
         self._auth_count = 0      # Anzahl erfolgreicher AUTH-Verifikationen
 
@@ -495,8 +541,18 @@ class AudioRXLoop:
 
                 ref_body = self._auth_buf.lookup(callsign, ref_type)
                 if ref_body is None:
+                    # Daten-Frame noch nicht da — AUTH-Frame fuer spaetere
+                    # rueckwirkende Pruefung puffern (z.B. wenn der Deep-
+                    # Decoder den Daten-Frame erst nachliefert).
+                    self._pending_auth_buf.store(callsign, ref_type, {
+                        "timestamp": timestamp,
+                        "ref_type":  ref_type,
+                        "key_id":    key_id,
+                        "hmac_tag":  hmac_tag,
+                    })
                     log.debug("[AUTH] Kein gepufferter Frame fuer %s "
-                              "REF_TYPE=0x%02X", callsign, ref_type)
+                              "REF_TYPE=0x%02X — in pending-Puffer gelegt",
+                              callsign, ref_type)
                 elif verify_auth(ref_body, timestamp, hmac_tag, key):
                     self._auth_count += 1
                     result["authenticated"] = True
@@ -524,10 +580,55 @@ class AudioRXLoop:
         elif raw_body is not None:
             # Daten-Frame fuer spaetere AUTH-Verifikation puffern.
             self._auth_buf.store(callsign, type_int, raw_body)
+            # Rueckwirkende Pruefung: wartete ein AUTH-Frame auf diesen Body?
+            await self._check_pending_auth(callsign, type_int, raw_body)
 
         # Periodisches Aufraeumen abgelaufener Eintraege.
         if self._scan_count % 30 == 0:
             self._auth_buf.purge_expired()
+            self._pending_auth_buf.purge_expired()
+
+    async def _check_pending_auth(self, callsign: str, type_int: int,
+                                  raw_body: bytes) -> None:
+        """
+        Prueft ob ein gepufferter AUTH-Frame auf diesen Daten-Frame gewartet
+        hat (rueckwirkende Verifikation). Wird aufgerufen nachdem ein Daten-
+        Frame in _auth_buf abgelegt wurde — Short- wie Deep-Decoder-Pfad.
+        """
+        if not self._auth_keys:
+            return
+        from gust_frame import verify_auth
+        auth_data = self._pending_auth_buf.pop(callsign, type_int)
+        if auth_data is None:
+            return
+
+        timestamp = auth_data["timestamp"]
+        key_id    = auth_data["key_id"]
+        hmac_tag  = auth_data["hmac_tag"]
+
+        key = self._auth_keys.get(key_id)
+        if key is None:
+            log.debug("[AUTH] Pending: Unbekannter KEY_ID=%d von %s",
+                      key_id, callsign)
+            return
+
+        if verify_auth(raw_body, timestamp, hmac_tag, key):
+            self._auth_count += 1
+            log.info("[AUTH] ✓ Rueckwirkend: Frame von %s authentifiziert "
+                     "(KEY_ID=%d REF_TYPE=0x%02X #%d)",
+                     callsign, key_id, type_int, self._auth_count)
+            if self._bus is not None:
+                await self._bus.publish({
+                    "type": "frame_authenticated",
+                    "data": {
+                        "from":     callsign,
+                        "ref_type": type_int,
+                        "key_id":   key_id,
+                    },
+                })
+        else:
+            log.warning("[AUTH] ✗ Rueckwirkende Verifikation fehlgeschlagen: "
+                        "%s KEY_ID=%d", callsign, key_id)
 
     # ── Statistik ────────────────────────────────────────────────────
 
@@ -802,6 +903,11 @@ class AudioRXLoop:
                                         log.debug("[AUTH] Deep-Decode: %s 0x%02X "
                                                   "im Puffer abgelegt",
                                                   callsign, _ti)
+                                        # Rueckwirkende Pruefung: wartete ein
+                                        # AUTH-Frame auf diesen Body? (Deep-Pfad
+                                        # ist async — await moeglich.)
+                                        await self._check_pending_auth(
+                                            callsign, _ti, _rb)
 
                                 if self._bus is not None:
                                     event = make_rx_frame_event(result)
