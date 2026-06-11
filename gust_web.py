@@ -53,6 +53,19 @@ import aiohttp
 log = logging.getLogger("gust.web")
 
 
+class _BytesEncoder(json.JSONEncoder):
+    """JSON-Encoder der bytes/bytearray als Hex-String serialisiert.
+
+    Schutznetz für den RX-Frame-Broadcast: dekodierte Payloads können
+    bytes-Felder enthalten (z.B. AUTH hmac_tag), die json.dumps sonst
+    mit TypeError abbrechen lassen würden → _event_bus_reader stürzt ab.
+    """
+    def default(self, obj):
+        if isinstance(obj, (bytes, bytearray)):
+            return obj.hex()
+        return super().default(obj)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # KANALPLAN (für UI-Anzeige)
 # ═══════════════════════════════════════════════════════════════════════
@@ -7596,7 +7609,7 @@ class WebServer:
         """
         self._rx_history.append(frame)   # History für /api/log
         self._last_rx_ts = frame.get("ts", time.time())   # "Letzter RX" im Status
-        msg = json.dumps({"type": "rx_frame", "data": frame})
+        msg = json.dumps({"type": "rx_frame", "data": frame}, cls=_BytesEncoder)
         dead = set()
         for ws in list(self._ws_rx_clients):
             if ws.closed:

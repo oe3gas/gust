@@ -198,7 +198,8 @@ def verify_auth(frame_body: bytes, timestamp: int,
     Args:
         frame_body:  Frame-Body des Daten-Frames
         timestamp:   Unix-Timestamp aus dem AUTH-Frame
-        tag:         14-Byte HMAC aus dem AUTH-Frame
+        tag:         14-Byte HMAC aus dem AUTH-Frame (bytes ODER hex-String —
+                     decode_auth() liefert hmac_tag als hex-String)
         key:         Gemeinsamer Schlüssel
         max_age_s:   Maximales Alter des Timestamps (Standard: 60 s)
 
@@ -208,6 +209,8 @@ def verify_auth(frame_body: bytes, timestamp: int,
     import time
     if abs(time.time() - timestamp) > max_age_s:
         return False   # Replay-Schutz (TIMESTAMP zu alt)
+    if isinstance(tag, str):
+        tag = bytes.fromhex(tag)   # hex-String (aus decode_auth) → bytes
     expected = auth_tag(frame_body, timestamp, key)
     return hmac.compare_digest(expected, tag)
 
@@ -239,6 +242,10 @@ def decode_auth(payload: bytes) -> dict:
 
     Returns:
         dict mit: timestamp, ref_type, key_id, hmac_tag
+
+    hmac_tag wird als hex-String (28 Zeichen) zurückgegeben, nicht als bytes —
+    damit das Dict (über payload_decoded) JSON-serialisierbar bleibt und den
+    WebSocket-Broadcast nicht abbricht. verify_auth() akzeptiert beides.
     """
     if len(payload) < 20:
         raise ValueError(f"AUTH-Payload zu kurz: {len(payload)} < 20 Byte")
@@ -247,7 +254,7 @@ def decode_auth(payload: bytes) -> dict:
         "timestamp": timestamp,
         "ref_type":  ref_type,
         "key_id":    key_id,
-        "hmac_tag":  payload[6:20],
+        "hmac_tag":  payload[6:20].hex(),
     }
 
 
