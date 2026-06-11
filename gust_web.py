@@ -313,10 +313,8 @@ main { padding: 16px; max-width: 1200px; }
 .test-pill { display:inline-block; background:#1f6feb; color:#fff !important;
   font-size:var(--fs-xxs); font-weight:bold; padding:1px 6px; border-radius:3px;
   letter-spacing:.5px; white-space:nowrap; vertical-align:middle; flex-shrink:0; }
-/* AUTH-Badge: bewusst grün (≠ blaues TEST) — authentifiziert = verifiziert */
-.auth-pill { display:inline-block; background:#2e7d32; color:#fff !important;
-  font-size:var(--fs-xxs); font-weight:bold; padding:1px 5px; border-radius:3px;
-  white-space:nowrap; vertical-align:middle; flex-shrink:0; cursor:help; }
+/* AUTH-Badge: nur Emoji 🔑, kein Hintergrund (wie Deep-Badge 🔍) */
+.auth-pill { font-size:0.9em; margin-left:2px; vertical-align:middle; cursor:default; }
 .frame-row { cursor: pointer; }
 .frame-row:hover { background: rgba(255,255,255,.04); }
 
@@ -3402,8 +3400,8 @@ function appendRxFrame(frame) {
       : '';
   // Deep-Decode-Fund (vom parallelen 20s-Decoder nachgeliefert)
   const deepBadge = frame.deep
-      ? '<span title="Deep-Decode-Fund" style="font-size:10px;background:#8E44AD;color:#fff;'
-        + 'border-radius:3px;padding:1px 4px;margin-left:4px">🔍</span>'
+      ? '<span title="Deep-Decode-Fund" style="font-size:0.9em;margin-left:2px;'
+        + 'vertical-align:middle;cursor:default">🔍</span>'
       : '';
   row.className = 'frame-row' + (isEmerg ? ' emergency' : '') + (isTest ? ' testframe' : '') + (isMC ? ' meshcore' : '');
   // Matching-Attribute für das retroaktive AUTH-Badge (frame_authenticated):
@@ -5024,11 +5022,14 @@ function slBuildLegend() {
 // ═══════════════════════════════════════════════════════════
 
 function slAddFrame(data, isHistory = false) {
-  // Zeitbezug: tx_start_s bevorzugen (physikalischer Sendezeitpunkt,
-  // monotone Daemon-Zeit), Fallback auf ts (Unix-Decode-Zeitpunkt)
-  const rawT = (data.tx_start_s != null)
-    ? data.tx_start_s
-    : (data.ts || Date.now() / 1000);
+  // Zeitbezug: data.ts (Unix-Wanduhr) verwenden — es ist auf ALLEN
+  // Frame-Quellen vorhanden (GUST wie MeshCore) und in EINER Zeitdomäne.
+  // tx_start_s ist GUST-only und monotone Daemon-Zeit (anderer Nullpunkt);
+  // mischt man es mit ts-basierten MeshCore-Frames in derselben txT0-Achse,
+  // landen GUST-Frames weit außerhalb des Fensters und verschwinden.
+  const rawT = (data.ts != null)
+    ? data.ts
+    : (data.tx_start_s || Date.now() / 1000);
 
   // Beim normalen Live-Empfang: Nullpunkt setzen
   // Beim History-Load: txT0/browserT0 wird von
@@ -5088,10 +5089,11 @@ function slLoadHistory(frames) {
 
   if (!frames || frames.length === 0) return;
 
-  // Zeitstempel aller Frames sammeln
+  // Zeitstempel aller Frames sammeln — data.ts (Unix) konsistent mit
+  // slAddFrame; tx_start_s (monotone Zeit) wuerde die Achse verzerren.
   const times = frames.map(f =>
-    f.tx_start_s != null ? f.tx_start_s
-                         : (f.ts || Date.now() / 1000)
+    f.ts != null ? f.ts
+                 : (f.tx_start_s || Date.now() / 1000)
   );
   const tMin = Math.min(...times);  // ältester Frame
   const tMax = Math.max(...times);  // neuester Frame
