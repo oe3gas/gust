@@ -716,6 +716,15 @@ h2:first-child { margin-top: 0; }
   padding-left: 4px;
 }
 .hb-warn .hb-dot { background: var(--yellow, #f5a623) !important; }
+/* ── Konfig-Editor (cfgedit-Tab) ── */
+.cfg-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:1.2rem 1.4rem;margin-bottom:1rem}
+.cfg-card h3{margin:0 0 .8rem;font-size:1rem;color:var(--accent)}
+.cfg-card label{display:flex;flex-direction:column;gap:.25rem;font-size:.85rem;color:var(--text2);margin-bottom:.6rem}
+.cfg-card label input,.cfg-card label select{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:.35rem .6rem;color:var(--text);font-size:.95rem}
+.cfg-toggle{flex-direction:row!important;align-items:center;gap:.6rem!important;cursor:pointer}
+.cfg-toggle input[type=checkbox]{width:1.1rem;height:1.1rem;cursor:pointer}
+.subtab-btn{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:.3rem .8rem;cursor:pointer;color:var(--text);margin-right:.4rem;margin-bottom:.4rem}
+.subtab-btn.active{background:var(--accent);color:#000;border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -744,6 +753,7 @@ h2:first-child { margin-top: 0; }
   <button onclick="switchTab('status',this)" data-i18n="nav.status">⚙ Status &amp; Config</button>
   <button onclick="switchTab('log',this)" data-i18n="nav.log">🗒 Log</button>
   <button onclick="switchTab('stresstest',this)" data-i18n="nav.stresstest">🧪 Stresstest</button>
+  <button onclick="switchTab('cfgedit',this);cfgLoad()">📝 Konfig</button>
 </nav>
 
 <main>
@@ -1764,6 +1774,138 @@ h2:first-child { margin-top: 0; }
     </div>
   </div>
 </div>
+
+<!-- ══════════════════════════════════════════════════════ TAB: KONFIG-EDITOR -->
+<div id="tab-cfgedit" class="tab-panel">
+        <h2 style="margin:0 0 1rem">📝 gateway.json — Konfiguration</h2>
+        <div id="cfgedit-banner" style="display:none;padding:.6rem 1rem;
+             border-radius:6px;margin-bottom:1rem;font-size:.9rem"></div>
+        <div style="margin-bottom:1.2rem;display:flex;flex-wrap:wrap;gap:.4rem">
+          <button class="subtab-btn active" data-sub="general">Allgemein</button>
+          <button class="subtab-btn" data-sub="gateway_tx">Gateway &amp; TX</button>
+          <button class="subtab-btn" data-sub="audio_rx">Audio &amp; RX</button>
+          <button class="subtab-btn" data-sub="rigctld">CAT / rigctld</button>
+          <button class="subtab-btn" data-sub="trx_profiles">TRX-Profile</button>
+          <button class="subtab-btn" data-sub="sdr">SDR</button>
+        </div>
+
+        <div class="cfgedit-sub" id="cfgsub-general">
+          <div class="cfg-card">
+            <h3>Station</h3>
+            <label>Rufzeichen<input id="cfg-callsign" type="text" maxlength="9" placeholder="OE3GAS"></label>
+            <h3 style="margin-top:1rem">Web-Server</h3>
+            <label>Host<input id="cfg-web-host" type="text" placeholder="0.0.0.0"></label>
+            <label>Port<input id="cfg-web-port" type="number" min="1024" max="65535"></label>
+            <div style="margin-top:.8rem"><button onclick="cfgSaveGeneral()">💾 Speichern</button></div>
+          </div>
+        </div>
+
+        <div class="cfgedit-sub" id="cfgsub-gateway_tx" style="display:none">
+          <div class="cfg-card">
+            <h3>Sendezyklus</h3>
+            <label>Intervall (s)<input id="cfg-gw-interval" type="number" min="10" max="3600"></label>
+            <label>Min. TX-Abstand (s)<input id="cfg-gw-gap" type="number" min="0" max="300"></label>
+            <h3 style="margin-top:1rem">Datenquelle</h3>
+            <label>Adapter<select id="cfg-src-adapter">
+              <option value="sim">sim</option>
+              <option value="mqtt">mqtt</option>
+              <option value="null">null</option>
+            </select></label>
+            <h3 style="margin-top:1rem">Simulator (source.sim)</h3>
+            <label>Wetter-Intervall (s)<input id="cfg-sim-weather" type="number" min="10"></label>
+            <label>Position-Intervall (s)<input id="cfg-sim-position" type="number" min="10"></label>
+            <label>Text-Intervall (s)<input id="cfg-sim-text" type="number" min="10"></label>
+            <label>Latitude<input id="cfg-sim-lat" type="number" step="0.0001"></label>
+            <label>Longitude<input id="cfg-sim-lon" type="number" step="0.0001"></label>
+            <label>Höhe (m)<input id="cfg-sim-alt" type="number"></label>
+            <label class="cfg-toggle">Emergency aktiviert<input id="cfg-sim-emergency" type="checkbox"></label>
+            <label class="cfg-toggle">Drift-Simulation<input id="cfg-sim-drift" type="checkbox"></label>
+            <div style="margin-top:.8rem"><button onclick="cfgSaveGatewayTx()">💾 Speichern</button></div>
+          </div>
+        </div>
+
+        <div class="cfgedit-sub" id="cfgsub-audio_rx" style="display:none">
+          <div class="cfg-card">
+            <h3>TX-Audio</h3>
+            <label>TX-Audiogerät (ID)<input id="cfg-audio-device" type="number" min="0"></label>
+            <label>PTT-Backend<select id="cfg-audio-ptt">
+              <option value="hamlib">hamlib</option>
+              <option value="gpio">gpio</option>
+              <option value="null">null (kein TX)</option>
+            </select></label>
+            <label>PTT-Verzögerung (ms)<input id="cfg-audio-pttdelay" type="number" min="0" max="2000"></label>
+            <label>Pegel (%)<input id="cfg-audio-level" type="number" min="1" max="100"></label>
+            <label>Hamlib-Host<input id="cfg-audio-hhost" type="text"></label>
+            <label>Hamlib-Port<input id="cfg-audio-hport" type="number" min="1024" max="65535"></label>
+            <h3 style="margin-top:1rem">RX</h3>
+            <label class="cfg-toggle">RX aktiviert<input id="cfg-rx-enabled" type="checkbox"></label>
+            <label>RX-Audiogerät (ID)<input id="cfg-rx-device" type="number" min="0"></label>
+            <label>Scan-Intervall (s)<input id="cfg-rx-scan" type="number" step="0.5" min="0.5"></label>
+            <label>Fenster (s)<input id="cfg-rx-window" type="number" step="0.5" min="5"></label>
+            <label>Dedup-TTL (s)<input id="cfg-rx-dedup" type="number" min="5"></label>
+            <div style="margin-top:.8rem"><button onclick="cfgSaveAudioRx()">💾 Speichern</button></div>
+          </div>
+        </div>
+
+        <div class="cfgedit-sub" id="cfgsub-rigctld" style="display:none">
+          <div class="cfg-card">
+            <h3>rigctld (globale Basis)</h3>
+            <label class="cfg-toggle">Auto-Start<input id="cfg-rig-autostart" type="checkbox"></label>
+            <label>Rig-Modell<input id="cfg-rig-model" type="number" min="1"></label>
+            <label>COM-Port<input id="cfg-rig-device" type="text" placeholder="COM10"></label>
+            <label>Baudrate<select id="cfg-rig-baud">
+              <option>4800</option><option>9600</option>
+              <option>19200</option><option>38400</option><option>57600</option>
+            </select></label>
+            <label>Host<input id="cfg-rig-host" type="text"></label>
+            <label>Port<input id="cfg-rig-port" type="number" min="1024" max="65535"></label>
+            <div style="margin-top:.8rem"><button onclick="cfgSaveRigctld()">💾 Speichern</button></div>
+          </div>
+        </div>
+
+        <div class="cfgedit-sub" id="cfgsub-trx_profiles" style="display:none">
+          <div id="cfgedit-trx-list"></div>
+          <div class="cfg-card" style="margin-top:1rem">
+            <h3>➕ Neues Profil</h3>
+            <label>Name<input id="cfg-trx-new-name" type="text" placeholder="IC-7300"></label>
+            <label>Rig-Modell<input id="cfg-trx-new-rigmodel" type="number" placeholder="3073"></label>
+            <label>COM-Port<input id="cfg-trx-new-device" type="text" placeholder="COM5"></label>
+            <label>Baudrate<select id="cfg-trx-new-baud">
+              <option>4800</option><option>9600</option>
+              <option>19200</option><option selected>38400</option><option>57600</option>
+            </select></label>
+            <label>TX-Audio ID<input id="cfg-trx-new-audiotx" type="number" min="0"></label>
+            <label>RX-Audio ID<input id="cfg-trx-new-audiorx" type="number" min="0"></label>
+            <label>PTT-Backend<select id="cfg-trx-new-ptt">
+              <option value="hamlib">hamlib</option>
+              <option value="gpio">gpio</option>
+              <option value="null">null</option>
+            </select></label>
+            <label class="cfg-toggle">Auto-Start<input id="cfg-trx-new-autostart" type="checkbox" checked></label>
+            <div style="margin-top:.8rem"><button onclick="cfgTrxAdd()">➕ Profil hinzufügen</button></div>
+          </div>
+        </div>
+
+        <div class="cfgedit-sub" id="cfgsub-sdr" style="display:none">
+          <div class="cfg-card">
+            <h3>RTL-SDR IQ-Eingang</h3>
+            <label class="cfg-toggle">Aktiviert<input id="cfg-rtl-enabled" type="checkbox"></label>
+            <label>Center-Frequenz (Hz)<input id="cfg-rtl-freq" type="number"></label>
+            <label>Sample-Rate<input id="cfg-rtl-rate" type="number"></label>
+            <label>Gain<input id="cfg-rtl-gain" type="text" placeholder="auto"></label>
+            <label>PPM-Korrektur<input id="cfg-rtl-ppm" type="number"></label>
+            <h3 style="margin-top:1rem">SoapySDR TX</h3>
+            <label class="cfg-toggle">Aktiviert<input id="cfg-sdr-enabled" type="checkbox"></label>
+            <label>Frequenz (Hz)<input id="cfg-sdr-freq" type="number"></label>
+            <label>Sample-Rate<input id="cfg-sdr-rate" type="number"></label>
+            <label>Antenne<input id="cfg-sdr-antenna" type="text"></label>
+            <label>Gain (0.0–1.0)<input id="cfg-sdr-gain" type="number" step="0.05" min="0" max="1"></label>
+            <label>TX-Kanal<input id="cfg-sdr-txch" type="number" min="0"></label>
+            <div style="margin-top:.8rem"><button onclick="cfgSaveSdr()">💾 Speichern</button></div>
+          </div>
+        </div>
+
+</div><!-- /#tab-cfgedit -->
 
 </main><!-- /main -->
 
@@ -5611,6 +5753,264 @@ function slExport() {
   fetchTxQueue();
   setInterval(loadStatus, 30000);
 })();
+
+// ═══════════════════════════════════════════════════════════
+// KONFIG-EDITOR (cfgedit-Tab)
+// ═══════════════════════════════════════════════════════════
+
+// Sub-Tab-Navigation
+document.querySelectorAll('.subtab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const sub = btn.dataset.sub;
+    document.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.cfgedit-sub').forEach(d => d.style.display = 'none');
+    const el = document.getElementById('cfgsub-' + sub);
+    if (el) el.style.display = '';
+    if (sub === 'trx_profiles') cfgRenderTrxList();
+  });
+});
+
+// Beim Tab-Wechsel auf cfgedit → Daten laden
+const _origShowTab = typeof showTab === 'function' ? showTab : null;
+// Tab-Klick-Listener nachrüsten
+document.querySelectorAll('.tab-btn[data-tab="cfgedit"]').forEach(btn => {
+  btn.addEventListener('click', cfgLoad);
+});
+
+function cfgBanner(msg, ok=true) {
+  const el = document.getElementById('cfgedit-banner');
+  el.textContent = msg;
+  el.style.display = '';
+  el.style.background = ok ? 'var(--success-bg,#1a3a1a)' : 'var(--error-bg,#3a1a1a)';
+  el.style.color = ok ? 'var(--success,#4caf50)' : 'var(--error,#f44336)';
+  setTimeout(() => { el.style.display = 'none'; }, 3500);
+}
+
+async function cfgLoad() {
+  try {
+    const cfg = await apiFetch('/api/config');
+    // Allgemein
+    document.getElementById('cfg-callsign').value = cfg.callsign ?? '';
+    document.getElementById('cfg-web-host').value = (cfg.web||{}).host ?? '0.0.0.0';
+    document.getElementById('cfg-web-port').value = (cfg.web||{}).port ?? 8080;
+    // Gateway & TX
+    document.getElementById('cfg-gw-interval').value = (cfg.gateway||{}).interval_s ?? 300;
+    document.getElementById('cfg-gw-gap').value      = (cfg.gateway||{}).min_tx_gap_s ?? 10;
+    const src = (cfg.source||{});
+    const sim = src.sim || {};
+    document.getElementById('cfg-src-adapter').value    = src.adapter ?? 'sim';
+    document.getElementById('cfg-sim-weather').value    = sim.weather_interval_s  ?? 300;
+    document.getElementById('cfg-sim-position').value   = sim.position_interval_s ?? 300;
+    document.getElementById('cfg-sim-text').value       = sim.text_interval_s     ?? 120;
+    document.getElementById('cfg-sim-lat').value        = sim.lat  ?? 48.2082;
+    document.getElementById('cfg-sim-lon').value        = sim.lon  ?? 16.3738;
+    document.getElementById('cfg-sim-alt').value        = sim.alt_m ?? 180;
+    document.getElementById('cfg-sim-emergency').checked = !!sim.emergency_enabled;
+    document.getElementById('cfg-sim-drift').checked    = !!sim.drift;
+    // Audio & RX
+    const aud = cfg.audio || {};
+    document.getElementById('cfg-audio-device').value   = aud.device   ?? '';
+    document.getElementById('cfg-audio-ptt').value      = aud.ptt_backend ?? 'null';
+    document.getElementById('cfg-audio-pttdelay').value = aud.ptt_delay_ms ?? 250;
+    document.getElementById('cfg-audio-level').value    = aud.level    ?? 30;
+    document.getElementById('cfg-audio-hhost').value    = aud.hamlib_host ?? 'localhost';
+    document.getElementById('cfg-audio-hport').value    = aud.hamlib_port ?? 4532;
+    const rx = cfg.rx || {};
+    document.getElementById('cfg-rx-enabled').checked   = rx.enabled !== false;
+    document.getElementById('cfg-rx-device').value      = rx.device   ?? '';
+    document.getElementById('cfg-rx-scan').value        = rx.scan_interval_s ?? 2.0;
+    document.getElementById('cfg-rx-window').value      = rx.window_s        ?? 9.0;
+    document.getElementById('cfg-rx-dedup').value       = rx.dedup_ttl_s     ?? 30;
+    // rigctld
+    const rig = cfg.rigctld || {};
+    document.getElementById('cfg-rig-autostart').checked = !!rig.auto_start;
+    document.getElementById('cfg-rig-model').value  = rig.rig_model ?? '';
+    document.getElementById('cfg-rig-device').value = rig.device    ?? '';
+    document.getElementById('cfg-rig-baud').value   = rig.baud      ?? 4800;
+    document.getElementById('cfg-rig-host').value   = rig.host      ?? 'localhost';
+    document.getElementById('cfg-rig-port').value   = rig.port      ?? 4532;
+    // SDR
+    const rtl = cfg.rtlsdr || {};
+    document.getElementById('cfg-rtl-enabled').checked = !!rtl.enabled;
+    document.getElementById('cfg-rtl-freq').value  = rtl.center_freq_hz ?? 14110000;
+    document.getElementById('cfg-rtl-rate').value  = rtl.sample_rate   ?? 250000;
+    document.getElementById('cfg-rtl-gain').value  = rtl.gain          ?? 'auto';
+    document.getElementById('cfg-rtl-ppm').value   = rtl.ppm_correction ?? 0;
+    const sdt = cfg.sdr_tx || {};
+    document.getElementById('cfg-sdr-enabled').checked = !!sdt.enabled;
+    document.getElementById('cfg-sdr-freq').value   = sdt.freq_hz     ?? 14110000;
+    document.getElementById('cfg-sdr-rate').value   = sdt.sample_rate ?? 2000000;
+    document.getElementById('cfg-sdr-antenna').value= sdt.antenna     ?? '';
+    document.getElementById('cfg-sdr-gain').value   = (sdt.gain||{}).normalized ?? 0.5;
+    document.getElementById('cfg-sdr-txch').value   = sdt.tx_channel  ?? 0;
+  } catch(e) {
+    cfgBanner('Fehler beim Laden: ' + e.message, false);
+  }
+}
+
+async function cfgPatch(section, values) {
+  const r = await fetch('/api/config/section', {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({section, values})
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(t);
+  }
+  return r.json();
+}
+
+async function cfgSaveGeneral() {
+  try {
+    await cfgPatch('_root', { callsign: document.getElementById('cfg-callsign').value.toUpperCase() });
+    await cfgPatch('web',   { host: document.getElementById('cfg-web-host').value,
+                               port: parseInt(document.getElementById('cfg-web-port').value) });
+    cfgBanner('✅ Allgemein gespeichert — Neustart für Rufzeichen/Port nötig');
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+async function cfgSaveGatewayTx() {
+  try {
+    await cfgPatch('gateway', {
+      interval_s:    parseInt(document.getElementById('cfg-gw-interval').value),
+      min_tx_gap_s:  parseInt(document.getElementById('cfg-gw-gap').value)
+    });
+    await cfgPatch('source', { adapter: document.getElementById('cfg-src-adapter').value });
+    await cfgPatch('source.sim', {
+      weather_interval_s:  parseInt(document.getElementById('cfg-sim-weather').value),
+      position_interval_s: parseInt(document.getElementById('cfg-sim-position').value),
+      text_interval_s:     parseInt(document.getElementById('cfg-sim-text').value),
+      lat:   parseFloat(document.getElementById('cfg-sim-lat').value),
+      lon:   parseFloat(document.getElementById('cfg-sim-lon').value),
+      alt_m: parseInt(document.getElementById('cfg-sim-alt').value),
+      emergency_enabled: document.getElementById('cfg-sim-emergency').checked,
+      drift:             document.getElementById('cfg-sim-drift').checked
+    });
+    cfgBanner('✅ Gateway & TX gespeichert');
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+async function cfgSaveAudioRx() {
+  try {
+    await cfgPatch('audio', {
+      device:       parseInt(document.getElementById('cfg-audio-device').value),
+      ptt_backend:  document.getElementById('cfg-audio-ptt').value,
+      ptt_delay_ms: parseInt(document.getElementById('cfg-audio-pttdelay').value),
+      level:        parseFloat(document.getElementById('cfg-audio-level').value),
+      hamlib_host:  document.getElementById('cfg-audio-hhost').value,
+      hamlib_port:  parseInt(document.getElementById('cfg-audio-hport').value)
+    });
+    await cfgPatch('rx', {
+      enabled:          document.getElementById('cfg-rx-enabled').checked,
+      device:           parseInt(document.getElementById('cfg-rx-device').value),
+      scan_interval_s:  parseFloat(document.getElementById('cfg-rx-scan').value),
+      window_s:         parseFloat(document.getElementById('cfg-rx-window').value),
+      dedup_ttl_s:      parseInt(document.getElementById('cfg-rx-dedup').value)
+    });
+    cfgBanner('✅ Audio & RX gespeichert — Neustart für Audio-Gerät nötig');
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+async function cfgSaveRigctld() {
+  try {
+    await cfgPatch('rigctld', {
+      auto_start: document.getElementById('cfg-rig-autostart').checked,
+      rig_model:  parseInt(document.getElementById('cfg-rig-model').value),
+      device:     document.getElementById('cfg-rig-device').value,
+      baud:       parseInt(document.getElementById('cfg-rig-baud').value),
+      host:       document.getElementById('cfg-rig-host').value,
+      port:       parseInt(document.getElementById('cfg-rig-port').value)
+    });
+    cfgBanner('✅ rigctld gespeichert — rigctld neu starten um Änderungen zu übernehmen');
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+async function cfgSaveSdr() {
+  try {
+    await cfgPatch('rtlsdr', {
+      enabled:        document.getElementById('cfg-rtl-enabled').checked,
+      center_freq_hz: parseInt(document.getElementById('cfg-rtl-freq').value),
+      sample_rate:    parseInt(document.getElementById('cfg-rtl-rate').value),
+      gain:           document.getElementById('cfg-rtl-gain').value,
+      ppm_correction: parseInt(document.getElementById('cfg-rtl-ppm').value)
+    });
+    await cfgPatch('sdr_tx', {
+      enabled:     document.getElementById('cfg-sdr-enabled').checked,
+      freq_hz:     parseInt(document.getElementById('cfg-sdr-freq').value),
+      sample_rate: parseInt(document.getElementById('cfg-sdr-rate').value),
+      antenna:     document.getElementById('cfg-sdr-antenna').value,
+      gain:        { normalized: parseFloat(document.getElementById('cfg-sdr-gain').value) },
+      tx_channel:  parseInt(document.getElementById('cfg-sdr-txch').value)
+    });
+    cfgBanner('✅ SDR-Einstellungen gespeichert');
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+// ── TRX-Profile ───────────────────────────────────────────
+async function cfgRenderTrxList() {
+  try {
+    const cfg = await apiFetch('/api/config');
+    const profiles = cfg.trx_profiles || [];
+    const active   = cfg.active_trx_profile || '';
+    const container = document.getElementById('cfgedit-trx-list');
+    if (!profiles.length) {
+      container.innerHTML = '<p style="color:var(--text-dim)">Keine Profile vorhanden.</p>';
+      return;
+    }
+    container.innerHTML = profiles.map(p => `
+      <div class="cfg-card" style="position:relative">
+        <h3>${p.name}${p.name===active?' <span style="color:var(--accent);font-size:.8rem">● aktiv</span>':''}</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .8rem;font-size:.85rem">
+          <span>Rig-Modell:</span><span>${p.rig_model}</span>
+          <span>COM-Port:</span><span>${p.device}</span>
+          <span>Baudrate:</span><span>${p.baud}</span>
+          <span>TX-Audio ID:</span><span>${p.audio_device_tx ?? '–'}</span>
+          <span>RX-Audio ID:</span><span>${p.audio_device_rx ?? '–'}</span>
+          <span>PTT-Backend:</span><span>${p.ptt_backend}</span>
+          <span>Auto-Start:</span><span>${p.auto_start ? '✅' : '—'}</span>
+        </div>
+        <div style="margin-top:.8rem;display:flex;gap:.5rem">
+          ${p.name!==active?`<button onclick="cfgTrxDelete('${p.name}')">🗑 Löschen</button>`:''}
+        </div>
+      </div>`).join('');
+  } catch(e) { cfgBanner('TRX-Liste laden: ' + e.message, false); }
+}
+
+async function cfgTrxAdd() {
+  const profile = {
+    name:          document.getElementById('cfg-trx-new-name').value.trim(),
+    rig_model:     parseInt(document.getElementById('cfg-trx-new-rigmodel').value),
+    device:        document.getElementById('cfg-trx-new-device').value.trim(),
+    baud:          parseInt(document.getElementById('cfg-trx-new-baud').value),
+    audio_device_tx: parseInt(document.getElementById('cfg-trx-new-audiotx').value),
+    audio_device_rx: parseInt(document.getElementById('cfg-trx-new-audiorx').value),
+    ptt_backend:   document.getElementById('cfg-trx-new-ptt').value,
+    auto_start:    document.getElementById('cfg-trx-new-autostart').checked
+  };
+  if (!profile.name) { cfgBanner('Name darf nicht leer sein', false); return; }
+  try {
+    const r = await fetch('/api/config/trx_profile', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(profile)
+    });
+    if (!r.ok) throw new Error(await r.text());
+    cfgBanner('✅ Profil "' + profile.name + '" hinzugefügt');
+    cfgRenderTrxList();
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+async function cfgTrxDelete(name) {
+  if (!confirm('Profil "' + name + '" wirklich löschen?')) return;
+  try {
+    const r = await fetch('/api/config/trx_profile/' + encodeURIComponent(name),
+                          {method:'DELETE'});
+    if (!r.ok) throw new Error(await r.text());
+    cfgBanner('✅ Profil "' + name + '" gelöscht');
+    cfgRenderTrxList();
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
 </script>
 <!-- ══ FRAME DETAIL MODAL ══ -->
 <div id="frame-modal" onclick="if(event.target===this)closeModal()">
@@ -5791,6 +6191,9 @@ class WebServer:
         app.router.add_get   ("/api/tx/queue",       self._handle_tx_queue)
         app.router.add_delete("/api/tx/queue",       self._handle_tx_queue_clear)
         app.router.add_post  ("/api/trx/activate",    self._handle_trx_activate)
+        app.router.add_patch ("/api/config/section",  self._handle_cfg_section_patch)
+        app.router.add_post  ("/api/config/trx_profile",        self._handle_cfg_trx_add)
+        app.router.add_delete("/api/config/trx_profile/{name}", self._handle_cfg_trx_delete)
         app.router.add_post  ("/api/trx/save",        self._handle_trx_save)
         app.router.add_delete("/api/trx/profile",     self._handle_trx_delete)
         app.router.add_get ("/api/audio/devices", self._handle_audio_devices)
@@ -5967,6 +6370,134 @@ class WebServer:
                 )
 
         return web.json_response({"ok": True, "updated": patch})
+
+    async def _handle_cfg_section_patch(self, request: web.Request) -> web.Response:
+        """
+        PATCH /api/config/section
+        Body: {"section": "gateway", "values": {"interval_s": 120}}
+              {"section": "source.sim", "values": {"lat": 48.21}}
+              {"section": "_root", "values": {"callsign": "OE1XTU"}}
+        Schreibt in self._config und persistiert in gateway.json.
+        api_key wird nie überschrieben.
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text='{"error":"Ungültiger JSON-Body"}',
+                content_type="application/json")
+
+        section = body.get("section", "")
+        values  = body.get("values", {})
+
+        if not isinstance(values, dict) or not section:
+            raise web.HTTPBadRequest(
+                text='{"error":"section und values erforderlich"}',
+                content_type="application/json")
+
+        if section == "web":
+            values.pop("api_key", None)
+
+        if section == "_root":
+            self._config.update(values)
+        elif "." in section:
+            parts = section.split(".", 1)
+            self._config.setdefault(parts[0], {})
+            if isinstance(self._config[parts[0]], dict):
+                self._config[parts[0]].setdefault(parts[1], {})
+                if isinstance(self._config[parts[0]][parts[1]], dict):
+                    self._config[parts[0]][parts[1]].update(values)
+                else:
+                    self._config[parts[0]][parts[1]] = values
+        else:
+            self._config.setdefault(section, {})
+            if isinstance(self._config[section], dict):
+                self._config[section].update(values)
+            else:
+                self._config[section] = values
+
+        if self._config_path is not None:
+            try:
+                async with self._config_write_lock:
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self._save_config_atomic)
+            except Exception as exc:
+                log.error("cfg_section_patch: Schreiben fehlgeschlagen: %s", exc)
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"{exc}"}}',
+                    content_type="application/json")
+
+        log.info("Konfig-Sektion '%s' aktualisiert: %s", section, values)
+        return web.json_response({"ok": True, "section": section, "updated": values})
+
+    async def _handle_cfg_trx_add(self, request: web.Request) -> web.Response:
+        """
+        POST /api/config/trx_profile
+        Fügt ein neues Profil zu trx_profiles hinzu oder überschreibt ein gleichnamiges.
+        """
+        try:
+            profile = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text='{"error":"Ungültiger JSON-Body"}',
+                content_type="application/json")
+
+        name = profile.get("name", "").strip()
+        if not name:
+            raise web.HTTPBadRequest(
+                text='{"error":"name erforderlich"}',
+                content_type="application/json")
+
+        profiles = self._config.setdefault("trx_profiles", [])
+        idx = next((i for i, p in enumerate(profiles) if p.get("name") == name), None)
+        if idx is not None:
+            profiles[idx] = profile
+        else:
+            profiles.append(profile)
+
+        if self._config_path is not None:
+            try:
+                async with self._config_write_lock:
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self._save_config_atomic)
+            except Exception as exc:
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"{exc}"}}',
+                    content_type="application/json")
+
+        return web.json_response({"ok": True, "name": name})
+
+    async def _handle_cfg_trx_delete(self, request: web.Request) -> web.Response:
+        """
+        DELETE /api/config/trx_profile/<name>
+        Aktives Profil kann nicht gelöscht werden.
+        """
+        name = request.match_info.get("name", "")
+        if self._config.get("active_trx_profile") == name:
+            raise web.HTTPConflict(
+                text='{"error":"Aktives Profil kann nicht gelöscht werden"}',
+                content_type="application/json")
+
+        profiles = self._config.get("trx_profiles", [])
+        new_profiles = [p for p in profiles if p.get("name") != name]
+        if len(new_profiles) == len(profiles):
+            raise web.HTTPNotFound(
+                text=f'{{"error":"Profil nicht gefunden: {name}"}}',
+                content_type="application/json")
+
+        self._config["trx_profiles"] = new_profiles
+
+        if self._config_path is not None:
+            try:
+                async with self._config_write_lock:
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self._save_config_atomic)
+            except Exception as exc:
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"{exc}"}}',
+                    content_type="application/json")
+
+        return web.json_response({"ok": True, "deleted": name})
 
     async def _handle_config_post(self, request: web.Request) -> web.Response:
         """
