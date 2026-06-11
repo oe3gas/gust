@@ -38,6 +38,7 @@
 | P5-20 | 🟡 | feature | Web-UI: TX-Warteschlange löschen | Button „✕ Warteschlange löschen" über der TX-Queue-Anzeige. `DELETE /api/tx/queue` → `TxGateway.clear_queue()` → gibt Anzahl gelöschter Frames zurück. Frames die gerade gesendet werden bleiben unberührt. | ✅ |
 | P5-21 | 🟢 | feature | Web-UI: Mehrsprachigkeit (i18n DE/EN) | `locales/de.json` + `locales/en.json` (194 Keys). `/api/lang/<code>`-Endpunkt. JS-Mechanismus `t('key')`, `loadLang()`, `applyI18n()` mit `data-i18n` / `data-i18n-html` / `data-i18n-placeholder`. Sprachschalter im Darstellung-Tab, `localStorage`-Persistenz. | ✅ |
 | P5-22 | 🟢 | feature | Web-UI: Inbox-Kosmetik fehlende Frames | Fehlende Frames im Nachrichtentext als `[…fehlt…]`-Badge (inline, orange gestrichelt). Nachrichtentext in `var(--text)` und `var(--fs-lg)` für bessere Lesbarkeit. | ✅ |
+| P5-23 | 🟡 | feature | Web-UI: gateway.json Editor (cfgedit-Tab) | Neuer Tab „📝 Konfig" mit 6 Sub-Sektionen: Allgemein, Gateway & TX, Audio & RX, CAT/rigctld, TRX-Profile, SDR. Backend: PATCH /api/config/section, POST/DELETE /api/config/trx_profile. JS: cfgLoad/cfgPatch/cfgSave*/cfgTrxAdd/cfgTrxDelete. Funktioniert in allen Modi (daemon, --sim, --dry-run, rx). Commit 67ad017. | ✅ |
 
 ### Umsetzungsnotiz P5-13 / P5-14 (Mai 2026)
 
@@ -64,6 +65,30 @@ Alle Änderungen ausschließlich in `gust_web.py`; Spec in `gust_spec.md §4.4` 
   Bug gefixt (generische Regel ergänzt). Designentscheidung in gust_spec.md §3.4 dokumentiert.
 - **Warteschlange löschen (P5-20):** `TxGateway.clear_queue()` gibt Anzahl zurück;
   `DELETE /api/tx/queue` in gust_spec.md §4.4 dokumentiert.
+
+### Umsetzungsnotiz P5-23 (Juni 2026)
+
+Alle Änderungen in `gust_web.py` (531 Zeilen, Commit 67ad017):
+- **Backend:** `_handle_cfg_section_patch()` (PATCH `/api/config/section`),
+  `_handle_cfg_trx_add()` (POST), `_handle_cfg_trx_delete()` (DELETE).
+  Schreibt in `self._config` und persistiert via `_save_config_atomic()`.
+  Bei `config_path=None` (kein gateway.json auf Disk) nur In-Memory — kein Fehler.
+  `web`-Sektion schützt `api_key` (wird nie überschrieben); aktives TRX-Profil
+  kann nicht gelöscht werden (409).
+- **HTML:** Tab-Button + `#tab-cfgedit`-Panel mit 6 Sub-Sektionen,
+  CSS-Klassen `.cfg-card`, `.cfg-toggle`, `.subtab-btn`.
+- **JS:** `cfgLoad()` befüllt alle Felder aus `GET /api/config`,
+  `cfgPatch()` sendet `PATCH /api/config/section`,
+  je ein `cfgSave*()` pro Sub-Sektion, TRX-Profil-CRUD.
+- **Tab-Integration:** Nav-Button `onclick="switchTab('cfgedit',this);cfgLoad()"`
+  (diese UI nutzt `switchTab(name, btn)`, **kein** `showTab()`); Panel
+  `#tab-cfgedit.tab-panel`, Sichtbarkeit über die `.active`-Klasse. Sub-Tabs
+  über den `.subtab-btn`-Handler (zeigt `#cfgsub-*`).
+- **Abweichungen ggü. Vorlage:** Panel-ID `tab-cfgedit` statt `cfgedit-tab`
+  (passt zum `switchTab`/`#tab-<name>`-Schema); cfgLoad im Button-onclick statt
+  über einen `.tab-btn[data-tab]`-Listener (existiert in dieser UI nicht); CSS-
+  Variablen `--panel`→`--bg2` und `--text-dim`→`--text2` (Theme definiert nur
+  `--bg2`/`--text2`). Funktionsumfang unverändert.
 
 ---
 
@@ -318,16 +343,25 @@ Implementiert:
 - auth_tag(), verify_auth() (HMAC-SHA256-14, compare_digest,
   Replay-Check 60 s) ✅
 - gateway.json auth-Block + Schluessel-Vorlage ✅
-- gust_tx_test.py --auth Flag (TX-Tooling) ✅
+- gust_tx_test.py --auth Flag, realistischer Test (bekannte Stationen
+  verifizieren ✓, fremde KEY_ID=99 schlagen fehl ✗) ✅
 - AuthFrameBuffer (60-s-Puffer, key=Rufzeichen+REF_TYPE) ✅
 - gust_rx.py RX-Verifikation, result["authenticated"]=True ✅
 - gust_eventbus.py: _raw_frame_body vor WebSocket-Broadcast
-  entfernen (bytes not JSON serializable fix) ✅
-- Web-UI: .auth-pill (gruen), appendRxFrame-Badge,
-  Frame-Detail-Modal Authentifizierungs-Zeile ✅
+  entfernen (bytes not JSON serializable fix); decode_auth hmac_tag
+  als hex-String ✅
+- Web-UI: .auth-pill (gruen), AUTH-Frame aus Live Feed gefiltert,
+  retroaktives 🔑-Badge am Daten-Frame (frame_authenticated-Event) ✅
+- gust_keygen.py: Schlüsselaustausch-Werkzeug (init/accept/confirm/
+  list/revoke), schreibt auth.keys atomar in gateway.json ✅
 
 AUTH-Frame Layout (final, 20 Byte):
   TIMESTAMP(4B) | REF_TYPE(1B) | KEY_ID(1B) | HMAC-SHA256-14(14B)
+
+Schlüsselaustausch (gust_keygen.py): 3-stufiger Handshake init → accept
+→ confirm. confirm setzt die key_id des pending-Eintrags auf die vom
+Partner gewählte Empfangs-ID (Endzustand: jede Station speichert die
+KEY_ID, mit der sie eingehende Frames der Gegenstelle verifiziert).
 
 Referenz: gust_spec.md §3.5, gust_knowledge.md §28
 

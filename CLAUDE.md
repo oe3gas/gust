@@ -49,11 +49,13 @@ Kernänderungen gegenüber v0.2:
 | Parallelkanal-Diversity (RX-Dedup, Diversity-Gewinn bestätigt 100% vs ~90%) | ✅ |
 | TX-Pipeline IC-7610 via USB-Audio + hamlib PTT | ✅ |
 | SNR-Schätzer adaptiv (BUG-06 gefixt, alle Kanäle konsistent) | ✅ |
-| Web-UI (aiohttp, REST + WebSocket, 4 Tabs, Dark/Light Theme) | ✅ |
+| Web-UI (aiohttp, REST + WebSocket, 4 Tabs + cfgedit-Tab, Dark/Light Theme) | ✅ |
 | Web-/REST-TX (TxGateway: Slot-Scheduling, Cooldown, Notfall-Vordrang) | ✅ |
+| gateway.json Editor im Web-UI (cfgedit-Tab, 6 Sub-Sektionen, alle Modi) | ✅ |
 | TX-Slot-Disziplin: P4/P3 → Stations-Slot, P2 → ≤30 s, P1 → sofort | ✅ |
 | Notfall-Frames via Web-TX als Dual-Kanal (Heimatkanal + home+5, ADR-12) | ✅ |
 | Web-UI TX-Warteschlange mit Per-Frame-Countdown (/api/tx/queue) | ✅ |
+| Web-UI RX-Feed Display-Filter (Quelle HF/MC · Typ · Rufzeichen, clientseitig) | ✅ |
 | Event-Bus (asyncio Fan-out, TTL-Filter) | ✅ |
 | CLI (daemon/rx/tx/info/devices) | ✅ |
 | Erster On-Air-Test 14.110 MHz (18. Mai 2026) | ✅ |
@@ -181,7 +183,8 @@ Diese Invariante beim Loop-Start prüfen und ausgeben!
 | `gust_web.py` | aiohttp Web-Server, REST API, WebSocket | — |
 | `gust_gateway.py` | TX-Gateway: Prioritäts-Queue + Worker für Web-/REST-Sendungen | 1.0.0 |
 | `gust.py` | CLI-Einstiegspunkt (daemon/rx/tx/info/devices) | 0.1.1 |
-| `gust_tx_test.py` | TX-Mess-Skript (--tx hackrf/audio, --channels Zufalls-Pool, --gain-sequence, -v, TEST-Flag) | 1.3.0 |
+| `gust_tx_test.py` | TX-Mess-Skript (--tx hackrf/audio, --channels Zufalls-Pool, --gain-sequence, -v, TEST-Flag, --auth bekannt/fremd) | 1.3.0 |
+| `gust_keygen.py` | HMAC-Schlüsselaustausch-Werkzeug (init/accept/confirm/list/revoke), schreibt auth.keys in gateway.json | 1.0.0 |
 | `gateway.json` | Stationskonfiguration | — |
 | `requirements.txt` | Python-Abhängigkeiten | — |
 
@@ -340,6 +343,29 @@ py gust_tx_test.py --device 9 --ptt hamlib --level 30 --channels 2,7
   im `--beacon`-Modus —, damit Empfänger sie als Testverkehr erkennen.
 - **`py gust_tx_test.py -v`** zeigt nur die aktive Konfiguration aus `gateway.json`
   und beendet sich (kein TX).
+
+### HMAC-Schlüsselaustausch (gust_keygen.py)
+Werkzeug für den bilateralen Austausch der AUTH-Schlüssel (Frame 0x50). Schreibt
+`auth.keys` in `gateway.json` **atomar** (tempfile → `os.replace`). Dreistufiger
+Handshake, weil jede Station ihre KEY_IDs unabhängig vergibt — der **Empfänger**
+bestimmt, welche KEY_ID die AUTH-Frames tragen müssen, die er verifiziert:
+```bash
+# 1) Initiator (OE3GAS): Schlüssel erzeugen, freie KEY_ID, Block für Partner
+py gust_keygen.py init --partner OE1XTU
+# 2) Partner (OE1XTU): Block eintragen, eigene KEY_ID zurückmelden
+py gust_keygen.py accept --from OE3GAS --key-id 4 --key-hex <64hex> [--my-key-id 35]
+# 3) Initiator: Eintrag mit der KEY_ID des Partners vervollständigen
+py gust_keygen.py confirm --partner OE1XTU --their-key-id 35
+# Verwaltung
+py gust_keygen.py list
+py gust_keygen.py revoke --key-id 4 [--yes]
+```
+- `confirm` setzt die `key_id` des offenen (pending) Eintrags auf `--their-key-id`
+  (so verifiziert OE3GAS OE1XTU-Frames mit dieser ID) — **kein** reines
+  Kommentar-Update, sonst schlüge die Verifikation fehl.
+- Endzustand: OE3GAS speichert `{key_id: 35, callsign: OE1XTU}`,
+  OE1XTU speichert `{key_id: 4, callsign: OE3GAS}` (jede Seite die Empfangs-ID).
+- `--config <datei>` überschreibt den gateway.json-Pfad (für Tests).
 
 ### Laborkonfiguration
 - **IC-7610 ACC/USB Input Level:** 40%
