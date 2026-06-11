@@ -447,7 +447,7 @@ class AudioRXLoop:
         self._auth_keys = keys or {}
         log.debug("[AUTH] %d Schluessel geladen", len(self._auth_keys))
 
-    def _verify_auth(self, result: dict) -> None:
+    async def _verify_auth(self, result: dict) -> None:
         """
         AUTH-Frame-Verifikation (P8-11).
 
@@ -503,6 +503,18 @@ class AudioRXLoop:
                     log.info("[AUTH] ✓ Frame von %s authentifiziert "
                              "(KEY_ID=%d REF_TYPE=0x%02X #%d)",
                              callsign, key_id, ref_type, self._auth_count)
+                    # Separates Event, damit die GUI das 🔑 retroaktiv am
+                    # Daten-Frame setzt (der AUTH-Frame selbst wird im Feed
+                    # gefiltert). Siehe gust_web.markFrameAuthenticated.
+                    if self._bus is not None:
+                        await self._bus.publish({
+                            "type": "frame_authenticated",
+                            "data": {
+                                "from":     callsign,
+                                "ref_type": ref_type,
+                                "key_id":   key_id,
+                            },
+                        })
                 else:
                     log.warning("[AUTH] ✗ HMAC-Verifikation fehlgeschlagen: "
                                 "%s KEY_ID=%d", callsign, key_id)
@@ -935,7 +947,7 @@ class AudioRXLoop:
                     # werden 60 s gepuffert; ein AUTH-Frame (0x50) schlaegt den
                     # referenzierten Body nach und prueft den HMAC. TIMESTAMP
                     # ersetzt das frueher fehlende REF_SEQ. Siehe §28/§3.5.
-                    self._verify_auth(result)
+                    await self._verify_auth(result)
                     # ── Ende AUTH ─────────────────────────────────────
 
                     if self._bus is not None:

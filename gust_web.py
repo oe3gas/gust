@@ -3325,6 +3325,31 @@ function updateChannelCard(ch, from, typeName, tsStr, snr, isEmerg, isTest) {
 }
 
 // ═══════════════════════════ RX FEED ══════════════════════════
+// Retroaktives 🔑-Badge: ein AUTH-Frame (0x50) hat einen zuvor empfangenen
+// Daten-Frame per HMAC verifiziert. Der jüngste passende Daten-Frame
+// (gleiches Rufzeichen + REF_TYPE) bekommt nachträglich das Schlüssel-Badge.
+function markFrameAuthenticated(d) {
+  const from    = d.from     ?? '';
+  const refType = d.ref_type ?? -1;
+  const feed    = document.getElementById('rx-feed');
+  if (!feed) return;
+  const rows = Array.from(feed.querySelectorAll('.frame-row'));
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (row.dataset.from === from && parseInt(row.dataset.type) === refType) {
+      if (!row.querySelector('.auth-pill')) {
+        const badge = document.createElement('span');
+        badge.className = 'auth-pill';
+        badge.title = `HMAC verifiziert (KEY_ID=${d.key_id ?? '?'})`;
+        badge.textContent = '🔑';
+        const typeSpan = row.querySelector('.type');
+        if (typeSpan) typeSpan.appendChild(badge);
+        else row.appendChild(badge);
+      }
+      break;  // nur den jüngsten passenden Frame markieren
+    }
+  }
+}
 function appendRxFrame(frame) {
   if (state.isSending && document.getElementById('ignore-rx-while-tx')?.checked) return;
   state.rxCount++;
@@ -3370,6 +3395,9 @@ function appendRxFrame(frame) {
         + 'border-radius:3px;padding:1px 4px;margin-left:4px">🔍</span>'
       : '';
   row.className = 'frame-row' + (isEmerg ? ' emergency' : '') + (isTest ? ' testframe' : '') + (isMC ? ' meshcore' : '');
+  // Matching-Attribute für das retroaktive AUTH-Badge (frame_authenticated):
+  row.dataset.from = frame.from ?? '';
+  row.dataset.type = String(_ftype);
   const mcBadge = isMC ? '<span class="mc-badge">MC</span>' : '';
   row.innerHTML = `<span class="ts">${ts}</span>
     <span class="ch">${ch}</span>
@@ -4175,6 +4203,7 @@ function connectWsRx() {
     try {
       const msg = JSON.parse(evt.data);
       if (msg.type === 'rx_frame')     { appendRxFrame(msg.data); slAddFrame(msg.data); }
+      if (msg.type === 'frame_authenticated') markFrameAuthenticated(msg.data);
       if (msg.type === 'status')         applyStatusPush(msg.data);
       if (msg.type === 'rx_audio_level') updateAudioMeter(msg.data);
       if (msg.type === 'tx_done')      { state.isSending = false; _setOnAir(false); if (state._txDoneResolve) { const _r = state._txDoneResolve; state._txDoneResolve = null; _r(); } log2ui('INFO', t('tx.done') + ' ' + (msg.data?.type_name||'?')); fetchTxQueue(); appendTxDone(msg.data || {}); }
@@ -7659,13 +7688,37 @@ class WebServer:
                     import time as _time
                     if "ts" not in data:
                         data = {**data, "ts": event.get("ts", _time.time())}
-                    await self.broadcast_rx_frame(data)
-                    # Session-Recorder: Frame aufzeichnen wenn aktiv
-                    if self._session_state == "recording":
-                        self._session_frames.append(dict(data))
+                    # AUTH-Frames (0x50) gehören NICHT in den Live Feed —
+                    # nur ins Systemlog. Das 🔑-Badge wird stattdessen
+                    # retroaktiv am Daten-Frame gesetzt (frame_authenticated).
+                    if data.get("type") == 0x50 or data.get("type_name") == "AUTH":
+                        _kid = (data.get("payload_decoded") or {}).get("key_id", "?")
+                        self._publish_log("INFO",
+                            f"AUTH-Frame: {data.get('from','?')} KEY_ID={_kid}")
+                    else:
+                        await self.broadcast_rx_frame(data)
+                        # Session-Recorder: Frame aufzeichnen wenn aktiv
+                        if self._session_state == "recording":
+                            self._session_frames.append(dict(data))
+                        self._publish_log("INFO",
+                            f"RX: {data.get('from','?')} [{data.get('type_name','?')}] "
+                            f"Kanal {data.get('channel','?')}")
+
+                elif etype == "frame_authenticated":
+                    # Retroaktives 🔑-Signal: die GUI markiert den passenden
+                    # bereits angezeigten Daten-Frame.
+                    msg = json.dumps({"type": "frame_authenticated", "data": data},
+                                     cls=_BytesEncoder)
+                    for ws in list(self._ws_rx_clients):
+                        if not ws.closed:
+                            try:
+                                await ws.send_str(msg)
+                            except Exception:
+                                pass
                     self._publish_log("INFO",
-                        f"RX: {data.get('from','?')} [{data.get('type_name','?')}] "
-                        f"Kanal {data.get('channel','?')}")
+                        f"AUTH: {data.get('from','?')} "
+                        f"REF_TYPE=0x{data.get('ref_type', 0):02X} "
+                        f"KEY_ID={data.get('key_id','?')} verifiziert")
 
                 elif etype == "tx_done":
                     msg = json.dumps({"type": "tx_done", "data": data})
