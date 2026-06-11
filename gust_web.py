@@ -284,7 +284,8 @@ main { padding: 16px; max-width: 1200px; }
 /* ── CHANNEL GRID ── */
 #channel-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
 .ch-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
-           padding: 8px 10px; cursor: default; transition: border-color .2s; }
+           padding: 8px 10px; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.ch-card:hover { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(74,144,217,.25); }
 .ch-card.home    { border-color: var(--accent); }
 .ch-card.emerg-active { border: 2px solid #e24b4a !important; background: rgba(226,75,74,.06); }
 .ch-card.active  { border-color: var(--green); background: rgba(63,185,80,.08); }
@@ -788,6 +789,14 @@ h2:first-child { margin-top: 0; }
         Ignore Decodes while Sending
       </label>
       <label id="autoscroll-toggle" data-i18n="monitor.autoscroll"><input type="checkbox" id="autoscroll" checked> Auto-Scroll</label>
+      <select id="feed-height-sel" onchange="setFeedHeight(this.value)"
+              title="Anzeigehöhe des Live-Feeds"
+              style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:var(--fs-sm);padding:2px 4px;">
+        <option value="200">Klein</option>
+        <option value="320" selected>Mittel</option>
+        <option value="550">Groß</option>
+        <option value="800">Sehr groß</option>
+      </select>
     </div>
   </div>
   <div class="audio-toggles">
@@ -3286,6 +3295,15 @@ function buildChannelGrid(homeChannel) {
       <div id="ch-test-${ch}" style="margin-top:3px;min-height:14px"></div>
       <div class="ch-info" id="ch-info-${ch}"></div>
     </div>`).join('');
+  // Klick auf Kachel → Detail-Modal des zuletzt empfangenen Frames.
+  // Handler EINMALIG hier setzen (nicht bei jedem Update → kein Stapeln).
+  plan.forEach(([ch]) => {
+    const card = document.getElementById('ch-card-' + ch);
+    if (!card) return;
+    card.addEventListener('click', () => {
+      if (card._lastFrame) openFrameModal(card._lastFrame);
+    });
+  });
 }
 
 function snrClass(snr) {
@@ -3297,11 +3315,12 @@ function snrLabel(snr) {
   return (snr > 0 ? '+' : '') + snr.toFixed(1) + ' dB';
 }
 
-function updateChannelCard(ch, from, typeName, tsStr, snr, isEmerg, isTest) {
+function updateChannelCard(ch, from, typeName, tsStr, snr, isEmerg, isTest, frameData) {
   const lastEl = document.getElementById('ch-last-' + ch);
   const infoEl = document.getElementById('ch-info-' + ch);
   const card   = document.getElementById('ch-card-' + ch);
   if (!lastEl) return;
+  if (card && frameData) card._lastFrame = frameData;   // für Klick → Modal
   lastEl.textContent = from + ' · ' + typeName;
   const testEl = document.getElementById('ch-test-' + ch);
   if (testEl) testEl.innerHTML  = isTest ? '<span class="test-pill" style="font-size:var(--fs-xxs)">TEST</span>' : '';
@@ -3360,7 +3379,36 @@ function markFrameAuthenticated(d) {
       break;  // nur den jüngsten passenden Frame markieren
     }
   }
+  // Swimlane-Frame ebenfalls markieren → 🔑 im Block (slDraw)
+  if (typeof sl !== 'undefined' && sl.frames) {
+    for (let i = sl.frames.length - 1; i >= 0; i--) {
+      const f = sl.frames[i];
+      const ftype = f.raw?.type ?? f.raw?.frame_type ?? -1;
+      if (f.callsign === from && ftype === refType) {
+        f.authenticated = true;
+        break;
+      }
+    }
+  }
 }
+
+// Live-Feed-Anzeigehöhe (Dropdown). #rx-feed nutzt CSS height (nicht
+// max-height) → hier ebenfalls style.height setzen, sonst wächst der Feed nicht.
+function setFeedHeight(px) {
+  const feed = document.getElementById('rx-feed');
+  if (feed) feed.style.height = px + 'px';
+  try { localStorage.setItem('gust_feed_height', px); } catch(e) {}
+}
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    const saved = localStorage.getItem('gust_feed_height');
+    if (saved) {
+      setFeedHeight(saved);
+      const sel = document.getElementById('feed-height-sel');
+      if (sel) sel.value = saved;
+    }
+  } catch(e) {}
+});
 function appendRxFrame(frame) {
   if (state.isSending && document.getElementById('ignore-rx-while-tx')?.checked) return;
   state.rxCount++;
@@ -3538,7 +3586,7 @@ function appendRxFrame(frame) {
   if (document.getElementById('autoscroll').checked)
     feed.scrollTop = feed.scrollHeight;
 
-  updateChannelCard(ch, frm, typ, ts, snr, isEmerg, isTest);
+  updateChannelCard(ch, frm, typ, ts, snr, isEmerg, isTest, frame);
 
   // Audio-Alerts
   if (isEmerg && document.getElementById('toggle-audio-emerg')?.checked)
@@ -5297,6 +5345,19 @@ function slDraw() {
         ctx.font = 'bold 8px sans-serif';
         ctx.fillText(f.callsign, cx, cy + 3);
       }
+    }
+
+    // 🔑 bei authentifizierten Frames (nur 🔑, KEIN 🔍 in der Swimlane).
+    // yTop enthält bereits HEADER_H → Badge oben rechts im Block.
+    // save/restore, damit font/textAlign/fillStyle den nächsten Frame nicht stören.
+    if (f.authenticated && yH >= 14) {
+      ctx.save();
+      const keySize = Math.max(8, Math.min(lW * 0.22, 14));
+      ctx.font      = `${keySize}px sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.fillStyle = 'white';
+      ctx.fillText('🔑', xLeft + bW - 1, yTop + keySize + 1);
+      ctx.restore();
     }
   }
 
