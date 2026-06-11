@@ -277,6 +277,13 @@ Offset  Größe  Inhalt
 ```
 Gesamt: 20 Byte — füllt die GUST-S-Payload exakt aus.
 
+> **Schlüsselauswahl:** Der Empfänger wählt den Schlüssel anhand des
+> Rufzeichens im FROM-Feld des AUTH-Frames (nicht per KEY_ID).
+> KEY_ID ist ein reserviertes Wire-Format-Feld und wird auf 0x00 gesetzt.
+> Schlüsselverwaltung: `gateway.json` auth.keys — Einträge bestehen aus
+> `callsign` + `key_hex` + optionalem `_comment`. Kein ID-Austausch
+> zwischen Partnern nötig.
+
 **HMAC-Berechnung und -Prüfung:**
 ```python
 import hashlib, hmac, struct
@@ -327,6 +334,33 @@ wird.
 
 **Sicherheitsniveau:** ~128 Bit gegen Fälschung (HMAC-16). Nur der
 Schlüsselpartner kann verifizieren — bewusst, für geschlossene Gruppen.
+
+**Schlüsselverwaltung (`gust_keygen.py`):**
+
+Bilaterale Schlüssel werden mit `gust_keygen.py` verwaltet:
+
+```bash
+# Schlüssel hinzufügen (key_hex fehlt → zufällig generiert)
+py gust_keygen.py add --partner OE1XTU [--key-hex <64hex>]
+
+# Schlüssel entfernen
+py gust_keygen.py revoke --partner OE1XTU [--yes]
+
+# Alle Schlüssel anzeigen
+py gust_keygen.py list
+```
+
+Beide Partner tragen denselben `key_hex` ein — jeweils mit dem
+Rufzeichen der Gegenstelle. Kein mehrstufiger Handshake nötig.
+
+`gateway.json` auth.keys Schema:
+```json
+{
+  "callsign": "OE1XTU",
+  "key_hex":  "2f7615ad...64hex...",
+  "_comment": "Bilateraler Schlüssel mit OE1XTU"
+}
+```
 
 ### 3.6 Rufzeichen-Kodierung (Basis-40)
 

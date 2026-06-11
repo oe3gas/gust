@@ -323,7 +323,7 @@ AUTH_EX (0x85/0x86, P8-12).
 **Implementierungsschritte:**
 1. `gust_frame.py`: Frame-Typ 0x50, encode/decode AUTH-Payload
 2. `gust_frame.py`: `auth_tag()` / `verify_auth()` (HMAC-SHA256, 14 B)
-3. Schlüsselverwaltung in `gateway.json` (KEY_ID → shared key, nie ins Repo)
+3. Schlüsselverwaltung in `gateway.json` (Rufzeichen → shared key (KEY_ID-Byte reserviert, = 0x00), nie ins Repo)
 4. RX: TIMESTAMP gegen `abs(now-TS) ≤ 60 s` prüfen (Referenz + Replay-Schutz);
    Puffer-Schlüssel = Rufzeichen + REF_TYPE
 5. Web-UI: authentifizierte Frames mit [🔑]-Badge markieren
@@ -352,16 +352,17 @@ Implementiert:
   als hex-String ✅
 - Web-UI: .auth-pill (gruen), AUTH-Frame aus Live Feed gefiltert,
   retroaktives 🔑-Badge am Daten-Frame (frame_authenticated-Event) ✅
-- gust_keygen.py: Schlüsselaustausch-Werkzeug (init/accept/confirm/
-  list/revoke), schreibt auth.keys atomar in gateway.json ✅
+- gust_keygen.py: Schlüsselverwaltung (add/revoke/list, rufzeichenbasiert,
+  ADR-38), schreibt auth.keys atomar in gateway.json ✅
 
 AUTH-Frame Layout (final, 20 Byte):
   TIMESTAMP(4B) | REF_TYPE(1B) | KEY_ID(1B) | HMAC-SHA256-14(14B)
 
-Schlüsselaustausch (gust_keygen.py): 3-stufiger Handshake init → accept
-→ confirm. confirm setzt die key_id des pending-Eintrags auf die vom
-Partner gewählte Empfangs-ID (Endzustand: jede Station speichert die
-KEY_ID, mit der sie eingehende Frames der Gegenstelle verifiziert).
+**Schlüsselaustausch (gust_keygen.py, vereinfacht Juni 2026):**
+Rufzeichenbasierter Lookup ersetzt KEY_ID-Koordination (ADR-38).
+Kommandos: `add` / `revoke` / `list`. Kein mehrstufiger Handshake.
+gateway.json auth.keys: `callsign` + `key_hex` + `_comment`.
+KEY_ID-Byte im Wire-Format bleibt erhalten, wird auf 0x00 gesetzt.
 
 Referenz: gust_spec.md §3.5, gust_knowledge.md §28
 

@@ -1572,8 +1572,9 @@ Lösung: zweiseitiger Puffer.
 Beide Puffer haben 60-s-TTL. AUTH-Frames die nach 60 s noch
 keinen Daten-Frame gefunden haben, verfallen (Replay-Schutz
 bleibt damit erhalten — kein AUTH-Frame kann ewig warten).
-Unbekannte KEY_IDs landen gar nicht erst im pending-Puffer
-(Key-Lookup vor dem Puffern), schlagen also nie rückwirkend an.
+Rufzeichen ohne konfigurierten Schlüssel landen gar nicht erst im
+pending-Puffer (Rufzeichen-Lookup vor dem Puffern), schlagen also
+nie rückwirkend an.
 
 Merksatz: AUTH-Verifikation ist bidirektional — nicht nur
 Daten vor AUTH (normal), sondern auch AUTH vor Daten (Deep-Decode).
@@ -1592,6 +1593,21 @@ der .type-Span. markFrameAuthenticated() fuegt das 🔑 dort vor dem Deep-Badge
 Merksatz: dynamisch nachgereichte Badges brauchen einen stabilen Container —
 nicht in den Text-Span haengen, sonst ist die Reihenfolge vom Einfuegezeitpunkt
 abhaengig.
+
+### ADR-38 (Juni 2026): Rufzeichenbasierter AUTH-Schlüssel-Lookup
+
+Entscheidung: Schlüsselauswahl per Absender-Rufzeichen statt KEY_ID.
+
+Begründung: KEY_ID erfordert bilaterale ID-Koordination (welche ID
+verwendet der Partner?). Das ist unnötige Komplexität — das Rufzeichen
+im FROM-Feld ist eindeutig und immer vorhanden. Lookup:
+`key = auth_keys[frame.from_callsign]`
+
+Auswirkung auf Wire-Format: KEY_ID-Byte bleibt im 0x50-Frame erhalten
+(Wire-Kompatibilität), wird aber auf 0x00 gesetzt und nicht ausgewertet.
+
+gust_keygen.py: das dreistufige init/accept/confirm ist obsolet, ersetzt
+durch add/revoke/list. gateway.json auth.keys: nur callsign + key_hex + _comment.
 
 ---
 
@@ -1965,6 +1981,31 @@ Weiterleitungssteuerung in `meshcore.json` unter `channels.slots[index=6]`:
 
 ---
 
+## 34. Web-UI Darstellungs-Details (Juni 2026)
+
+Kleine, aber lehrreiche Kosmetik-Korrekturen am Monitor-Tab (gust_web.py).
+
+### Kanal-Kacheln: SNR und Zeit in einer Zeile
+
+Jede Kachel zeigte SNR und Zeitstempel auf zwei getrennten `<div>`-Zeilen
+(`ch-snr` / `ch-time`) — zu viel vertikale Höhe. Zusammengeführt zu einem
+einzelnen `ch-info`-Element: `+25.0 dB · 18:23:22` in einer Zeile, getrennt
+durch ` · `. Der SNR-Teil behält seine Farb-Klasse (`snr-hi/mid/lo`) über
+einen eigenen `<span>`; fehlt der SNR, steht nur die Zeit, fehlt alles, `–`.
+
+### Live-Feed: Spaltenbreite statt min-width
+
+Der Abstand zwischen Rufzeichen (`.from`) und Frame-Typ (`.type`) war zu
+gering. `.frame-row` ist ein **Flex-Container** mit fix breiten Spalten
+(`.ch` 20px, `.from`, `.type` 90px). `.from` wurde von 70px auf 85px erhöht.
+
+Merksatz: In einer Flex-„Tabelle" mit ausgerichteten Spalten **feste `width`**
+verwenden, nicht `min-width`. `min-width` lässt ein langes Rufzeichen die
+Folge-Spalten verschieben → die Zeilen sind dann untereinander nicht mehr
+bündig. Fixe Breite hält die Ausrichtung und schafft trotzdem den Abstand.
+
+---
+
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · §32 P8-14 LDPC-Soft schlägt RS bei −10 dB (Juni 2026) · §33 MeshCore Bridge-Repeater & KISS (Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*
+*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · §32 P8-14 LDPC-Soft schlägt RS bei −10 dB (Juni 2026) · §33 MeshCore Bridge-Repeater & KISS (Juni 2026) · §34 Web-UI Darstellungs-Details (Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*
