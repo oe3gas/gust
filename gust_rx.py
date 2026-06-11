@@ -798,16 +798,14 @@ class AudioRXLoop:
                     )
 
                     # TODO (P8-11): AUTH-Frame-Verifikation (Frame 0x50).
-                    # Geplant: Nicht-AUTH-Frames mit ihrem Body in einen 60-s-Puffer
-                    # legen (key = REF_SEQ); bei Empfang eines AUTH-Frames den
-                    # referenzierten Body suchen und mit gust_frame.verify_auth(
-                    # body, ref_seq, hmac_tag, cfg["_auth_keys"][key_id]) prüfen,
-                    # dann result["authenticated"]=True setzen.
-                    # BLOCKER: GUST v0.3 hat KEIN Sequenznummer-Feld im Frame-Header
-                    # (TYPE|CHANNEL|FROM|PAYLOAD|CRC) → REF_SEQ hat für allgemeine
-                    # Daten-Frames noch keine Quelle. Erfordert Frame-Sequencing
-                    # (GUST-S/v1.0). Crypto-Bausteine sind in gust_frame.py fertig
-                    # (auth_tag/verify_auth/encode_auth/decode_auth). Siehe §28/§3.5.
+                    # Puffer-Schluessel = Rufzeichen + REF_TYPE (nicht REF_SEQ).
+                    # Ablauf: Nicht-AUTH-Frames in 60-s-Puffer legen; bei AUTH-Frame
+                    # (type_name == "AUTH") den letzten Frame von Rufzeichen+REF_TYPE
+                    # suchen, verify_auth(body, timestamp, hmac_tag, key) aufrufen,
+                    # result["authenticated"]=True setzen.
+                    # Crypto-Bausteine fertig: gust_frame.auth_tag/verify_auth/
+                    # encode_auth/decode_auth. Schluessel in cfg["_auth_keys"].
+                    # Kein Blocker mehr — TIMESTAMP ersetzt REF_SEQ. Siehe §28/§3.5.
                     if self._bus is not None:
                         event = make_rx_frame_event(result)
                         await self._bus.publish(event)
