@@ -4795,15 +4795,15 @@ function stDownload(fmt) {
 // ═══════════════════════════════════════════════════════════
 
 const SL_COLORS = {
-  WEATHER:      '#4A90D9',
-  POSITION:     '#27AE60',
-  EMERG_BEACON: '#E74C3C',
-  EMERG_RSRC:   '#E67E22',
-  STATION_TLM:  '#8E44AD',
-  TEXT:         '#F39C12',
-  CQ:           '#1ABC9C',
+  WEATHER:      '#2E6BA8',   // war #4A90D9
+  POSITION:     '#1A7A42',   // war #27AE60
+  EMERG_BEACON: '#A93226',   // war #E74C3C
+  EMERG_RSRC:   '#B0530F',   // war #E67E22
+  STATION_TLM:  '#6B2D8B',   // war #8E44AD
+  TEXT:         '#C07D0A',   // war #F39C12
+  CQ:           '#148A6E',   // war #1ABC9C
 };
-const SL_DEFAULT_COLOR = '#95A5A6';
+const SL_DEFAULT_COLOR = '#717D7E';   // war #95A5A6
 const SL_BG_LANES      = ['#1A1A2E', '#16213E'];
 const SL_BACKGROUND    = '#0D1117';
 const SL_GRID_COLOR    = 'rgba(255,255,255,0.55)';
