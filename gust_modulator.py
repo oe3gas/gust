@@ -789,6 +789,10 @@ def _build_result_direct(data_symbols, sync_found, sync_offset, det_ch, det_offs
                         "crc_ok":          True,
                         "payload_decoded": dp(pars["type"], pars["payload"]),
                         "_rs_bytes_used":  n,
+                        # Rohe Frame-Body-Bytes (TYPE+CHANNEL+FROM+PAYLOAD+CRC,
+                        # exakt wie build_frame() liefert) — für AUTH-HMAC-
+                        # Verifikation (P8-11). Internes Diagnosefeld.
+                        "_raw_frame_body": dec,
                     })
                     return result
             except Exception as e:
@@ -1035,6 +1039,8 @@ def receive(
                                 parsed["type"], parsed["payload"]
                             ),
                             "_rs_bytes_used":  n_try,
+                            # Rohe Frame-Body-Bytes für AUTH-HMAC (P8-11)
+                            "_raw_frame_body": decoded,
                         })
                         return res
                 except Exception as e:

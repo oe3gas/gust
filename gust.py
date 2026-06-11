@@ -1400,8 +1400,9 @@ def main() -> None:
                         fec_name, e)
 
     # AUTH-Schlüssel aus Konfiguration laden (Standard: deaktiviert, P8-11).
-    # key_id (int) → key (bytes). Auf cfg abgelegt für die spätere RX-Verifikation
-    # (gust_rx.py-Integration noch offen — Frame-Sequenznummer fehlt in v0.3, s.u.).
+    # key_id (int) → key (bytes). Auf cfg["_auth_keys"] abgelegt; build_rx_loop()
+    # uebergibt sie via set_auth_keys() an den RX-Loop (HMAC-Verifikation gegen
+    # TIMESTAMP, kein Frame-Sequenznummer-Feld noetig).
     auth_cfg  = cfg.get("auth", {})
     auth_keys = {}
     if auth_cfg.get("enabled", False):

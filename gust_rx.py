@@ -103,6 +103,52 @@ from gust_frame import N_CHANNELS
 log = logging.getLogger("gust.rx")
 
 
+class AuthFrameBuffer:
+    """
+    60-Sekunden-Puffer fuer AUTH-Frame-Verifikation (P8-11).
+
+    Speichert empfangene Daten-Frames (nicht AUTH-Frames) fuer 60 s.
+    Puffer-Schluessel: (callsign, frame_type_int).
+    Immer nur der letzte Frame dieses Typs pro Station gespeichert.
+
+    Beispiel:
+      ("OE3GAS", 0x01) -> (frame_body_bytes, empfangszeit)
+      ("OE1XTU", 0x02) -> (frame_body_bytes, empfangszeit)
+    """
+
+    AUTH_WINDOW_S = 60.0
+
+    def __init__(self):
+        self._buf: dict = {}   # (callsign, type_int) -> (body, ts)
+
+    def store(self, callsign: str, frame_type_int: int,
+              frame_body: bytes) -> None:
+        """Daten-Frame im Puffer ablegen."""
+        self._buf[(callsign, frame_type_int)] = (frame_body, time.time())
+
+    def lookup(self, callsign: str, ref_type_int: int):
+        """
+        Letzten Frame von callsign mit ref_type_int nachschlagen.
+        Gibt None zurueck wenn nicht vorhanden oder abgelaufen.
+        """
+        entry = self._buf.get((callsign, ref_type_int))
+        if entry is None:
+            return None
+        body, stored_at = entry
+        if time.time() - stored_at > self.AUTH_WINDOW_S:
+            del self._buf[(callsign, ref_type_int)]
+            return None
+        return body
+
+    def purge_expired(self) -> None:
+        """Abgelaufene Eintraege entfernen. Periodisch aufrufen."""
+        now = time.time()
+        expired = [k for k, (_, ts) in self._buf.items()
+                   if now - ts > self.AUTH_WINDOW_S]
+        for k in expired:
+            del self._buf[k]
+
+
 def _set_low_priority() -> None:
     """
     Setzt die Priorität des aktuellen Threads auf
@@ -369,6 +415,11 @@ class AudioRXLoop:
         self._dup_count  = 0         # Unterdrückte Duplikate
         self._no_sync_count = 0    # Scans ohne SYNC seit letztem Frame
 
+        # AUTH-Frame-Verifikation (P8-11)
+        self._auth_buf   = AuthFrameBuffer()
+        self._auth_keys  = {}     # key_id -> bytes; von set_auth_keys() gesetzt
+        self._auth_count = 0      # Anzahl erfolgreicher AUTH-Verifikationen
+
         # Letztes Decode-Ergebnis für Diagnose
         self._last_result: Optional[dict] = None
         self._last_scan_ms: float = 0.0
@@ -385,6 +436,87 @@ class AudioRXLoop:
         self._muted = False
         log.debug("[RX] Unmuted")
 
+    # ── AUTH (P8-11) ──────────────────────────────────────────────────
+
+    def set_auth_keys(self, keys: dict) -> None:
+        """
+        AUTH-Schluessel setzen (key_id -> bytes).
+        Wird von gust.py nach load_config() aufgerufen.
+        keys = cfg.get("_auth_keys", {})
+        """
+        self._auth_keys = keys or {}
+        log.debug("[AUTH] %d Schluessel geladen", len(self._auth_keys))
+
+    def _verify_auth(self, result: dict) -> None:
+        """
+        AUTH-Frame-Verifikation (P8-11).
+
+        - Daten-Frame  → roher Body in den 60-s-Puffer legen.
+        - AUTH-Frame   → referenzierten Body aus dem Puffer holen, HMAC
+                         via verify_auth() pruefen, bei Erfolg
+                         result["authenticated"]=True setzen.
+
+        No-op, solange keine Schluessel geladen sind.
+        """
+        if not self._auth_keys:
+            return
+
+        callsign  = result.get("from", "")
+        type_name = result.get("type_name", "")
+        type_int  = result.get("type", 0)
+        raw_body  = result.get("_raw_frame_body")
+
+        if type_name == "AUTH":
+            from gust_frame import verify_auth, decode_auth
+            try:
+                # payload_decoded ist fuer AUTH-Frames bereits decode_auth()
+                # (decode_payload dispatcht 0x50 → decode_auth). Fallback:
+                # AUTH-Payload aus dem rohen Body schneiden (Offset 6 … -2).
+                auth_data = result.get("payload_decoded") or {}
+                if not all(k in auth_data for k in
+                           ("timestamp", "ref_type", "key_id", "hmac_tag")):
+                    if raw_body and len(raw_body) >= 28:
+                        auth_data = decode_auth(raw_body[6:-2])
+                    else:
+                        auth_data = {}
+                if not auth_data:
+                    return
+
+                ref_type  = auth_data["ref_type"]
+                key_id    = auth_data["key_id"]
+                timestamp = auth_data["timestamp"]
+                hmac_tag  = auth_data["hmac_tag"]
+
+                key = self._auth_keys.get(key_id)
+                if key is None:
+                    log.debug("[AUTH] Unbekannter KEY_ID=%d von %s",
+                              key_id, callsign)
+                    return
+
+                ref_body = self._auth_buf.lookup(callsign, ref_type)
+                if ref_body is None:
+                    log.debug("[AUTH] Kein gepufferter Frame fuer %s "
+                              "REF_TYPE=0x%02X", callsign, ref_type)
+                elif verify_auth(ref_body, timestamp, hmac_tag, key):
+                    self._auth_count += 1
+                    result["authenticated"] = True
+                    log.info("[AUTH] ✓ Frame von %s authentifiziert "
+                             "(KEY_ID=%d REF_TYPE=0x%02X #%d)",
+                             callsign, key_id, ref_type, self._auth_count)
+                else:
+                    log.warning("[AUTH] ✗ HMAC-Verifikation fehlgeschlagen: "
+                                "%s KEY_ID=%d", callsign, key_id)
+            except Exception as e:
+                log.debug("[AUTH] Verifikationsfehler: %s", e)
+
+        elif raw_body is not None:
+            # Daten-Frame fuer spaetere AUTH-Verifikation puffern.
+            self._auth_buf.store(callsign, type_int, raw_body)
+
+        # Periodisches Aufraeumen abgelaufener Eintraege.
+        if self._scan_count % 30 == 0:
+            self._auth_buf.purge_expired()
+
     # ── Statistik ────────────────────────────────────────────────────
 
     def stats(self) -> dict:
@@ -397,6 +529,7 @@ class AudioRXLoop:
             "last_scan_ms": round(self._last_scan_ms, 1),
             "muted":     self._muted,
             "running":   self._running,
+            "auth_verified": self._auth_count,
         }
 
     # ── Haupt-Loop ────────────────────────────────────────────────────
@@ -797,15 +930,14 @@ class AudioRXLoop:
                         self._last_scan_ms,
                     )
 
-                    # TODO (P8-11): AUTH-Frame-Verifikation (Frame 0x50).
-                    # Puffer-Schluessel = Rufzeichen + REF_TYPE (nicht REF_SEQ).
-                    # Ablauf: Nicht-AUTH-Frames in 60-s-Puffer legen; bei AUTH-Frame
-                    # (type_name == "AUTH") den letzten Frame von Rufzeichen+REF_TYPE
-                    # suchen, verify_auth(body, timestamp, hmac_tag, key) aufrufen,
-                    # result["authenticated"]=True setzen.
-                    # Crypto-Bausteine fertig: gust_frame.auth_tag/verify_auth/
-                    # encode_auth/decode_auth. Schluessel in cfg["_auth_keys"].
-                    # Kein Blocker mehr — TIMESTAMP ersetzt REF_SEQ. Siehe §28/§3.5.
+                    # ── AUTH-Frame-Verifikation (P8-11) ───────────────
+                    # Puffer-Schluessel = (Rufzeichen, REF_TYPE). Daten-Frames
+                    # werden 60 s gepuffert; ein AUTH-Frame (0x50) schlaegt den
+                    # referenzierten Body nach und prueft den HMAC. TIMESTAMP
+                    # ersetzt das frueher fehlende REF_SEQ. Siehe §28/§3.5.
+                    self._verify_auth(result)
+                    # ── Ende AUTH ─────────────────────────────────────
+
                     if self._bus is not None:
                         event = make_rx_frame_event(result)
                         await self._bus.publish(event)
@@ -893,7 +1025,7 @@ def build_rx_loop(cfg: dict, event_bus) -> "Optional[AudioRXLoop]":
     if input_sr is not None:
         input_sr = int(input_sr)
 
-    return AudioRXLoop(
+    loop = AudioRXLoop(
         device            = device,
         event_bus         = event_bus,
         scan_interval_s   = float(rx_cfg.get("scan_interval_s", SCAN_INTERVAL_S)),
@@ -902,6 +1034,15 @@ def build_rx_loop(cfg: dict, event_bus) -> "Optional[AudioRXLoop]":
         force_samplerate  = input_sr,
         deep_decode       = bool(rx_cfg.get("deep_decode", False)),
     )
+
+    # AUTH-Schluessel an den Loop uebergeben (P8-11). Einziger Chokepoint
+    # fuer alle Daemon-Einstiegspunkte — beide rufen build_rx_loop().
+    auth_keys = cfg.get("_auth_keys")
+    if auth_keys:
+        loop.set_auth_keys(auth_keys)
+        log.info("[AUTH] %d Schluessel an RX-Loop uebergeben", len(auth_keys))
+
+    return loop
 
 
 # ═══════════════════════════════════════════════════════════════════════
