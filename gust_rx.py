@@ -908,6 +908,11 @@ class AudioRXLoop:
                                         # ist async — await moeglich.)
                                         await self._check_pending_auth(
                                             callsign, _ti, _rb)
+                                    elif _tn == "AUTH":
+                                        # Deep-Decoder hat einen AUTH-Frame
+                                        # gefunden → verifizieren (gleiche Logik
+                                        # wie im Short-Decoder-Pfad).
+                                        await self._verify_auth(result)
 
                                 if self._bus is not None:
                                     event = make_rx_frame_event(result)
