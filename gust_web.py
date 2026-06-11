@@ -155,7 +155,7 @@ _HTML_UI = r"""<!DOCTYPE html>
 }
 [data-theme="light"] .tx-prio-info,
 [data-theme="light"] .ch-freq,
-[data-theme="light"] .ch-time,
+[data-theme="light"] .ch-info,
 [data-theme="light"] .frame-row .ts,
 [data-theme="light"] .log-line,
 [data-theme="light"] .field-row .unit { font-weight: normal; }
@@ -292,7 +292,7 @@ main { padding: 16px; max-width: 1200px; }
 .ch-card .ch-freq { font-size: var(--fs-xs); color: var(--text2); margin-top: 2px; }
 .ch-card .ch-last { font-size: var(--fs-xs); color: var(--text); margin-top: 6px; min-height: 14px;
                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ch-card .ch-time { font-size: var(--fs-xxs); color: var(--text2); }
+.ch-card .ch-info { font-size: var(--fs-xxs); color: var(--text2); margin-top: 2px; }
 
 /* ── FRAME FEED ── */
 #rx-feed { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
@@ -302,7 +302,7 @@ main { padding: 16px; max-width: 1200px; }
 .frame-row:last-child { border-bottom: none; }
 .frame-row .ts   { color: var(--text2); white-space: nowrap; }
 .frame-row .ch   { color: var(--accent); width: 20px; text-align: center; }
-.frame-row .from { color: var(--blue); font-weight: bold; width: 70px; }
+.frame-row .from { color: var(--blue); font-weight: bold; width: 85px; }
 .frame-row .type { color: var(--green); width: 90px; }
 .frame-row .snr  { width: 58px; text-align: right; font-weight: bold; font-size: var(--fs-xs); white-space: nowrap; }
 .frame-row .off  { color: var(--text2); width: 52px; text-align: right; font-size: var(--fs-xs); white-space: nowrap; }
@@ -3284,8 +3284,7 @@ function buildChannelGrid(homeChannel) {
       <div class="ch-freq">${freq} Hz</div>
       <div class="ch-last" id="ch-last-${ch}">–</div>
       <div id="ch-test-${ch}" style="margin-top:3px;min-height:14px"></div>
-      <div class="ch-snr"  id="ch-snr-${ch}"></div>
-      <div class="ch-time" id="ch-time-${ch}"></div>
+      <div class="ch-info" id="ch-info-${ch}"></div>
     </div>`).join('');
 }
 
@@ -3300,18 +3299,21 @@ function snrLabel(snr) {
 
 function updateChannelCard(ch, from, typeName, tsStr, snr, isEmerg, isTest) {
   const lastEl = document.getElementById('ch-last-' + ch);
-  const snrEl  = document.getElementById('ch-snr-'  + ch);
-  const timeEl = document.getElementById('ch-time-' + ch);
+  const infoEl = document.getElementById('ch-info-' + ch);
   const card   = document.getElementById('ch-card-' + ch);
   if (!lastEl) return;
   lastEl.textContent = from + ' · ' + typeName;
   const testEl = document.getElementById('ch-test-' + ch);
   if (testEl) testEl.innerHTML  = isTest ? '<span class="test-pill" style="font-size:var(--fs-xxs)">TEST</span>' : '';
-  if (snrEl) {
-    snrEl.textContent  = snr != null ? snrLabel(snr) : '';
-    snrEl.className    = 'ch-snr ' + snrClass(snr);
+  if (infoEl) {
+    // SNR und Zeit in EINER Zeile, getrennt durch " · ". SNR behält
+    // seine Farb-Klasse (snr-hi/mid/lo); ohne SNR nur die Zeit.
+    const snrStr  = snr != null ? snrLabel(snr) : '';
+    const snrPart = snrStr
+      ? `<span class="${snrClass(snr)}">${snrStr}</span> · `
+      : '';
+    infoEl.innerHTML = (snrStr || tsStr) ? (snrPart + (tsStr || '')) : '–';
   }
-  timeEl.textContent = tsStr;
   if (isEmerg) {
     card.classList.remove('active');
     card.classList.add('emerg-active');
