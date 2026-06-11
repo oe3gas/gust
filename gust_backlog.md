@@ -204,7 +204,7 @@ Heltec V4, Stand Juni 2026). Siehe gust_knowledge.md §31.
 | P8-07 | 🟡 | feature | Docker-Deployment | `Dockerfile`, `docker-compose.yml`, `docker-entrypoint.sh`, `.dockerignore` im Repo-Root. Simulator-Modus out-of-the-box, Rufzeichen per `GUST_CALLSIGN`-Umgebungsvariable. Healthcheck auf `/api/status`. | ✅ |
 | P8-08 | 🟢 | docs | Docker RPi Audio-Passthrough | Anleitung für `--device /dev/snd` und USB-Audio in Docker auf Raspberry Pi ergänzen (für Hardware-TX im Container-Betrieb). | 🔲 |
 | P8-10 | 🟢 | research | FEC-Backend-Abstraktion + LDPC-Evaluierung | Flanschbares FEC-Modul, RS(255,223) bleibt produktiver Default. Nicht vor v1.0 (Protokollbruch). Details siehe unten; ADR-25. | 🔲 Phase 8/9 |
-| P8-11 | 🟢 | feature | AUTH 0x50 — HMAC-SHA256 Frame-Authentifizierung (GUST-S) | Bilaterale Authentifizierung: 0x50 AUTH-Frame (TIMESTAMP + REF_TYPE + KEY_ID + HMAC-14 = 20 B), HMAC-SHA256 truncated, 60-s-Replay über TIMESTAMP (kein seq-Feld nötig), Schlüsselverwaltung in gateway.json. Spec §3.4/§3.5, gust_knowledge.md §28. Gegenstück: AUTH_EX (P8-12). Nicht vor v1.0. | 🟡 Crypto ✅, RX offen (TIMESTAMP, kein Blocker) |
+| P8-11 | 🟢 | feature | AUTH 0x50 — HMAC-SHA256 Frame-Authentifizierung (GUST-S) | Bilaterale Authentifizierung: 0x50 AUTH-Frame (TIMESTAMP + REF_TYPE + KEY_ID + HMAC-14 = 20 B), HMAC-SHA256 truncated, 60-s-Replay über TIMESTAMP (kein seq-Feld nötig), Schlüsselverwaltung in gateway.json. Spec §3.4/§3.5, gust_knowledge.md §28. Gegenstück: AUTH_EX (P8-12). | ✅ |
 | P8-12 | 🟢 | feature | GUST-X Protokollvariante — 9-Symbol-SYNC + LDPC + 44B Payload | GUST-X v1 implementieren: 9-Symbol-SYNC Erkennung, LDPC n=256 Integration, Timestamp-Pflichtfeld, neue Frame-Typen 0x81-0x87 (inkl. AUTH_EX 2-Frame ECDSA), gateway.json `protocol.variant`. Voraussetzung: Soft-Output-Demodulator (P8-13). Spec §3.9, ADR-37. | 🔲 |
 | P8-13 | 🟢 | research | Soft-Output-Demodulator für LDPC | _fft_detect_symbol() gibt LLR-Array statt Hard-Symbol zurück. Bin-Energien → bitweise Log-Likelihood-Ratios. Voraussetzung für LDPC SNR-Gewinn. | 🔲 |
 | P8-15 | ⚪ | feature | ~~Frame-Sequencing für AUTH-RX~~ | **Obsolet** seit AUTH 0x50 auf TIMESTAMP statt REF_SEQ umgestellt wurde (P8-11) — AUTH-RX braucht kein seq-Feld mehr. Frame-Sequencing nur noch relevant falls für andere Zwecke gewünscht (z.B. BUG-08 Frame-Contention) — dann neu fassen. | ❌ obsolet |
@@ -311,23 +311,25 @@ Voraussetzung: GPS/NTP-Sync (±30 s). Siehe gust_knowledge.md §28.
 
 **Referenz:** gust_spec.md §3.4/§3.5, gust_knowledge.md §28. Nicht vor v1.0.
 
-**Status: Crypto-Kern fertig, RX-Blocker durch TIMESTAMP gelöst (Juni 2026)**
+**Status: Vollstaendig abgeschlossen (Juni 2026)**
 
 Implementiert:
 - FrameType.AUTH=0x50, encode_auth(), decode_auth() ✅
-- auth_tag(), verify_auth() (HMAC-SHA256-14, compare_digest, Replay-Check) ✅
-- gateway.json auth-Block + Schlüsselverwaltung ✅
+- auth_tag(), verify_auth() (HMAC-SHA256-14, compare_digest,
+  Replay-Check 60 s) ✅
+- gateway.json auth-Block + Schluessel-Vorlage ✅
+- gust_tx_test.py --auth Flag (TX-Tooling) ✅
+- AuthFrameBuffer (60-s-Puffer, key=Rufzeichen+REF_TYPE) ✅
+- gust_rx.py RX-Verifikation, result["authenticated"]=True ✅
+- gust_eventbus.py: _raw_frame_body vor WebSocket-Broadcast
+  entfernen (bytes not JSON serializable fix) ✅
+- Web-UI: .auth-pill (gruen), appendRxFrame-Badge,
+  Frame-Detail-Modal Authentifizierungs-Zeile ✅
 
-Früherer Blocker (fehlendes seq-Feld) ist **gegenstandslos**: REF_SEQ wurde
-durch TIMESTAMP (4 B) ersetzt. Der Timestamp referenziert den Daten-Frame
-ohne neues Header-Feld und dient zugleich als Replay-Schutz
-(`abs(now-TS) ≤ 60 s` in verify_auth). Damit ist **P8-15 (Frame-Sequencing)
-für die AUTH-RX nicht mehr nötig**.
+AUTH-Frame Layout (final, 20 Byte):
+  TIMESTAMP(4B) | REF_TYPE(1B) | KEY_ID(1B) | HMAC-SHA256-14(14B)
 
-Offen (gust_rx.py-Integration, kein Blocker mehr): 60-s-Puffer
-key=Rufzeichen+REF_TYPE aufbauen, AUTH-Frame matchen, verify_auth mit
-cfg["_auth_keys"][key_id], result["authenticated"]=True + [🔑]-Badge.
-Voraussetzung: GPS/NTP-Sync der Stationen.
+Referenz: gust_spec.md §3.5, gust_knowledge.md §28
 
 ---
 

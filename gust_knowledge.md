@@ -1441,12 +1441,10 @@ Voraussetzungen für eine sinnvolle LDPC-Integration:
 
 ## 28. AUTH-Frame Design-Entscheidungen (Juni 2026)
 
-> **Status:** Entwurf — AUTH-Frames sind spezifiziert, aber nicht implementiert.
-> 0x50 AUTH (GUST-S, HMAC): §3.4/§3.5, P8-11. 0x85+0x86 AUTH_EX (GUST-X, ECDSA):
-> §3.9, P8-12. Implementierung nicht vor v1.0.
-> Crypto-Kern implementiert (Juni 2026): encode_auth(), decode_auth(),
-> auth_tag(), verify_auth() in gust_frame.py. RX-Integration blockiert
-> durch fehlendes Frame-Sequencing (kein seq-Feld in v0.5) — siehe P8-11/P8-15.
+> **Status:** Vollstaendig implementiert (Juni 2026). P8-11 abgeschlossen.
+> 0x50 AUTH (GUST-S): §3.4/§3.5 — Crypto-Kern, TX-Tooling, RX-Puffer,
+> Web-UI Badge alle fertig. 0x85+0x86 AUTH_EX (GUST-X, ECDSA): §3.9,
+> P8-12 — spezifiziert, Implementierung wartet auf GUST-X.
 
 ### Warum zwei verschiedene AUTH-Verfahren?
 
@@ -1525,6 +1523,20 @@ vollständig ausreichend und einfacher zu verwalten.
 ECDSA wird relevant wenn Traffic zunimmt, interessante Stationen
 (Expeditionen, Organisationen wie Rotes Kreuz) öffentlich
 verifizierbar sein wollen.
+
+### Implementierungsnotiz: _raw_frame_body und JSON-Serialisierung
+
+Die RX-Verifikation braucht den rohen Frame-Body (exakt die gleichen
+Bytes die auth_tag() beim Senden verarbeitet hat). gust_modulator.py
+legt diesen als _raw_frame_body (bytes) im result-Dict ab.
+
+Problem: bytes ist nicht JSON-serialisierbar. gust_eventbus.py entfernt
+_raw_frame_body vor dem WebSocket-Broadcast, damit kein TypeError den
+RX-Frame-Broadcast abbricht. Das Feld lebt nur im gust_rx.py-internen
+Verarbeitungspfad.
+
+Merksatz: Interne Diagnosefelder (Unterstrich-Prefix) nie ueber den
+EventBus weitergeben wenn sie nicht JSON-serialisierbar sind.
 
 ---
 
