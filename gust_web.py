@@ -298,6 +298,11 @@ main { padding: 16px; max-width: 1200px; }
 /* ── FRAME FEED ── */
 #rx-feed { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
            height: 320px; overflow-y: auto; padding: 8px; }
+.filter-btn { padding: 1px 8px; border-radius: 3px; border: 1px solid var(--border);
+              background: transparent; color: var(--text2); cursor: pointer;
+              font-size: 0.85em; transition: background .15s, color .15s; }
+.filter-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.filter-btn.filter-active { background: var(--accent); color: #fff; border-color: transparent; }
 .frame-row { padding: 4px 6px; border-bottom: 1px solid var(--border); display: flex;
              gap: 10px; align-items: baseline; font-size: var(--fs-sm); }
 .frame-row:last-child { border-bottom: none; }
@@ -808,6 +813,46 @@ h2:first-child { margin-top: 0; }
       <input type="checkbox" id="toggle-audio-mine">
       🔔 <span data-i18n="monitor.sound_msg">Ton bei Nachricht für mich</span>
     </label>
+  </div>
+  <div id="rx-filter-bar" style="
+      display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+      padding:4px 0 6px 0;border-bottom:1px solid var(--border-tertiary,#333);
+      margin-bottom:4px;font-size:0.8em;">
+    <span style="color:var(--text2)">Quelle:</span>
+    <button id="fsrc-all" class="filter-btn filter-active"
+            onclick="setRxFilterSource('all')">Alle</button>
+    <button id="fsrc-hf" class="filter-btn"
+            onclick="setRxFilterSource('hf')">HF</button>
+    <button id="fsrc-meshcore" class="filter-btn"
+            onclick="setRxFilterSource('meshcore')">MC</button>
+    <button class="filter-btn" disabled
+            title="MQTT — noch nicht implementiert"
+            style="opacity:0.35;cursor:not-allowed">MQTT</button>
+    <span style="color:var(--border-secondary,#444);margin:0 2px">│</span>
+    <span style="color:var(--text2)">Typ:</span>
+    <select id="filter-type" onchange="setRxFilterType(this.value)"
+            style="font-size:0.9em;padding:1px 4px;
+                   background:var(--bg2);color:var(--text);
+                   border:1px solid var(--border);border-radius:3px">
+      <option value="all">Alle</option>
+      <option value="WEATHER">Weather</option>
+      <option value="TEXT">Text</option>
+      <option value="POSITION">Position</option>
+      <option value="EMERG">Emergency</option>
+      <option value="CQ">CQ</option>
+    </select>
+    <span style="color:var(--border-secondary,#444);margin:0 2px">│</span>
+    <span style="color:var(--text2)">Ruf:</span>
+    <input id="filter-call" type="text" placeholder="z.B. OE3"
+           oninput="setRxFilterCallsign(this.value)"
+           style="width:70px;font-size:0.9em;padding:1px 4px;
+                  background:var(--bg2);color:var(--text);
+                  border:1px solid var(--border);border-radius:3px">
+    <button onclick="clearRxCallsign()"
+            title="Rufzeichen-Filter löschen"
+            style="font-size:0.85em;padding:1px 5px;cursor:pointer;
+                   background:transparent;border:1px solid var(--border);
+                   color:var(--text2);border-radius:3px">✕</button>
   </div>
   <div id="rx-feed">
     <div style="color:var(--text2);padding:8px;" data-i18n="monitor.feed.empty">Warte auf RX-Frames …</div>
@@ -1724,6 +1769,12 @@ h2:first-child { margin-top: 0; }
 
 <script>
 // ═══════════════════════════ STATE ════════════════════════════
+// RX-Live-Feed Display-Filter (clientseitig; Zeilen bleiben im DOM)
+const rxFilter = {
+  source:   'all',   // 'all' | 'hf' | 'meshcore'
+  type:     'all',   // 'all' | Frame-Typ-Name
+  callsign: ''       // Substring, case-insensitiv
+};
 const state = {
   callsign:   '–',
   homeChannel: null,
@@ -3409,6 +3460,57 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   } catch(e) {}
 });
+
+// ── RX-Feed Display-Filter (Quelle / Typ / Rufzeichen) ──────────
+function matchesRxFilter(frame) {
+  if (!frame) return true;
+  // Quelle
+  const isMC = frame.source === 'meshcore';
+  if (rxFilter.source === 'hf'       &&  isMC) return false;
+  if (rxFilter.source === 'meshcore' && !isMC) return false;
+  // Typ (Einzelauswahl; EMERG fasst EMERG_BEACON + EMERG_RSRC zusammen)
+  if (rxFilter.type !== 'all') {
+    const ftype = frame.type_name ?? '';
+    if (rxFilter.type === 'EMERG') {
+      if (!ftype.startsWith('EMERG')) return false;
+    } else if (ftype !== rxFilter.type) {
+      return false;
+    }
+  }
+  // Rufzeichen (Substring, case-insensitiv)
+  if (rxFilter.callsign) {
+    const cs = (frame.from ?? '').toUpperCase();
+    if (!cs.includes(rxFilter.callsign.toUpperCase())) return false;
+  }
+  return true;
+}
+
+function applyRxFilter() {
+  const feed = document.getElementById('rx-feed');
+  if (!feed) return;
+  feed.querySelectorAll('.frame-row').forEach(row => {
+    const frame = row._frameData;
+    row.style.display = (!frame || matchesRxFilter(frame)) ? '' : 'none';
+  });
+}
+
+function setRxFilterSource(src) {
+  rxFilter.source = src;
+  ['all', 'hf', 'meshcore'].forEach(s => {
+    const btn = document.getElementById('fsrc-' + s);
+    if (btn) btn.classList.toggle('filter-active', s === src);
+  });
+  applyRxFilter();
+}
+function setRxFilterType(val)     { rxFilter.type = val; applyRxFilter(); }
+function setRxFilterCallsign(val) { rxFilter.callsign = val.trim(); applyRxFilter(); }
+function clearRxCallsign() {
+  rxFilter.callsign = '';
+  const inp = document.getElementById('filter-call');
+  if (inp) inp.value = '';
+  applyRxFilter();
+}
+
 function appendRxFrame(frame) {
   if (state.isSending && document.getElementById('ignore-rx-while-tx')?.checked) return;
   state.rxCount++;
@@ -3442,6 +3544,7 @@ function appendRxFrame(frame) {
   const snrCls  = snrClass(snr);
 
   const row = document.createElement('div');
+  row._frameData = frame;   // für Display-Filter (applyRxFilter)
   const isTest = !!frame.test;
   // AUTH-Badge: gesetzt wenn ein AUTH-Frame (0x50) diesen Daten-Frame
   // per HMAC verifiziert hat (gust_rx._verify_auth, P8-11).
@@ -3467,6 +3570,8 @@ function appendRxFrame(frame) {
     <span class="data">${dat}</span>`;
   row.addEventListener('click', () => openFrameModal(frame));
   feed.appendChild(row);
+  // Filter anwenden — ausgeblendete Frames bleiben trotzdem im DOM
+  if (!matchesRxFilter(frame)) row.style.display = 'none';
 
   // Multi-Fragment-TEXT: Teile sammeln und bei Vollständigkeit als Klartext zeigen
   if (_ftype === 0x40 || frame.type_name === 'TEXT') {
@@ -3568,7 +3673,9 @@ function appendRxFrame(frame) {
         arow.addEventListener('click', () => openFrameModal(assembledFrame));
 
         cached.assembledRow = arow;
+        arow._frameData = assembledFrame;   // für Display-Filter
         feed.appendChild(arow);
+        if (!matchesRxFilter(assembledFrame)) arow.style.display = 'none';
 
         delete state.fragCache[seqKey];
       }
