@@ -1604,7 +1604,8 @@ h2:first-child { margin-top: 0; }
                 <div class="auth-panel-hdr">
                   <input class="auth-cs-input" id="auth-edit-cs"
                          type="text" maxlength="9"
-                         placeholder="Rufzeichen" aria-label="Rufzeichen">
+                         placeholder="Rufzeichen" aria-label="Rufzeichen"
+                         oninput="authCsInput(this.value)">
                 </div>
                 <div class="cfg-card" style="margin-top:0">
                   <label>
@@ -4973,6 +4974,10 @@ function _authSelectIdx(idx) {
   const genBtn = document.querySelector(
     '#auth-edit-form button[onclick="authGenHex()"]');
   if (genBtn) genBtn.style.display = 'none';
+  // Speichern-Button immer sichtbar bei bestehendem Eintrag
+  const saveBtn2 = document.querySelector(
+    '#auth-edit-form button[onclick="authSaveKey()"]');
+  if (saveBtn2) saveBtn2.style.display = '';
   document.getElementById('auth-hex-hint').textContent =
     k.key_hex ? k.key_hex.substring(0,8)+'…'+k.key_hex.substring(56) : '';
   _authBuildSidebar();
@@ -4981,6 +4986,18 @@ function _authSelectIdx(idx) {
 function authRevealHex() {
   const inp = document.getElementById('auth-edit-hex');
   inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function authCsInput(raw) {
+  const cs = raw.trim().toUpperCase();
+  const cmt = document.getElementById('auth-edit-comment');
+  if (!cmt) return;
+  const cur = cmt.value.trim();
+  // Standard-Text setzen wenn Kommentar leer ODER noch ein alter Standard-Text ist
+  const isDefault = !cur || cur.startsWith('Bilateraler Schlüssel mit ');
+  if (isDefault) {
+    cmt.value = cs ? `Bilateraler Schlüssel mit ${cs}` : '';
+  }
 }
 
 function authGenHex() {
@@ -5082,12 +5099,16 @@ function authNewKey() {
   document.getElementById('auth-edit-hex').value     = '';
   document.getElementById('auth-edit-hex').type      = 'password';
   document.getElementById('auth-edit-comment').value = '';
-  // "Neu generieren"-Button bei neuem Eintrag wieder einblenden
+  document.getElementById('auth-hex-hint').textContent = '';
+  document.getElementById('auth-edit-cs').focus();
+  // Generate-Button einblenden (neuer Eintrag)
   const genBtn = document.querySelector(
     '#auth-edit-form button[onclick="authGenHex()"]');
   if (genBtn) genBtn.style.display = '';
-  document.getElementById('auth-hex-hint').textContent = '';
-  document.getElementById('auth-edit-cs').focus();
+  // Speichern-Button einblenden
+  const saveBtn = document.querySelector(
+    '#auth-edit-form button[onclick="authSaveKey()"]');
+  if (saveBtn) saveBtn.style.display = '';
 }
 
 // Legacy-Stubs (werden nicht mehr über UI aufgerufen, sichern
