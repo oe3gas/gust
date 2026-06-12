@@ -721,6 +721,38 @@ h2:first-child { margin-top: 0; }
   margin-left:5px;vertical-align:middle;flex-shrink:0}
 .cfg-info:hover{background:var(--bg2,#222);color:var(--text)}
 .cfg-field-row{display:flex;align-items:center;gap:4px}
+.auth-editor{display:grid;grid-template-columns:170px 1fr;gap:0;
+  border:0.5px solid var(--border,#444);border-radius:8px;overflow:hidden;
+  background:var(--bg2,var(--panel))}
+.auth-sidebar{border-right:0.5px solid var(--border,#444);
+  background:var(--bg,#1a1a1a);display:flex;flex-direction:column}
+.auth-sidebar-hdr{padding:8px 12px;font-size:11px;font-weight:500;
+  color:var(--text2);text-transform:uppercase;letter-spacing:.06em;
+  border-bottom:0.5px solid var(--border,#444)}
+.auth-item{padding:9px 12px;cursor:pointer;border-bottom:0.5px solid
+  var(--border,#444);font-size:13px;color:var(--text2);display:flex;
+  align-items:center;gap:8px;user-select:none}
+.auth-item:hover{background:var(--bg2,#222)}
+.auth-item.auth-sel{background:var(--bg2,#222);color:var(--text);
+  font-weight:500;border-left:2px solid var(--accent,#4a9eff)}
+.auth-sidebar-btns{padding:8px;border-top:0.5px solid var(--border,#444);
+  margin-top:auto;display:flex;gap:6px}
+.auth-sidebar-btns button{flex:1;padding:5px 4px;font-size:12px;
+  background:var(--bg2,#222);border:0.5px solid var(--border,#444);
+  border-radius:5px;cursor:pointer;color:var(--text);display:flex;
+  align-items:center;justify-content:center;gap:4px}
+.auth-sidebar-btns button:hover{background:var(--panel)}
+.auth-panel{padding:14px 18px;display:flex;flex-direction:column;gap:10px}
+.auth-panel-hdr{display:flex;align-items:center;gap:8px;padding-bottom:10px;
+  border-bottom:0.5px solid var(--border,#444)}
+.auth-cs-input{font-size:15px;font-weight:500;border:none;
+  background:transparent;color:var(--text);outline:none;flex:1;min-width:0;
+  padding:2px 4px;border-radius:4px;text-transform:uppercase}
+.auth-cs-input:hover,.auth-cs-input:focus{background:var(--bg2,#222)}
+.auth-enabled-row{display:flex;align-items:center;gap:8px;
+  padding:6px 0;font-size:13px;color:var(--text2)}
+.auth-footer{display:flex;align-items:center;justify-content:space-between;
+  padding-top:9px;border-top:0.5px solid var(--border,#444)}
 </style>
 </head>
 <body>
@@ -1331,33 +1363,38 @@ h2:first-child { margin-top: 0; }
               <span class="cfg-info" title="Schaltet den gesamten Empfangs-Loop ein oder aus. Deaktivieren wenn GUST nur als TX-Gateway betrieben wird oder kein Audioeingangsgerät vorhanden ist (z.B. RPi ohne Soundkarte). Bei deaktiviertem RX startet der Daemon ohne Decoder.">i</span>
             </label>
             <label style="margin-top:.6rem">
-              RX-Audiogerät (ID)
-              <input id="cfg-rx-device" type="number" min="0">
+              RX-Audiogerät
+              <select id="cfg-rx-device-sel" style="width:100%"></select>
+              <span style="font-size:11px;color:var(--text2)">
+                Standard: RX-Gerät des aktiven TRX-Profils
+              </span>
             </label>
           </div>
           <div class="cfg-card" style="margin-top:.8rem">
             <h3>Decoder</h3>
-            <label>
-              <span class="cfg-field-row">
-                Scan-Intervall (s)
-                <span class="cfg-info" title="Wie oft der Short-Decoder ein neues Audiofenster analysiert. Kleinerer Wert erhöht die Reaktionsgeschwindigkeit, aber auch die CPU-Last. Empfohlen: 2 s.">i</span>
-              </span>
-              <input id="cfg-rx-scan" type="number" step="0.5" min="0.5">
-            </label>
-            <label>
-              <span class="cfg-field-row">
-                Fenster (s)
-                <span class="cfg-info" title="Länge des analysierten Audiosegments pro Scan-Durchgang. Muss größer als ein GUST-Frame sein (max. ~4,5 s). Empfohlen: 9 s. Zu klein = Frames werden nicht vollständig erfasst.">i</span>
-              </span>
-              <input id="cfg-rx-window" type="number" step="0.5" min="5">
-            </label>
-            <label>
-              <span class="cfg-field-row">
-                Dedup-TTL (s)
-                <span class="cfg-info" title="Frames vom selben Sender innerhalb dieser Zeitspanne werden als Duplikat unterdrückt. Verhindert Mehrfachanzeige desselben Frames (z.B. durch Parallelkanal-Diversity oder Deep-Decoder). Empfohlen: 30 s.">i</span>
-              </span>
-              <input id="cfg-rx-dedup" type="number" min="5">
-            </label>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+              <label>
+                <span class="cfg-field-row">
+                  Scan-Intervall (s)
+                  <span class="cfg-info" title="Wie oft der Short-Decoder ein neues Audiofenster analysiert. Kleinerer Wert erhöht die Reaktionsgeschwindigkeit, aber auch die CPU-Last. Empfohlen: 2 s.">i</span>
+                </span>
+                <input id="cfg-rx-scan" type="number" step="0.5" min="0.5">
+              </label>
+              <label>
+                <span class="cfg-field-row">
+                  Fenster (s)
+                  <span class="cfg-info" title="Länge des analysierten Audiosegments pro Scan-Durchgang. Muss größer als ein GUST-Frame sein (max. ~4,5 s). Empfohlen: 9 s.">i</span>
+                </span>
+                <input id="cfg-rx-window" type="number" step="0.5" min="5">
+              </label>
+              <label>
+                <span class="cfg-field-row">
+                  Dedup-TTL (s)
+                  <span class="cfg-info" title="Frames vom selben Sender innerhalb dieser Zeitspanne werden als Duplikat unterdrückt. Verhindert Mehrfachanzeige durch Parallelkanal-Diversity oder Deep-Decoder. Empfohlen: 30 s.">i</span>
+                </span>
+                <input id="cfg-rx-dedup" type="number" min="5">
+              </label>
+            </div>
             <div style="margin-top:.8rem">
               <button onclick="cfgSaveAudioRx()">💾 Speichern</button>
             </div>
@@ -1507,13 +1544,27 @@ h2:first-child { margin-top: 0; }
         <div class="cfgedit-sub" id="cfgsub-sdr" style="display:none">
           <div class="cfg-card">
             <h3>RTL-SDR IQ-Eingang</h3>
-            <label class="cfg-toggle">Aktiviert<input id="cfg-rtl-enabled" type="checkbox"></label>
+            <label class="cfg-toggle">
+              <input id="cfg-rtl-enabled" type="checkbox">
+              Aktiviert
+              <span class="cfg-info" title="Aktiviert den RTL-SDR als IQ-Eingangsquelle für den GUST-Decoder. Ersetzt das normale Audiogerät. Benötigt einen angeschlossenen RTL-SDR-Stick (z.B. RTL2832U). Nicht gleichzeitig mit SoapySDR RX verwenden.">i</span>
+            </label>
             <label>Center-Frequenz (Hz)<input id="cfg-rtl-freq" type="number"></label>
             <label>Sample-Rate<input id="cfg-rtl-rate" type="number"></label>
             <label>Gain<input id="cfg-rtl-gain" type="text" placeholder="auto"></label>
-            <label>PPM-Korrektur<input id="cfg-rtl-ppm" type="number"></label>
+            <label>
+              <span class="cfg-field-row">
+                PPM-Korrektur
+                <span class="cfg-info" title="Frequenz-Kalibrierwert des RTL-SDR-Empfängers in Parts Per Million (ppm). Kompensiert den Frequenzfehler des Oszillators. Typischer Bereich: −50 bis +50. Mit kalibr = 0 beginnen und ggf. anpassen.">i</span>
+              </span>
+              <input id="cfg-rtl-ppm" type="number">
+            </label>
             <h3 style="margin-top:1rem">SoapySDR TX</h3>
-            <label class="cfg-toggle">Aktiviert<input id="cfg-sdr-enabled" type="checkbox"></label>
+            <label class="cfg-toggle">
+              <input id="cfg-sdr-enabled" type="checkbox">
+              Aktiviert
+              <span class="cfg-info" title="Aktiviert SoapySDR als TX-Ausgang (z.B. HackRF, SDRplay). Überbrückt das normale Audiogerät für die Signalerzeugung. Benötigt SoapySDR-Installation und kompatible Hardware.">i</span>
+            </label>
             <label>Frequenz (Hz)<input id="cfg-sdr-freq" type="number"></label>
             <label>Sample-Rate<input id="cfg-sdr-rate" type="number"></label>
             <label>Antenne<input id="cfg-sdr-antenna" type="text"></label>
@@ -1525,49 +1576,70 @@ h2:first-child { margin-top: 0; }
 
         <div class="cfgedit-sub" id="cfgsub-auth" style="display:none">
 
-          <div class="cfg-card">
-            <h3>Authentifizierung (HMAC-SHA256)</h3>
-            <label class="cfg-toggle">
-              AUTH aktiviert
-              <input id="cfg-auth-enabled" type="checkbox">
+          <div class="auth-enabled-row" style="margin-bottom:.8rem">
+            <label class="trx-tog">
+              <input type="checkbox" id="cfg-auth-enabled2"
+                     onchange="cfgSaveAuthEnabled2()">
+              <span class="trx-tog-sl"></span>
             </label>
-            <div style="margin-top:.8rem">
-              <button onclick="cfgSaveAuthEnabled()">💾 Speichern</button>
-            </div>
+            <span>AUTH aktiviert</span>
+            <span class="cfg-info"
+              title="Aktiviert die HMAC-SHA256-Rahmen-Authentifizierung. Eingehende AUTH-Frames (0x50) werden nur verifiziert wenn hier ein passender Schlüssel für das Absender-Rufzeichen eingetragen ist.">i</span>
           </div>
 
-          <div id="cfgedit-auth-list" style="margin-top:1rem"></div>
-
-          <div class="cfg-card" style="margin-top:1rem">
-            <h3>➕ Schlüssel hinzufügen</h3>
-            <label>Rufzeichen (Partner)
-              <input id="cfg-auth-new-callsign" type="text"
-                     maxlength="9" placeholder="OE1XTU"
-                     style="text-transform:uppercase">
-            </label>
-            <label>key_hex (64 Hex-Zeichen)
-              <input id="cfg-auth-new-keyhex" type="text"
-                     maxlength="64" placeholder="2f7615ad… (leer = automatisch generiert)"
-                     style="font-family:monospace;font-size:.85rem">
-            </label>
-            <label>Kommentar (optional)
-              <input id="cfg-auth-new-comment" type="text"
-                     placeholder="Bilateraler Schlüssel mit OE1XTU">
-            </label>
-            <div style="margin-top:.8rem;display:flex;gap:.5rem;flex-wrap:wrap">
-              <button onclick="cfgAuthAdd()">➕ Hinzufügen</button>
-              <button onclick="cfgAuthGenKey()"
-                      title="Zufälligen 32-Byte-Schlüssel erzeugen">
-                🎲 Schlüssel generieren
-              </button>
+          <div class="auth-editor">
+            <div class="auth-sidebar">
+              <div class="auth-sidebar-hdr">AUTH-Partner</div>
+              <div id="auth-key-list"></div>
+              <div class="auth-sidebar-btns">
+                <button onclick="authNewKey()">＋ Neu</button>
+              </div>
             </div>
-            <div id="cfg-auth-genkey-box"
-                 style="display:none;margin-top:.6rem;padding:.6rem;
-                        background:var(--bg);border:1px solid var(--border);
-                        border-radius:4px;font-family:monospace;font-size:.82rem;
-                        word-break:break-all;color:var(--accent)"></div>
-          </div>
 
+            <div class="auth-panel" id="auth-detail-panel">
+              <div id="auth-no-key" style="color:var(--text2);font-size:.9rem;padding:.5rem 0">
+                Kein Partner ausgewählt.
+              </div>
+              <div id="auth-edit-form" style="display:none">
+                <div class="auth-panel-hdr">
+                  <input class="auth-cs-input" id="auth-edit-cs"
+                         type="text" maxlength="9"
+                         placeholder="Rufzeichen" aria-label="Rufzeichen">
+                </div>
+                <div class="cfg-card" style="margin-top:0">
+                  <label>
+                    key_hex (64 Hex-Zeichen)
+                    <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+                      <input id="auth-edit-hex" type="text" maxlength="64"
+                             style="font-family:monospace;font-size:.82rem;flex:1"
+                             placeholder="2f7615ad…">
+                      <button onclick="authRevealHex()"
+                              title="Schlüssel anzeigen/verbergen"
+                              style="padding:5px 8px;flex-shrink:0">👁</button>
+                      <button onclick="authGenHex()"
+                              title="Zufälligen Schlüssel generieren"
+                              style="padding:5px 8px;flex-shrink:0">🎲</button>
+                    </div>
+                    <span id="auth-hex-hint"
+                          style="font-size:11px;color:var(--text2);margin-top:3px;display:block">
+                    </span>
+                  </label>
+                  <label style="margin-top:.6rem">
+                    Kommentar (optional)
+                    <input id="auth-edit-comment" type="text"
+                           placeholder="Bilateraler Schlüssel mit OE1XTU"
+                           style="margin-top:4px">
+                  </label>
+                </div>
+                <div class="auth-footer">
+                  <button class="trx-btn trx-btn-danger"
+                          onclick="authDeleteKey()">🗑 Entfernen</button>
+                  <button class="trx-btn trx-btn-primary"
+                          onclick="authSaveKey()">💾 Speichern</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
 </div><!-- /#tab-cfgedit -->
@@ -4382,7 +4454,41 @@ async function cfgLoad() {
     // RX / Decoder — TX-Audio jetzt im TRX-Editor (cat_trx), nicht mehr hier
     const rx = cfg.rx || {};
     document.getElementById('cfg-rx-enabled').checked   = rx.enabled !== false;
-    document.getElementById('cfg-rx-device').value      = rx.device   ?? '';
+    // RX-Audiogerät Dropdown befüllen
+    const rxDevSel = document.getElementById('cfg-rx-device-sel');
+    if (rxDevSel) {
+      // Vorauswahl: rx.device → aktives TRX-Profil → leer
+      const rxDevCur = rx.device ?? (() => {
+        const actProf = (cfg.trx_profiles||[]).find(
+          p => p.name === cfg.active_trx_profile);
+        return actProf?.audio_device_rx ?? null;
+      })();
+      // Dropdown aus _trxAudioDevices befüllen falls bereits geladen,
+      // sonst API-Aufruf
+      const _fillRxDev = (devs) => {
+        const rxDevs = devs.filter(d => d.ins > 0);
+        let html = '<option value="">— Standard (aus TRX-Profil) —</option>';
+        rxDevs.forEach(d => {
+          html += `<option value="${d.id}"
+            ${d.id==rxDevCur?'selected':''}>${d.id} — ${d.name}</option>`;
+        });
+        if (rxDevCur != null && !rxDevs.find(d=>d.id==rxDevCur)) {
+          html += `<option value="${rxDevCur}" selected>
+            ${rxDevCur} — (ID ${rxDevCur})</option>`;
+        }
+        rxDevSel.innerHTML = html;
+      };
+      if (_trxAudioDevices && _trxAudioDevices.length) {
+        _fillRxDev(_trxAudioDevices);
+      } else {
+        fetch('/api/audio/devices').then(r=>r.ok?r.json():null).then(d=>{
+          if (!d) return;
+          const KEEP = new Set([0,2]);
+          const ins = (d.input||[]).filter(x=>KEEP.has(x.host_api));
+          _fillRxDev(ins.map(x=>({id:x.id,name:x.name,ins:1,outs:0})));
+        }).catch(()=>{});
+      }
+    }
     document.getElementById('cfg-rx-scan').value        = rx.scan_interval_s ?? 2.0;
     document.getElementById('cfg-rx-window').value      = rx.window_s        ?? 9.0;
     document.getElementById('cfg-rx-dedup').value       = rx.dedup_ttl_s     ?? 30;
@@ -4454,7 +4560,10 @@ async function cfgSaveAudioRx() {
     // TX-Audio jetzt im TRX-Editor (cat_trx); hier nur noch RX/Decoder
     await cfgPatch('rx', {
       enabled:          document.getElementById('cfg-rx-enabled').checked,
-      device:           parseInt(document.getElementById('cfg-rx-device').value),
+      device: (() => {
+        const v = document.getElementById('cfg-rx-device-sel')?.value;
+        return (v && v !== '') ? parseInt(v) : null;
+      })(),
       scan_interval_s:  parseFloat(document.getElementById('cfg-rx-scan').value),
       window_s:         parseFloat(document.getElementById('cfg-rx-window').value),
       dedup_ttl_s:      parseInt(document.getElementById('cfg-rx-dedup').value)
@@ -4818,135 +4927,145 @@ async function cfgTrxDelete(name) {
   await trxDeleteProfile();
 }
 
-// ── AUTH-Keys ──────────────────────────────────────────────
+// ── AUTH-Keys (Sidebar-Editor) ─────────────────────────────
+let _authKeys2  = [];
+let _authCurIdx = -1;
+
 async function cfgRenderAuthList() {
   try {
     const cfg = await apiFetch('/api/config');
     const auth = cfg.auth || {};
-    const enabled = !!auth.enabled;
-    document.getElementById('cfg-auth-enabled').checked = enabled;
-    const keys = auth.keys || [];
-    const container = document.getElementById('cfgedit-auth-list');
-    if (!keys.length) {
-      container.innerHTML =
-        '<p style="color:var(--text-dim);font-size:.9rem">' +
-        'Keine Schlüssel konfiguriert.</p>';
-      return;
+    _authKeys2 = auth.keys || [];
+    const en = document.getElementById('cfg-auth-enabled2');
+    if (en) en.checked = !!auth.enabled;
+    _authBuildSidebar();
+    if (_authKeys2.length) {
+      _authSelectIdx(0);
+    } else {
+      document.getElementById('auth-no-key').style.display  = '';
+      document.getElementById('auth-edit-form').style.display = 'none';
     }
-    container.innerHTML = keys.map((k, idx) => `
-      <div class="cfg-card">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <h3 style="margin:0">🔑 ${k.callsign || '?'}</h3>
-          <button onclick="cfgAuthDelete('${k.callsign}')"
-                  style="padding:.2rem .6rem;font-size:.8rem">🗑 Entfernen</button>
-        </div>
-        <div style="margin-top:.6rem;font-size:.85rem">
-          <div style="color:var(--text-dim);margin-bottom:.3rem">
-            ${k._comment || ''}
-          </div>
-          <div style="font-family:monospace;font-size:.82rem;
-                      word-break:break-all;color:var(--text-dim)">
-            <span id="cfg-auth-hex-${idx}">
-              ${k.key_hex ? k.key_hex.substring(0,8)+'…'+k.key_hex.substring(56) : '–'}
-            </span>
-            <button onclick="cfgAuthReveal(${idx},'${k.key_hex||''}')"
-                    style="margin-left:.5rem;padding:.1rem .4rem;font-size:.75rem"
-                    title="Schlüssel anzeigen/verbergen">👁</button>
-          </div>
-        </div>
-      </div>`).join('');
-  } catch(e) { cfgBanner('AUTH-Liste laden: ' + e.message, false); }
+  } catch(e) { cfgBanner('AUTH laden: ' + e.message, false); }
 }
 
-function cfgAuthReveal(idx, hex) {
-  const el = document.getElementById('cfg-auth-hex-' + idx);
-  if (!el) return;
-  const short = hex.substring(0,8) + '…' + hex.substring(56);
-  el.textContent = el.textContent.trim() === hex ? short : hex;
+function _authBuildSidebar() {
+  const list = document.getElementById('auth-key-list');
+  if (!list) return;
+  list.innerHTML = _authKeys2.map((k, i) => `
+    <div class="auth-item ${i===_authCurIdx?'auth-sel':''}"
+         onclick="_authSelectIdx(${i})">
+      🔑 <span>${k.callsign || '?'}</span>
+    </div>`).join('')
+    || '<div style="padding:8px 12px;font-size:12px;color:var(--text2)">Keine Partner</div>';
 }
 
-function cfgAuthGenKey() {
-  // 32 zufällige Bytes als Hex — Web Crypto API
+function _authSelectIdx(idx) {
+  _authCurIdx = idx;
+  const k = _authKeys2[idx];
+  if (!k) return;
+  document.getElementById('auth-no-key').style.display   = 'none';
+  document.getElementById('auth-edit-form').style.display = '';
+  document.getElementById('auth-edit-cs').value      = k.callsign || '';
+  document.getElementById('auth-edit-hex').value     = k.key_hex  || '';
+  document.getElementById('auth-edit-hex').type      = 'password';
+  document.getElementById('auth-edit-comment').value = k._comment || '';
+  document.getElementById('auth-hex-hint').textContent =
+    k.key_hex ? k.key_hex.substring(0,8)+'…'+k.key_hex.substring(56) : '';
+  _authBuildSidebar();
+}
+
+function authRevealHex() {
+  const inp = document.getElementById('auth-edit-hex');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function authGenHex() {
   const buf = new Uint8Array(32);
   crypto.getRandomValues(buf);
-  const hex = Array.from(buf).map(b => b.toString(16).padStart(2,'0')).join('');
-  document.getElementById('cfg-auth-new-keyhex').value = hex;
-  const box = document.getElementById('cfg-auth-genkey-box');
-  box.style.display = '';
-  box.textContent = hex;
+  const hex = Array.from(buf).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const inp = document.getElementById('auth-edit-hex');
+  inp.value = hex;
+  inp.type  = 'text';
+  document.getElementById('auth-hex-hint').textContent = hex.substring(0,8)+'…'+hex.substring(56);
 }
 
-async function cfgSaveAuthEnabled() {
+async function cfgSaveAuthEnabled2() {
   try {
     await cfgPatch('auth', {
-      enabled: document.getElementById('cfg-auth-enabled').checked
+      enabled: document.getElementById('cfg-auth-enabled2').checked
     });
     cfgBanner('✅ AUTH-Status gespeichert');
   } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
 }
 
-async function cfgAuthAdd() {
-  const callsign = document.getElementById('cfg-auth-new-callsign')
-                           .value.trim().toUpperCase();
-  let   keyHex   = document.getElementById('cfg-auth-new-keyhex')
-                           .value.trim().toLowerCase();
-  const comment  = document.getElementById('cfg-auth-new-comment')
-                           .value.trim();
-
-  if (!callsign) {
-    cfgBanner('Rufzeichen ist Pflicht', false); return;
-  }
-  // Leeres key_hex → serverseitig generieren (gust_keygen-Logik im Browser)
-  if (!keyHex) {
-    const buf = new Uint8Array(32);
-    crypto.getRandomValues(buf);
-    keyHex = Array.from(buf).map(b => b.toString(16).padStart(2,'0')).join('');
-  }
-  if (!/^[0-9a-f]{64}$/.test(keyHex)) {
+async function authSaveKey() {
+  const cs  = document.getElementById('auth-edit-cs').value.trim().toUpperCase();
+  const hex = document.getElementById('auth-edit-hex').value.trim().toLowerCase();
+  const cmt = document.getElementById('auth-edit-comment').value.trim();
+  if (!cs)  { cfgBanner('Rufzeichen erforderlich', false); return; }
+  if (hex && !/^[0-9a-f]{64}$/.test(hex)) {
     cfgBanner('key_hex: genau 64 Hex-Zeichen (0–9, a–f)', false); return;
   }
-
-  let cfg;
-  try { cfg = await apiFetch('/api/config'); }
-  catch(e) { cfgBanner('Laden fehlgeschlagen: ' + e.message, false); return; }
-
-  const keys = (cfg.auth || {}).keys || [];
-  // Bestehendes Rufzeichen überschreiben oder neu anhängen
-  const idx = keys.findIndex(k =>
-    (k.callsign || '').toUpperCase() === callsign);
-  const entry = {
-    callsign,
-    key_hex: keyHex,
-    _comment: comment || `Bilateraler Schlüssel mit ${callsign}`
-  };
-  if (idx >= 0) keys[idx] = entry;
-  else          keys.push(entry);
-
+  const finalHex = hex || (() => {
+    const buf = new Uint8Array(32);
+    crypto.getRandomValues(buf);
+    return Array.from(buf).map(b=>b.toString(16).padStart(2,'0')).join('');
+  })();
+  const keys = [..._authKeys2];
+  const entry = {callsign:cs, key_hex:finalHex,
+    _comment: cmt||`Bilateraler Schlüssel mit ${cs}`};
+  if (_authCurIdx >= 0 && _authCurIdx < keys.length) {
+    keys[_authCurIdx] = entry;
+  } else {
+    keys.push(entry);
+  }
   try {
-    await cfgPatch('auth', { keys });
-    cfgBanner(`✅ Schlüssel für ${callsign} gespeichert — `+
-              `Partner muss denselben key_hex eintragen`);
-    document.getElementById('cfg-auth-new-callsign').value = '';
-    document.getElementById('cfg-auth-new-keyhex').value   = '';
-    document.getElementById('cfg-auth-new-comment').value  = '';
-    document.getElementById('cfg-auth-genkey-box').style.display = 'none';
-    cfgRenderAuthList();
+    await cfgPatch('auth', {keys});
+    cfgBanner('✅ Schlüssel für ' + cs + ' gespeichert');
+    _authKeys2 = keys;
+    _authBuildSidebar();
+    _authSelectIdx(_authCurIdx >= 0 ? _authCurIdx : keys.length-1);
   } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
 }
 
-async function cfgAuthDelete(callsign) {
-  if (!confirm(`Schlüssel für ${callsign} wirklich entfernen?`)) return;
-  let cfg;
-  try { cfg = await apiFetch('/api/config'); }
-  catch(e) { cfgBanner('Laden fehlgeschlagen: ' + e.message, false); return; }
-
-  const keys = ((cfg.auth || {}).keys || [])
-    .filter(k => (k.callsign || '').toUpperCase() !== callsign.toUpperCase());
+async function authDeleteKey() {
+  const k = _authKeys2[_authCurIdx];
+  if (!k) return;
+  if (!confirm('Schlüssel für ' + k.callsign + ' wirklich entfernen?')) return;
+  const keys = _authKeys2.filter((_,i) => i !== _authCurIdx);
   try {
-    await cfgPatch('auth', { keys });
-    cfgBanner(`✅ Schlüssel für ${callsign} entfernt`);
-    cfgRenderAuthList();
+    await cfgPatch('auth', {keys});
+    cfgBanner('✅ Schlüssel für ' + k.callsign + ' entfernt');
+    _authKeys2  = keys;
+    _authCurIdx = -1;
+    _authBuildSidebar();
+    if (keys.length) _authSelectIdx(0);
+    else {
+      document.getElementById('auth-no-key').style.display   = '';
+      document.getElementById('auth-edit-form').style.display = 'none';
+    }
   } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+function authNewKey() {
+  _authCurIdx = -1;
+  document.getElementById('auth-no-key').style.display   = 'none';
+  document.getElementById('auth-edit-form').style.display = '';
+  document.getElementById('auth-edit-cs').value      = '';
+  document.getElementById('auth-edit-hex').value     = '';
+  document.getElementById('auth-edit-hex').type      = 'password';
+  document.getElementById('auth-edit-comment').value = '';
+  document.getElementById('auth-hex-hint').textContent = '';
+  document.getElementById('auth-edit-cs').focus();
+}
+
+// Legacy-Stubs (werden nicht mehr über UI aufgerufen, sichern
+// gegen etwaige Restaufrufe ab)
+async function cfgSaveAuthEnabled() { await cfgSaveAuthEnabled2(); }
+async function cfgAuthAdd()         { await authSaveKey(); }
+async function cfgAuthDelete(cs)    {
+  _authCurIdx = _authKeys2.findIndex(k=>k.callsign===cs);
+  await authDeleteKey();
 }
 </script>
 <!-- ══ FRAME DETAIL MODAL ══ -->
