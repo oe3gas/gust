@@ -1871,6 +1871,9 @@ function applyTheme(key) {
   // Dropdown im cfgedit-Tab synchron halten (falls vorhanden)
   const sel = document.getElementById('cfg-theme');
   if (sel) sel.value = key;
+  // Swimlane neu zeichnen wenn aktiv (Canvas-Farben sind theme-abhängig)
+  if (typeof slRedraw === 'function') slRedraw();
+  else if (typeof slDraw === 'function') slDraw();
 }
 
 function cycleTheme() {
@@ -4200,10 +4203,103 @@ function slRoundRectPath(ctx, x, y, w, h, r) {
   else               ctx.rect(x, y, w, h);
 }
 
+function slTheme() {
+  const t = localStorage.getItem('gust-theme') || 'dark';
+  if (t === 'mono') return {
+    bg:         '#ebebeb',
+    bgHeader:   '#d8d8d8',
+    gridLine:   '#b0b0b0',
+    gridLineSub:'#cccccc',
+    borderLine: '#888888',
+    textHeader: '#111111',
+    textLabel:  '#333333',
+    textTime:   '#555555',
+    nowLine:    '#111111',
+    frameBg:    (ft) => ({
+      WEATHER:'#555555', POSITION:'#333333',
+      EMERG_BEACON:'#111111', EMERG_RSRC:'#111111',
+      STATION_TLM:'#777777', TEXT:'#444444', CQ:'#888888'
+    })[ft] || '#555555',
+    frameText:  '#ffffff',
+    frameBorder:'#111111',
+    legend:     (ft) => ({
+      WEATHER:'#555', POSITION:'#333', EMERG_BEACON:'#111',
+      EMERG_RSRC:'#111', STATION_TLM:'#777', TEXT:'#444', CQ:'#888'
+    })[ft] || '#555',
+  };
+  if (t === 'aero') return {
+    bg:         '#e8eef4',
+    bgHeader:   '#cdd8e3',
+    gridLine:   '#b0bfcc',
+    gridLineSub:'#d0dce8',
+    borderLine: '#8090a8',
+    textHeader: '#1a2430',
+    textLabel:  '#1a2430',
+    textTime:   '#556070',
+    nowLine:    '#0078d4',
+    frameBg:    (ft) => ({
+      WEATHER:'#0078d4', POSITION:'#107c10',
+      EMERG_BEACON:'#c42b1c', EMERG_RSRC:'#ca5010',
+      STATION_TLM:'#6b3fa0', TEXT:'#ca5010', CQ:'#005fa3'
+    })[ft] || '#0078d4',
+    frameText:  '#ffffff',
+    frameBorder:'transparent',
+    legend:     (ft) => ({
+      WEATHER:'#0078d4', POSITION:'#107c10', EMERG_BEACON:'#c42b1c',
+      EMERG_RSRC:'#ca5010', STATION_TLM:'#6b3fa0', TEXT:'#ca5010', CQ:'#005fa3'
+    })[ft] || '#0078d4',
+  };
+  if (t === 'light') return {
+    bg:         '#f8f8f8',
+    bgHeader:   '#e8e8e8',
+    gridLine:   '#cccccc',
+    gridLineSub:'#e8e8e8',
+    borderLine: '#aaaaaa',
+    textHeader: '#222222',
+    textLabel:  '#222222',
+    textTime:   '#666666',
+    nowLine:    '#e53935',
+    frameBg:    (ft) => ({
+      WEATHER:'#1565c0', POSITION:'#2e7d32',
+      EMERG_BEACON:'#c62828', EMERG_RSRC:'#e65100',
+      STATION_TLM:'#6a1b9a', TEXT:'#ef6c00', CQ:'#0277bd'
+    })[ft] || '#1565c0',
+    frameText:  '#ffffff',
+    frameBorder:'transparent',
+    legend:     (ft) => ({
+      WEATHER:'#1565c0', POSITION:'#2e7d32', EMERG_BEACON:'#c62828',
+      EMERG_RSRC:'#e65100', STATION_TLM:'#6a1b9a', TEXT:'#ef6c00', CQ:'#0277bd'
+    })[ft] || '#1565c0',
+  };
+  return {
+    bg:         '#162032',
+    bgHeader:   '#1a2540',
+    gridLine:   '#253550',
+    gridLineSub:'#1e2d45',
+    borderLine: '#304060',
+    textHeader: '#c8d8e8',
+    textLabel:  '#c8d8e8',
+    textTime:   '#8090a8',
+    nowLine:    '#e05050',
+    frameBg:    (ft) => ({
+      WEATHER:'#1565c0', POSITION:'#2e7d32',
+      EMERG_BEACON:'#b71c1c', EMERG_RSRC:'#e65100',
+      STATION_TLM:'#6a1b9a', TEXT:'#e65100', CQ:'#0277bd'
+    })[ft] || '#1565c0',
+    frameText:  '#ffffff',
+    frameBorder:'transparent',
+    legend:     (ft) => ({
+      WEATHER:'#1e88e5', POSITION:'#43a047', EMERG_BEACON:'#e53935',
+      EMERG_RSRC:'#fb8c00', STATION_TLM:'#8e24aa', TEXT:'#fb8c00', CQ:'#039be5'
+    })[ft] || '#1e88e5',
+  };
+}
+
 function slDraw() {
   const canvas = document.getElementById('sl-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
+  const _sl = slTheme();
 
   const W   = sl.canvasW;
   const H   = sl.canvasH;
@@ -4227,7 +4323,7 @@ function slDraw() {
   const frames = sl.paused ? (sl.frozenFrames || []) : sl.frames;
 
   // Hintergrund
-  ctx.fillStyle = isLight ? '#f0f4f8' : SL_BACKGROUND;
+  ctx.fillStyle = _sl.bg;
   ctx.fillRect(0, 0, W, H);
 
   // Gesamt-Inhaltshöhe berechnen (für Scrollbar)
@@ -4246,9 +4342,7 @@ function slDraw() {
   // ── Swimlane-Hintergründe ────────────────────────────────
   // (statische Möblierung: Offset kompensiert, deckt so trotz
   // Translation immer den ganzen sichtbaren Canvas ab)
-  const laneBg = isLight
-    ? ['#dde8f5', '#e8f0f8']   // helle Blautöne
-    : SL_BG_LANES;
+  const laneBg = [_sl.bg, _sl.bgHeader];   // subtile Lane-Alternierung je Theme
   for (let ch = 0; ch < SL_N_CHANNELS; ch++) {
     ctx.fillStyle = laneBg[ch % 2];
     ctx.fillRect(ch * lW, off, lW, H);
@@ -4261,9 +4355,7 @@ function slDraw() {
     const yPos = HEADER_H + age * pps;
     if (yPos < HEADER_H + off || yPos > H + off) continue;
     const is10 = (age % 10 === 0);
-    ctx.strokeStyle = is10
-      ? (isLight ? 'rgba(0,0,0,0.45)' : SL_GRID_COLOR)
-      : (isLight ? 'rgba(0,0,0,0.18)' : SL_GRID_MINOR);
+    ctx.strokeStyle = is10 ? _sl.gridLine : _sl.gridLineSub;
     ctx.lineWidth   = is10 ? 1.0 : 0.4;
     ctx.beginPath();
     ctx.moveTo(0, yPos);
@@ -4272,9 +4364,7 @@ function slDraw() {
 
     // Label: Alter in Sekunden (age=0 -> "jetzt")
     if (is10) {
-      ctx.fillStyle = isLight
-        ? 'rgba(0,0,0,0.80)'
-        : 'rgba(255,255,255,0.92)';
+      ctx.fillStyle = age === 0 ? _sl.textLabel : _sl.textTime;
       ctx.font      = 'bold 11px monospace';
       const label   = age === 0 ? 'jetzt' : `-${age}s`;
       ctx.fillText(label, 3, yPos + 12);
@@ -4284,9 +4374,7 @@ function slDraw() {
   // ── Swimlane-Trennlinien (vertikal) ──────────────────────
   for (let ch = 0; ch <= SL_N_CHANNELS; ch++) {
     const isEdge = (ch === 0 || ch === SL_N_CHANNELS);
-    ctx.strokeStyle = isLight
-      ? (isEdge ? 'rgba(0,0,0,0.6)'      : 'rgba(0,0,0,0.3)')
-      : (isEdge ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.55)');
+    ctx.strokeStyle = isEdge ? _sl.borderLine : _sl.gridLine;
     ctx.lineWidth = isEdge ? 2.0 : 1.2;
     ctx.beginPath();
     ctx.moveTo(ch * lW, HEADER_H + off);
@@ -4319,7 +4407,7 @@ function slDraw() {
 
     const xLeft = f.ch * lW + pad;
     const bW    = lW - 2 * pad;
-    const color = SL_COLORS[f.ftype] || SL_DEFAULT_COLOR;
+    const color = _sl.frameBg(f.ftype);
 
     // Block mit abgerundeten Ecken
     const r = 4;
@@ -4340,7 +4428,7 @@ function slDraw() {
     // Text nur wenn Block groß genug
     if (yH >= 20) {
       ctx.textAlign    = 'center';
-      ctx.fillStyle    = 'white';
+      ctx.fillStyle    = _sl.frameText;
       const cx = xLeft + bW / 2;
       const cy = yTop  + yH / 2;
 
@@ -4380,7 +4468,7 @@ function slDraw() {
   // Rot funktioniert in beiden Themes. Scrollt mit dem Inhalt —
   // nur zeichnen solange nicht weggescrollt (sonst hinter Header).
   if (off <= 2) {
-    ctx.strokeStyle = 'rgba(255,80,80,0.8)';
+    ctx.strokeStyle = _sl.nowLine;
     ctx.lineWidth   = 1.5;
     ctx.setLineDash([4, 3]);
     ctx.beginPath();
@@ -4395,21 +4483,17 @@ function slDraw() {
   // ── Kanal-Header (ZULETZT: immer oben sichtbar, über Frames) ──
   for (let ch = 0; ch < SL_N_CHANNELS; ch++) {
     const x = ch * lW;
-    // Hintergrund-Balken (halbtransparent, überdeckt Frame-Oberkanten)
-    ctx.fillStyle = isLight
-      ? 'rgba(240,244,248,0.90)'
-      : 'rgba(13,17,23,0.82)';
+    // Hintergrund-Balken (deckt Frame-Oberkanten ab)
+    ctx.fillStyle = _sl.bgHeader;
     ctx.fillRect(x + 1, 0, lW - 2, HEADER_H);
     // Text
     const cx = x + lW / 2;
-    ctx.fillStyle = isLight ? '#1f2328' : '#ffffff';
+    ctx.fillStyle = _sl.textHeader;
     ctx.font      = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`CH ${ch}`, cx, 15);
     ctx.font      = '9px sans-serif';
-    ctx.fillStyle = isLight
-      ? 'rgba(31,35,40,0.65)'
-      : 'rgba(255,255,255,0.70)';
+    ctx.fillStyle = _sl.textTime;
     ctx.fillText(`${SL_CH_FREQ[ch]} Hz`, cx, 27);
   }
 
