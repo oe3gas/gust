@@ -4969,6 +4969,10 @@ function _authSelectIdx(idx) {
   document.getElementById('auth-edit-hex').value     = k.key_hex  || '';
   document.getElementById('auth-edit-hex').type      = 'password';
   document.getElementById('auth-edit-comment').value = k._comment || '';
+  // "Neu generieren"-Button nur bei neuem Eintrag sichtbar
+  const genBtn = document.querySelector(
+    '#auth-edit-form button[onclick="authGenHex()"]');
+  if (genBtn) genBtn.style.display = 'none';
   document.getElementById('auth-hex-hint').textContent =
     k.key_hex ? k.key_hex.substring(0,8)+'…'+k.key_hex.substring(56) : '';
   _authBuildSidebar();
@@ -4986,7 +4990,15 @@ function authGenHex() {
   const inp = document.getElementById('auth-edit-hex');
   inp.value = hex;
   inp.type  = 'text';
-  document.getElementById('auth-hex-hint').textContent = hex.substring(0,8)+'…'+hex.substring(56);
+  document.getElementById('auth-hex-hint').textContent =
+    hex.substring(0,8)+'…'+hex.substring(56);
+  // Kommentar automatisch mit aktuellem Rufzeichen befüllen (nur wenn leer)
+  const csInp = document.getElementById('auth-edit-cs');
+  const cmtInp = document.getElementById('auth-edit-comment');
+  if (cmtInp && csInp && !cmtInp.value.trim()) {
+    const cs = csInp.value.trim().toUpperCase();
+    if (cs) cmtInp.value = `Bilateraler Schlüssel mit ${cs}`;
+  }
 }
 
 async function cfgSaveAuthEnabled2() {
@@ -5003,6 +5015,21 @@ async function authSaveKey() {
   const hex = document.getElementById('auth-edit-hex').value.trim().toLowerCase();
   const cmt = document.getElementById('auth-edit-comment').value.trim();
   if (!cs)  { cfgBanner('Rufzeichen erforderlich', false); return; }
+  // Duplikat-Prüfung: nur bei neuem Eintrag (_authCurIdx === -1)
+  if (_authCurIdx === -1) {
+    const exists = _authKeys2.some(
+      k => (k.callsign||'').toUpperCase() === cs
+    );
+    if (exists) {
+      cfgBanner(
+        `⚠ Schlüssel für ${cs} existiert bereits. ` +
+        `Bitte erst den vorhandenen Eintrag löschen, ` +
+        `dann einen neuen für ${cs} erstellen.`,
+        false
+      );
+      return;
+    }
+  }
   if (hex && !/^[0-9a-f]{64}$/.test(hex)) {
     cfgBanner('key_hex: genau 64 Hex-Zeichen (0–9, a–f)', false); return;
   }
@@ -5055,6 +5082,10 @@ function authNewKey() {
   document.getElementById('auth-edit-hex').value     = '';
   document.getElementById('auth-edit-hex').type      = 'password';
   document.getElementById('auth-edit-comment').value = '';
+  // "Neu generieren"-Button bei neuem Eintrag wieder einblenden
+  const genBtn = document.querySelector(
+    '#auth-edit-form button[onclick="authGenHex()"]');
+  if (genBtn) genBtn.style.display = '';
   document.getElementById('auth-hex-hint').textContent = '';
   document.getElementById('auth-edit-cs').focus();
 }
