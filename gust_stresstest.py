@@ -47,6 +47,8 @@ try:
         N_CHANNELS,
         FrameType,
         build_frame,
+        auth_tag,          # HMAC-14 für AUTH-Frame
+        encode_auth,       # AUTH-Payload (20 Byte)
         encode_weather,
         encode_position,
         encode_station_tlm,
@@ -95,6 +97,12 @@ class FrameEvent:
     callsign:   str
     audio:      np.ndarray      # float32, ±1.0
     duration_s: float
+    # Neu (nur für AUTH-Frames):
+    auth_ref_nr:    Optional[int]   = None   # Nr. des Daten-Frames (1-basiert)
+    auth_key_id:    Optional[int]   = None   # KEY_ID
+    auth_timestamp: Optional[int]   = None   # Unix-Timestamp für Verifikation
+    # Nur intern (nicht im CSV, nicht im Mixer relevant):
+    _frame_body:    Optional[bytes] = None   # raw body für auth_tag()
 
 # ══════════════════════════════════════════════════════════════════════
 # CALLSIGN-POOL
@@ -209,11 +217,16 @@ _WEIGHTS = [p[3] for p in FRAME_POOL]
 # ══════════════════════════════════════════════════════════════════════
 
 def modulate_frame(frame_type_int: int, callsign: str,
-                   payload: bytes, channel: int) -> np.ndarray:
-    """Payload -> moduliertes float32-Audio (Raised-Cosine-Fenster)."""
+                   payload: bytes, channel: int):
+    """Payload -> (moduliertes float32-Audio, Frame-Body).
+
+    Gibt zusätzlich den rohen Frame-Body (build_frame-Ausgabe) zurück,
+    der für die AUTH-HMAC-Berechnung (auth_tag) gebraucht wird.
+    """
     body    = build_frame(frame_type_int, callsign, payload, channel)
     symbols = frame_to_symbol_stream(body, use_fec=True)
-    return modulate_channel(symbols, channel, window=True)
+    audio   = modulate_channel(symbols, channel, window=True)
+    return audio, body
 
 # ══════════════════════════════════════════════════════════════════════
 # TIMELINE-GENERATOR PRO KANAL
@@ -224,6 +237,7 @@ def build_channel_timeline(
     total_duration: float,
     frames_per_ch:  int,
     all_events:     List[FrameEvent],
+    auth_config:    Optional[dict] = None,   # {key,key_id,ratio,pause_s} oder None
 ):
     """
     Erzeugt `frames_per_ch` FrameEvents fuer einen Kanal.
@@ -258,7 +272,7 @@ def build_channel_timeline(
 
         # Modulation
         try:
-            audio = modulate_frame(ftype, callsign, payload, channel)
+            audio, body = modulate_frame(ftype, callsign, payload, channel)
         except Exception as e:
             print(f"  WARNUNG ch{channel} {name}: {e}")
             continue
@@ -282,7 +296,7 @@ def build_channel_timeline(
         if name == "EMERG_BEACON":
             ch_b = (channel + N_CHANNELS // 2) % N_CHANNELS
             try:
-                audio_b = modulate_frame(ftype, callsign, payload, ch_b)
+                audio_b, _ = modulate_frame(ftype, callsign, payload, ch_b)
                 all_events.append(FrameEvent(
                     start_s    = start_s,
                     channel    = ch_b,
@@ -297,14 +311,53 @@ def build_channel_timeline(
                 ch_b = None
 
         all_events.append(FrameEvent(
-            start_s    = start_s,
-            channel    = channel,
-            channel_b  = ch_b,
-            frame_type = name,
-            callsign   = callsign,
-            audio      = audio,
-            duration_s = dur_s,
+            start_s     = start_s,
+            channel     = channel,
+            channel_b   = ch_b,
+            frame_type  = name,
+            callsign    = callsign,
+            audio       = audio,
+            duration_s  = dur_s,
+            _frame_body = body,   # für AUTH-HMAC
         ))
+
+        # ── AUTH-Frame optional (Pfad B) ─────────────────────────────
+        # Nach dem Daten-Frame ein AUTH-Frame (0x50) auf demselben Kanal
+        # einplanen, wenn auth_config aktiv und Zufall < ratio.
+        if auth_config and random.random() < auth_config["ratio"]:
+            pause_s = auth_config["pause_s"]
+            key     = auth_config["key"]
+            key_id  = auth_config["key_id"]
+
+            data_body = all_events[-1]._frame_body          # gerade angehängter Daten-Frame
+            ref_nr    = len(all_events)                      # 1-basierter Index des Daten-Frames
+            ts        = int(time.time())                    # Timestamp für HMAC + Decoder
+            hmac_tag  = auth_tag(data_body, ts, key)
+            ref_type  = int(ftype)                           # FrameType ist int-Konstante
+            auth_pl   = encode_auth(ts, ref_type, key_id, hmac_tag)
+
+            auth_start = cursor_s + pause_s                 # nach Pause
+            if auth_start + 5.8 <= total_duration:          # 5.8 s = AUTH-Frame-Dauer
+                try:
+                    auth_audio, _ = modulate_frame(
+                        FrameType.AUTH, callsign, auth_pl, channel)
+                    auth_dur = len(auth_audio) / SAMPLE_RATE
+                    all_events.append(FrameEvent(
+                        start_s        = auth_start,
+                        channel        = channel,
+                        channel_b      = None,
+                        frame_type     = "AUTH",
+                        callsign       = callsign,
+                        audio          = auth_audio,
+                        duration_s     = auth_dur,
+                        auth_ref_nr    = ref_nr,
+                        auth_key_id    = key_id,
+                        auth_timestamp = ts,
+                        _frame_body    = None,   # AUTH-Frames brauchen keinen body
+                    ))
+                    cursor_s = auth_start + auth_dur
+                except Exception as e:
+                    print(f"  WARNUNG AUTH-Frame ch{channel}: {e}")
 
 # ══════════════════════════════════════════════════════════════════════
 # MIXER: alle FrameEvents -> gemeinsamer Audio-Buffer
@@ -363,21 +416,25 @@ def write_cf32(path: str, audio: np.ndarray):
 
 def write_csv(path: str, events: List[FrameEvent]):
     fields = ["nr", "start_s", "end_s", "channel", "channel_b",
-              "frame_type", "callsign", "duration_s"]
+              "frame_type", "callsign", "duration_s",
+              "auth_ref_nr", "auth_key_id", "auth_timestamp"]
     rows = sorted(events, key=lambda e: e.start_s)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         for i, ev in enumerate(rows, 1):
             w.writerow({
-                "nr":         i,
-                "start_s":    f"{ev.start_s:.3f}",
-                "end_s":      f"{ev.start_s + ev.duration_s:.3f}",
-                "channel":    ev.channel,
-                "channel_b":  ev.channel_b if ev.channel_b is not None else "",
-                "frame_type": ev.frame_type,
-                "callsign":   ev.callsign,
-                "duration_s": f"{ev.duration_s:.3f}",
+                "nr":             i,
+                "start_s":        f"{ev.start_s:.3f}",
+                "end_s":          f"{ev.start_s + ev.duration_s:.3f}",
+                "channel":        ev.channel,
+                "channel_b":      ev.channel_b if ev.channel_b is not None else "",
+                "frame_type":     ev.frame_type,
+                "callsign":       ev.callsign,
+                "duration_s":     f"{ev.duration_s:.3f}",
+                "auth_ref_nr":    ev.auth_ref_nr    if ev.auth_ref_nr    is not None else "",
+                "auth_key_id":    ev.auth_key_id    if ev.auth_key_id    is not None else "",
+                "auth_timestamp": ev.auth_timestamp if ev.auth_timestamp is not None else "",
             })
 
 # ══════════════════════════════════════════════════════════════════════
@@ -400,6 +457,16 @@ def main():
                     help="Weisses Rauschen relativ zum Signal in dB "
                          "(z.B. --noise -20 = SNR 20 dB, "
                          "--noise -6 = SNR 6 dB, kein Wert = kein Rauschen)")
+    ap.add_argument("--auth", action="store_true",
+                    help="AUTH-Frames (0x50) nach Daten-Frames einfuegen")
+    ap.add_argument("--auth-ratio", type=float, default=1.0, metavar="R",
+                    help="Anteil der Daten-Frames die authentifiziert werden "
+                         "(0.0–1.0, Standard: 1.0 = alle)")
+    ap.add_argument("--auth-pause", type=float, default=1.5, metavar="S",
+                    help="Pause in Sekunden zwischen Daten-Frame und AUTH-Frame "
+                         "(Standard: 1.5 s)")
+    ap.add_argument("--auth-key-id", type=int, default=1, metavar="ID",
+                    help="KEY_ID im AUTH-Frame (Standard: 1)")
     args = ap.parse_args()
 
     seed        = args.seed if args.seed is not None else int(time.time()) & 0xFFFF
@@ -420,6 +487,16 @@ def main():
     random.seed(seed)
     np.random.seed(seed)
 
+    # ── AUTH-Test-Schlüssel deterministisch aus Seed ableiten ────────
+    # (damit der Decoder mit demselben Seed den Schlüssel rekonstruieren kann)
+    auth_key    = None
+    auth_key_id = args.auth_key_id
+    if args.auth:
+        import hashlib
+        auth_key = hashlib.sha256(
+            f"GUST-STRESSTEST-KEY-seed{seed}".encode()
+        ).digest()   # 32 Byte
+
     base      = args.out or f"gust_stress_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     wav_path  = base + ".wav"
     cf32_path = base + ".cf32"
@@ -434,7 +511,20 @@ def main():
     print(f"  Slot-Groesse:   {slot_s:.1f} s  (Minimum: {MIN_SLOT_S:.0f} s)")
     print(f"  Min. Frames:    {N_CHANNELS * frames_p_ch}  (ohne Dual-Kopien)")
     print(f"  Seed:           {seed}")
+    if args.auth:
+        print(f"  AUTH-Modus:     aktiv (ratio={args.auth_ratio:.0%}, "
+              f"pause={args.auth_pause}s, KEY_ID={auth_key_id})")
+        print(f"  Auth-Key:       {auth_key.hex()[:16]}...  "
+              f"(seed-abgeleitet, deterministisch)")
     print(f"{'-'*62}\n")
+
+    # ── AUTH-Konfiguration für build_channel_timeline ────────────────
+    auth_cfg = {
+        "key":     auth_key,
+        "key_id":  auth_key_id,
+        "ratio":   args.auth_ratio,
+        "pause_s": args.auth_pause,
+    } if args.auth else None
 
     # ── Timelines aller 8 Kanäle erzeugen ───────────────────────────
     all_events: List[FrameEvent] = []
@@ -444,7 +534,7 @@ def main():
         freq_hi = freq_lo + 250
         print(f"  Kanal {ch}  ({freq_lo}–{freq_hi} Hz):")
         n_before = len(all_events)
-        build_channel_timeline(ch, duration, frames_p_ch, all_events)
+        build_channel_timeline(ch, duration, frames_p_ch, all_events, auth_cfg)
         # Nur Primär-Events dieses Kanals ausgeben
         primary = [e for e in all_events[n_before:]
                    if e.channel == ch and "dual" not in e.frame_type.lower()]
@@ -462,6 +552,14 @@ def main():
     print(f"  Primär-Frames:    {n_primary}")
     print(f"  Dual-Kopien:      {n_dual}")
     print(f"  FrameEvents ges.: {len(all_events)}")
+
+    if args.auth:
+        auth_frames = sum(1 for e in all_events if e.frame_type == "AUTH")
+        data_frames = sum(1 for e in all_events
+                          if e.frame_type != "AUTH"
+                          and "dual" not in e.frame_type.lower())
+        print(f"  AUTH-Frames:      {auth_frames} von {data_frames} Daten-Frames "
+              f"({auth_frames/max(data_frames,1):.0%})")
 
     # ── Mixen ───────────────────────────────────────────────────────
     noise_db = args.noise
