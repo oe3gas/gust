@@ -715,6 +715,12 @@ h2:first-child { margin-top: 0; }
 .trx-btn-danger{color:var(--red,#f44336);border-color:var(--red,#f44336)}
 .trx-btn-danger:hover{background:rgba(244,67,54,.1)}
 .trx-empty{color:var(--text2);font-size:.9rem;padding:1rem 0}
+.cfg-info{display:inline-flex;align-items:center;justify-content:center;
+  width:15px;height:15px;border-radius:50%;border:1px solid var(--border,#555);
+  font-size:10px;font-weight:500;color:var(--text2);cursor:help;
+  margin-left:5px;vertical-align:middle;flex-shrink:0}
+.cfg-info:hover{background:var(--bg2,#222);color:var(--text)}
+.cfg-field-row{display:flex;align-items:center;gap:4px}
 </style>
 </head>
 <body>
@@ -1259,7 +1265,7 @@ h2:first-child { margin-top: 0; }
         <div style="margin-bottom:1.2rem;display:flex;flex-wrap:wrap;gap:.4rem">
           <button class="subtab-btn active" data-sub="general">Allgemein</button>
           <button class="subtab-btn" data-sub="gateway_tx">Gateway &amp; TX</button>
-          <button class="subtab-btn" data-sub="audio_rx">Audio &amp; RX</button>
+          <button class="subtab-btn" data-sub="audio_rx">RX / Decoder</button>
           <button class="subtab-btn" data-sub="cat_trx">CAT &amp; TRX-Profile</button>
           <button class="subtab-btn" data-sub="sdr">SDR</button>
           <button class="subtab-btn" data-sub="auth">🔑 AUTH-Keys</button>
@@ -1269,7 +1275,9 @@ h2:first-child { margin-top: 0; }
           <div class="cfg-card">
             <h3>Station</h3>
             <label>Rufzeichen<input id="cfg-callsign" type="text" maxlength="9" placeholder="OE3GAS"></label>
-            <h3 style="margin-top:1rem">Web-Server</h3>
+            <h3 style="margin-top:1rem">
+              Adresse des Web-Servers, auf dem GUST-Daemon läuft
+            </h3>
             <label>Host<input id="cfg-web-host" type="text" placeholder="0.0.0.0"></label>
             <label>Port<input id="cfg-web-port" type="number" min="1024" max="65535"></label>
             <div style="margin-top:.8rem"><button onclick="cfgSaveGeneral()">💾 Speichern</button></div>
@@ -1282,11 +1290,17 @@ h2:first-child { margin-top: 0; }
             <label>Intervall (s)<input id="cfg-gw-interval" type="number" min="10" max="3600"></label>
             <label>Min. TX-Abstand (s)<input id="cfg-gw-gap" type="number" min="0" max="300"></label>
             <h3 style="margin-top:1rem">Datenquelle</h3>
-            <label>Adapter<select id="cfg-src-adapter">
-              <option value="sim">sim</option>
-              <option value="mqtt">mqtt</option>
-              <option value="null">null</option>
-            </select></label>
+            <label>
+              <span class="cfg-field-row">
+                Datenquelle / Adapter
+                <span class="cfg-info" title="Woher der Gateway seine Sendedaten bezieht. 'sim': Simulator erzeugt synthetische Wetter/Position/Text-Frames — kein echtes Gerät nötig, ideal für Tests. 'mqtt': Daten kommen von einem MQTT-Broker (Phase 6). 'null': Kein automatischer TX — nur manuell über Web-UI auslösen.">i</span>
+              </span>
+              <select id="cfg-src-adapter">
+                <option value="sim">sim</option>
+                <option value="mqtt">mqtt</option>
+                <option value="null">null</option>
+              </select>
+            </label>
             <h3 style="margin-top:1rem">Simulator (source.sim)</h3>
             <label>Wetter-Intervall (s)<input id="cfg-sim-weather" type="number" min="10"></label>
             <label>Position-Intervall (s)<input id="cfg-sim-position" type="number" min="10"></label>
@@ -1294,32 +1308,59 @@ h2:first-child { margin-top: 0; }
             <label>Latitude<input id="cfg-sim-lat" type="number" step="0.0001"></label>
             <label>Longitude<input id="cfg-sim-lon" type="number" step="0.0001"></label>
             <label>Höhe (m)<input id="cfg-sim-alt" type="number"></label>
-            <label class="cfg-toggle">Emergency aktiviert<input id="cfg-sim-emergency" type="checkbox"></label>
-            <label class="cfg-toggle">Drift-Simulation<input id="cfg-sim-drift" type="checkbox"></label>
+            <label class="cfg-toggle">
+              <input id="cfg-sim-emergency" type="checkbox">
+              Emergency aktiviert
+              <span class="cfg-info" title="Sendet periodisch einen Test-Notfall-Frame (Frame-Typ 0x20). Ausschließlich für Entwicklung und Tests — niemals im echten Betrieb aktivieren. Notfall-Frames haben höchste Sendepriorität und werden sofort übertragen.">i</span>
+            </label>
+            <label class="cfg-toggle">
+              <input id="cfg-sim-drift" type="checkbox">
+              Drift-Simulation
+              <span class="cfg-info" title="Lässt die simulierten GPS-Koordinaten leicht driften — simuliert eine bewegte Station. Nützlich um Position-Frame-Updates im Monitor zu testen. Nur im Simulator-Modus (Adapter = sim) wirksam.">i</span>
+            </label>
             <div style="margin-top:.8rem"><button onclick="cfgSaveGatewayTx()">💾 Speichern</button></div>
           </div>
         </div>
 
         <div class="cfgedit-sub" id="cfgsub-audio_rx" style="display:none">
           <div class="cfg-card">
-            <h3>TX-Audio</h3>
-            <label>TX-Audiogerät (ID)<input id="cfg-audio-device" type="number" min="0"></label>
-            <label>PTT-Backend<select id="cfg-audio-ptt">
-              <option value="hamlib">hamlib</option>
-              <option value="gpio">gpio</option>
-              <option value="null">null (kein TX)</option>
-            </select></label>
-            <label>PTT-Verzögerung (ms)<input id="cfg-audio-pttdelay" type="number" min="0" max="2000"></label>
-            <label>Pegel (%)<input id="cfg-audio-level" type="number" min="1" max="100"></label>
-            <label>Hamlib-Host<input id="cfg-audio-hhost" type="text"></label>
-            <label>Hamlib-Port<input id="cfg-audio-hport" type="number" min="1024" max="65535"></label>
-            <h3 style="margin-top:1rem">RX</h3>
-            <label class="cfg-toggle">RX aktiviert<input id="cfg-rx-enabled" type="checkbox"></label>
-            <label>RX-Audiogerät (ID)<input id="cfg-rx-device" type="number" min="0"></label>
-            <label>Scan-Intervall (s)<input id="cfg-rx-scan" type="number" step="0.5" min="0.5"></label>
-            <label>Fenster (s)<input id="cfg-rx-window" type="number" step="0.5" min="5"></label>
-            <label>Dedup-TTL (s)<input id="cfg-rx-dedup" type="number" min="5"></label>
-            <div style="margin-top:.8rem"><button onclick="cfgSaveAudioRx()">💾 Speichern</button></div>
+            <h3>Audioeingang</h3>
+            <label class="cfg-toggle">
+              <input id="cfg-rx-enabled" type="checkbox">
+              RX aktiviert
+              <span class="cfg-info" title="Schaltet den gesamten Empfangs-Loop ein oder aus. Deaktivieren wenn GUST nur als TX-Gateway betrieben wird oder kein Audioeingangsgerät vorhanden ist (z.B. RPi ohne Soundkarte). Bei deaktiviertem RX startet der Daemon ohne Decoder.">i</span>
+            </label>
+            <label style="margin-top:.6rem">
+              RX-Audiogerät (ID)
+              <input id="cfg-rx-device" type="number" min="0">
+            </label>
+          </div>
+          <div class="cfg-card" style="margin-top:.8rem">
+            <h3>Decoder</h3>
+            <label>
+              <span class="cfg-field-row">
+                Scan-Intervall (s)
+                <span class="cfg-info" title="Wie oft der Short-Decoder ein neues Audiofenster analysiert. Kleinerer Wert erhöht die Reaktionsgeschwindigkeit, aber auch die CPU-Last. Empfohlen: 2 s.">i</span>
+              </span>
+              <input id="cfg-rx-scan" type="number" step="0.5" min="0.5">
+            </label>
+            <label>
+              <span class="cfg-field-row">
+                Fenster (s)
+                <span class="cfg-info" title="Länge des analysierten Audiosegments pro Scan-Durchgang. Muss größer als ein GUST-Frame sein (max. ~4,5 s). Empfohlen: 9 s. Zu klein = Frames werden nicht vollständig erfasst.">i</span>
+              </span>
+              <input id="cfg-rx-window" type="number" step="0.5" min="5">
+            </label>
+            <label>
+              <span class="cfg-field-row">
+                Dedup-TTL (s)
+                <span class="cfg-info" title="Frames vom selben Sender innerhalb dieser Zeitspanne werden als Duplikat unterdrückt. Verhindert Mehrfachanzeige desselben Frames (z.B. durch Parallelkanal-Diversity oder Deep-Decoder). Empfohlen: 30 s.">i</span>
+              </span>
+              <input id="cfg-rx-dedup" type="number" min="5">
+            </label>
+            <div style="margin-top:.8rem">
+              <button onclick="cfgSaveAudioRx()">💾 Speichern</button>
+            </div>
           </div>
         </div>
 
@@ -4338,14 +4379,7 @@ async function cfgLoad() {
     document.getElementById('cfg-sim-alt').value        = sim.alt_m ?? 180;
     document.getElementById('cfg-sim-emergency').checked = !!sim.emergency_enabled;
     document.getElementById('cfg-sim-drift').checked    = !!sim.drift;
-    // Audio & RX
-    const aud = cfg.audio || {};
-    document.getElementById('cfg-audio-device').value   = aud.device   ?? '';
-    document.getElementById('cfg-audio-ptt').value      = aud.ptt_backend ?? 'null';
-    document.getElementById('cfg-audio-pttdelay').value = aud.ptt_delay_ms ?? 250;
-    document.getElementById('cfg-audio-level').value    = aud.level    ?? 30;
-    document.getElementById('cfg-audio-hhost').value    = aud.hamlib_host ?? 'localhost';
-    document.getElementById('cfg-audio-hport').value    = aud.hamlib_port ?? 4532;
+    // RX / Decoder — TX-Audio jetzt im TRX-Editor (cat_trx), nicht mehr hier
     const rx = cfg.rx || {};
     document.getElementById('cfg-rx-enabled').checked   = rx.enabled !== false;
     document.getElementById('cfg-rx-device').value      = rx.device   ?? '';
@@ -4417,14 +4451,7 @@ async function cfgSaveGatewayTx() {
 
 async function cfgSaveAudioRx() {
   try {
-    await cfgPatch('audio', {
-      device:       parseInt(document.getElementById('cfg-audio-device').value),
-      ptt_backend:  document.getElementById('cfg-audio-ptt').value,
-      ptt_delay_ms: parseInt(document.getElementById('cfg-audio-pttdelay').value),
-      level:        parseFloat(document.getElementById('cfg-audio-level').value),
-      hamlib_host:  document.getElementById('cfg-audio-hhost').value,
-      hamlib_port:  parseInt(document.getElementById('cfg-audio-hport').value)
-    });
+    // TX-Audio jetzt im TRX-Editor (cat_trx); hier nur noch RX/Decoder
     await cfgPatch('rx', {
       enabled:          document.getElementById('cfg-rx-enabled').checked,
       device:           parseInt(document.getElementById('cfg-rx-device').value),
@@ -4432,7 +4459,7 @@ async function cfgSaveAudioRx() {
       window_s:         parseFloat(document.getElementById('cfg-rx-window').value),
       dedup_ttl_s:      parseInt(document.getElementById('cfg-rx-dedup').value)
     });
-    cfgBanner('✅ Audio & RX gespeichert — Neustart für Audio-Gerät nötig');
+    cfgBanner('✅ RX / Decoder gespeichert — Neustart für RX-Gerät nötig');
   } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
 }
 
