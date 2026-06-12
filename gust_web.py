@@ -144,6 +144,87 @@ _HTML_UI = r"""<!DOCTYPE html>
   --shadow:  rgba(0,0,0,0);
 }
 
+/* ── AERO (helles Glas-Blau) ─────────────────────────────── */
+[data-theme="aero"] {
+  --bg:       #e8eef4;
+  --bg2:      #dce5ed;
+  --bg3:      #f0f4f8;
+  --panel:    #dce5ed;
+  --border:   #b0bfcc;
+  --text:     #1a2430;
+  --text2:    #556070;
+  --text3:    #8090a0;
+  --accent:   #0078d4;
+  --accent2:  #005fa3;
+  --green:    #107c10;
+  --amber:    #ca5010;
+  --red:      #c42b1c;
+  --orange:   #ca5010;
+  --blue:     #8250df;
+  --purple:   #6639ba;
+  --shadow:   rgba(0,0,0,0);
+  --success:  #107c10;
+  --error:    #c42b1c;
+  --success-bg: rgba(16,124,16,.1);
+  --error-bg:   rgba(196,43,28,.1);
+}
+
+/* ── MONO (monochrom, hochkontrast) ──────────────────────── */
+[data-theme="mono"] {
+  --bg:       #ebebeb;
+  --bg2:      #e0e0e0;
+  --bg3:      #f5f5f5;
+  --panel:    #e0e0e0;
+  --border:   #b0b0b0;
+  --text:     #111111;
+  --text2:    #555555;
+  --text3:    #888888;
+  --accent:   #111111;
+  --accent2:  #333333;
+  --green:    #111111;
+  --amber:    #555555;
+  --red:      #111111;
+  --orange:   #555555;
+  --blue:     #111111;
+  --purple:   #333333;
+  --shadow:   rgba(0,0,0,0);
+  --success:  #111111;
+  --error:    #111111;
+  --success-bg: rgba(0,0,0,.06);
+  --error-bg:   rgba(0,0,0,.06);
+}
+
+/* Mono-spezifische Button-/Badge-Stile (eckig, monochrom) */
+[data-theme="mono"] .btn,
+[data-theme="mono"] button {
+  border-radius: 2px !important;
+}
+[data-theme="mono"] .btn.primary,
+[data-theme="mono"] button.btn-primary {
+  background: var(--text) !important;
+  color: #fff !important;
+  border: 2px solid var(--text) !important;
+}
+[data-theme="mono"] .btn:not(.primary),
+[data-theme="mono"] button:not(.btn-primary) {
+  background: transparent !important;
+  border: 2px solid var(--text) !important;
+  color: var(--text) !important;
+}
+[data-theme="mono"] .trx-tog input:checked + .trx-tog-sl {
+  background: var(--text) !important;
+  border-radius: 0 !important;
+}
+[data-theme="mono"] .trx-tog-sl {
+  border-radius: 0 !important;
+}
+[data-theme="mono"] .trx-item.trx-active-item,
+[data-theme="mono"] .auth-item.auth-sel {
+  background: var(--text) !important;
+  color: #fff !important;
+  border-left: 2px solid var(--text) !important;
+}
+
 /* Glow nur im Dark-Mode sinnvoll */
 [data-theme="light"] #ws-indicator.connected { box-shadow: none; }
 [data-theme="light"] #ws-indicator.error     { box-shadow: none; }
@@ -236,9 +317,10 @@ header h1 span { color: var(--text2); font-size: var(--fs-xs); font-weight: norm
   from { opacity: 1.0; }
   to   { opacity: 0.6; }
 }
-#theme-btn { background: none; border: 1px solid var(--border); color: var(--text2);
-             padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: var(--fs-sm); }
-#theme-btn:hover { border-color: var(--accent); color: var(--accent); }
+#theme-cycle-btn { background: none; border: 1px solid var(--border); color: var(--text2);
+             padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: var(--fs-sm);
+             white-space: nowrap; }
+#theme-cycle-btn:hover { border-color: var(--accent); color: var(--accent); }
 #callsign-badge { background: var(--bg3); border: 1px solid var(--border);
                   padding: 3px 10px; border-radius: 12px; font-size: var(--fs-sm);
                   color: var(--accent); font-weight: bold; }
@@ -725,7 +807,9 @@ h2:first-child { margin-top: 0; }
   border:0.5px solid var(--border,#444);border-radius:8px;overflow:hidden;
   background:var(--bg2,var(--panel))}
 .auth-sidebar{border-right:0.5px solid var(--border,#444);
-  background:var(--bg,#1a1a1a);display:flex;flex-direction:column}
+  background:var(--bg,#1a1a1a);display:flex;flex-direction:column;
+  min-height:0}
+#auth-key-list{overflow-y:auto;max-height:calc(8 * 38px)}
 .auth-sidebar-hdr{padding:8px 12px;font-size:11px;font-weight:500;
   color:var(--text2);text-transform:uppercase;letter-spacing:.06em;
   border-bottom:0.5px solid var(--border,#444)}
@@ -753,6 +837,8 @@ h2:first-child { margin-top: 0; }
   padding:6px 0;font-size:13px;color:var(--text2)}
 .auth-footer{display:flex;align-items:center;justify-content:space-between;
   padding-top:9px;border-top:0.5px solid var(--border,#444)}
+.sdr-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+@media(max-width:700px){.sdr-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -769,7 +855,7 @@ h2:first-child { margin-top: 0; }
     <span class="hb-dot"></span>
     <span class="hb-label">MC</span>
   </div>
-  <button id="theme-btn" onclick="toggleTheme()" title="Theme wechseln">🌙 Light</button>
+  <button id="theme-cycle-btn" onclick="cycleTheme()" title="Theme wechseln">🌑 Dark  →</button>
 </header>
 <div id="daemon-offline-banner"></div>
 <div id="onair-banner">📡 ON AIR</div>
@@ -779,7 +865,6 @@ h2:first-child { margin-top: 0; }
   <button onclick="switchTab('tx',this)" data-i18n="nav.send">📤 Senden</button>
   <button onclick="switchTab('inbox',this)"><span data-i18n="nav.inbox">💬 Kommunikation</span> <span id="inbox-badge" class="inbox-badge hidden">0</span></button>
   <button onclick="switchTab('status',this)">⚙ Status</button>
-  <button onclick="switchTab('log',this)" data-i18n="nav.log">🗒 Log</button>
   <button onclick="switchTab('stresstest',this)" data-i18n="nav.stresstest">🧪 Stresstest</button>
   <button onclick="switchTab('cfgedit',this);cfgLoad()">📝 Konfig</button>
 </nav>
@@ -1182,12 +1267,9 @@ h2:first-child { margin-top: 0; }
     <div class="stat-card"><div class="key" data-i18n="status.rx_count">RX-Frames (Session)</div><div class="val green" id="s-rx-count">0</div></div>
   </div>
 
-</div>
+  <hr style="border:none;border-top:0.5px solid var(--border,#444);margin:1.5rem 0">
 
-<!-- ══════════════════════════════════════════════════════ TAB: LOG -->
-<div id="tab-log" class="tab-panel">
-
-  <!-- ── Aktivitätslog ── -->
+  <!-- ── Aktivitätslog (ehem. Log-Tab) ── -->
   <div style="margin-bottom:18px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
       <h3 style="margin:0;font-size:var(--fs-sm);text-transform:uppercase;
@@ -1202,7 +1284,7 @@ h2:first-child { margin-top: 0; }
     </div>
   </div>
 
-  <!-- ── Systemlog ── -->
+  <!-- ── Systemlog (ehem. Log-Tab) ── -->
   <div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
       <h3 style="margin:0;font-size:var(--fs-sm);text-transform:uppercase;
@@ -1542,35 +1624,59 @@ h2:first-child { margin-top: 0; }
         </div>
 
         <div class="cfgedit-sub" id="cfgsub-sdr" style="display:none">
-          <div class="cfg-card">
-            <h3>RTL-SDR IQ-Eingang</h3>
-            <label class="cfg-toggle">
-              <input id="cfg-rtl-enabled" type="checkbox">
-              Aktiviert
-              <span class="cfg-info" title="Aktiviert den RTL-SDR als IQ-Eingangsquelle für den GUST-Decoder. Ersetzt das normale Audiogerät. Benötigt einen angeschlossenen RTL-SDR-Stick (z.B. RTL2832U). Nicht gleichzeitig mit SoapySDR RX verwenden.">i</span>
-            </label>
-            <label>Center-Frequenz (Hz)<input id="cfg-rtl-freq" type="number"></label>
-            <label>Sample-Rate<input id="cfg-rtl-rate" type="number"></label>
-            <label>Gain<input id="cfg-rtl-gain" type="text" placeholder="auto"></label>
-            <label>
-              <span class="cfg-field-row">
-                PPM-Korrektur
-                <span class="cfg-info" title="Frequenz-Kalibrierwert des RTL-SDR-Empfängers in Parts Per Million (ppm). Kompensiert den Frequenzfehler des Oszillators. Typischer Bereich: −50 bis +50. Mit kalibr = 0 beginnen und ggf. anpassen.">i</span>
-              </span>
-              <input id="cfg-rtl-ppm" type="number">
-            </label>
-            <h3 style="margin-top:1rem">SoapySDR TX</h3>
-            <label class="cfg-toggle">
-              <input id="cfg-sdr-enabled" type="checkbox">
-              Aktiviert
-              <span class="cfg-info" title="Aktiviert SoapySDR als TX-Ausgang (z.B. HackRF, SDRplay). Überbrückt das normale Audiogerät für die Signalerzeugung. Benötigt SoapySDR-Installation und kompatible Hardware.">i</span>
-            </label>
-            <label>Frequenz (Hz)<input id="cfg-sdr-freq" type="number"></label>
-            <label>Sample-Rate<input id="cfg-sdr-rate" type="number"></label>
-            <label>Antenne<input id="cfg-sdr-antenna" type="text"></label>
-            <label>Gain (0.0–1.0)<input id="cfg-sdr-gain" type="number" step="0.05" min="0" max="1"></label>
-            <label>TX-Kanal<input id="cfg-sdr-txch" type="number" min="0"></label>
-            <div style="margin-top:.8rem"><button onclick="cfgSaveSdr()">💾 Speichern</button></div>
+          <div class="sdr-grid">
+
+            <div class="cfg-card">
+              <h3>I/Q-Input (RX)</h3>
+              <label class="cfg-toggle">
+                <input id="cfg-rtl-enabled" type="checkbox">
+                Aktiviert
+                <span class="cfg-info" title="Aktiviert den RTL-SDR als IQ-Eingangsquelle für den GUST-Decoder. Ersetzt das normale Audiogerät. Benötigt einen angeschlossenen RTL-SDR-Stick (z.B. RTL2832U). Nicht gleichzeitig mit SoapySDR RX verwenden.">i</span>
+              </label>
+              <label style="margin-top:.5rem">Center-Frequenz (Hz)
+                <input id="cfg-rtl-freq" type="number">
+              </label>
+              <label>Sample-Rate
+                <input id="cfg-rtl-rate" type="number">
+              </label>
+              <label>Gain
+                <input id="cfg-rtl-gain" type="text" placeholder="auto">
+              </label>
+              <label>
+                <span class="cfg-field-row">PPM-Korrektur
+                  <span class="cfg-info" title="Frequenz-Kalibrierwert in Parts Per Million. Kompensiert den Frequenzfehler des Oszillators. Typischer Bereich: −50 bis +50. Mit 0 beginnen.">i</span>
+                </span>
+                <input id="cfg-rtl-ppm" type="number">
+              </label>
+            </div>
+
+            <div class="cfg-card">
+              <h3>I/Q-Output (TX)</h3>
+              <label class="cfg-toggle">
+                <input id="cfg-sdr-enabled" type="checkbox">
+                Aktiviert
+                <span class="cfg-info" title="Aktiviert SoapySDR als TX-Ausgang (z.B. HackRF, SDRplay). Überbrückt das normale Audiogerät für die Signalerzeugung. Benötigt SoapySDR-Installation und kompatible Hardware.">i</span>
+              </label>
+              <label style="margin-top:.5rem">Frequenz (Hz)
+                <input id="cfg-sdr-freq" type="number">
+              </label>
+              <label>Sample-Rate
+                <input id="cfg-sdr-rate" type="number">
+              </label>
+              <label>Antenne
+                <input id="cfg-sdr-antenna" type="text">
+              </label>
+              <label>Gain (0.0–1.0)
+                <input id="cfg-sdr-gain" type="number" step="0.05" min="0" max="1">
+              </label>
+              <label>TX-Kanal
+                <input id="cfg-sdr-txch" type="number" min="0">
+              </label>
+            </div>
+
+          </div>
+          <div style="margin-top:.8rem">
+            <button onclick="cfgSaveSdr()">💾 Speichern</button>
           </div>
         </div>
 
@@ -1738,29 +1844,44 @@ const TEXT_FRAME_TYPE = 0x40;
 // Light Clean = data-theme="light"
 // Gespeichert in localStorage, beim Reload wiederhergestellt.
 
-const THEMES = {
-  dark:  { attr: null,    btn: '🌙 Light',  label: 'Dark Amber'  },
-  light: { attr: 'light', btn: '☀ Dark',   label: 'Light Clean' },
+const THEME_LABELS = {
+  dark:  '🌑 Dark',
+  aero:  '🪟 Aero',
+  mono:  '⬜ Mono',
+  light: '☀ Light',
 };
 
-function toggleTheme() {
-  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-  applyTheme(isLight ? 'dark' : 'light');
+function applyTheme(key) {
+  const THEMES = ['dark','aero','mono','light'];
+  if (!THEMES.includes(key)) key = 'dark';
+  // dark = kein data-theme Attribut (= :root), sonst data-theme="<key>"
+  if (key === 'dark') {
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', key);
+  }
+  localStorage.setItem('gust-theme', key);
+  // Button-Label aktualisieren (zeigt aktuelles Theme + Pfeil zum nächsten)
+  const btn = document.getElementById('theme-cycle-btn');
+  if (btn) {
+    const next = THEMES[(THEMES.indexOf(key) + 1) % THEMES.length];
+    btn.textContent = THEME_LABELS[key] + '  →';
+    btn.title = 'Weiter: ' + THEME_LABELS[next];
+  }
+  // Dropdown im cfgedit-Tab synchron halten (falls vorhanden)
+  const sel = document.getElementById('cfg-theme');
+  if (sel) sel.value = key;
 }
 
-function applyTheme(name) {
-  const t = THEMES[name];
-  if (t.attr) {
-    document.documentElement.setAttribute('data-theme', t.attr);
-  } else {
-    document.documentElement.removeAttribute('data-theme');
-  }
-  document.getElementById('theme-btn').textContent = t.btn;
-  localStorage.setItem('gust-theme', name);
-  // Dropdown im Status & Config-Tab synchron halten
-  const sel = document.getElementById('cfg-theme');
-  if (sel) sel.value = name;
+function cycleTheme() {
+  const THEMES = ['dark','aero','mono','light'];
+  const cur = localStorage.getItem('gust-theme') || 'dark';
+  const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
+  applyTheme(next);
 }
+
+// Alias: alter Aufrufname bleibt gültig (zyklisch statt nur dark/light)
+function toggleTheme() { cycleTheme(); }
 
 // ── SCHRIFTART / SCHRIFTGRÖSSE (Appearance) ──
 // Wirken über CSS Custom Properties auf :root, damit auch Regeln mit
