@@ -725,6 +725,47 @@ h2:first-child { margin-top: 0; }
 .cfg-toggle input[type=checkbox]{width:1.1rem;height:1.1rem;cursor:pointer}
 .subtab-btn{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:.3rem .8rem;cursor:pointer;color:var(--text);margin-right:.4rem;margin-bottom:.4rem}
 .subtab-btn.active{background:var(--accent);color:#000;border-color:var(--accent)}
+.trx-editor{display:grid;grid-template-columns:190px 1fr;border:0.5px solid var(--border,#444);border-radius:8px;overflow:hidden;background:var(--bg2,var(--panel))}
+.trx-sidebar{border-right:0.5px solid var(--border,#444);background:var(--bg,#1a1a1a);display:flex;flex-direction:column}
+.trx-sidebar-hdr{padding:8px 12px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;border-bottom:0.5px solid var(--border,#444)}
+.trx-item{padding:9px 12px;cursor:pointer;border-bottom:0.5px solid var(--border,#444);font-size:13px;color:var(--text2);display:flex;align-items:center;gap:8px;user-select:none}
+.trx-item:hover{background:var(--bg2,#222)}
+.trx-item.trx-active-item{background:var(--bg2,#222);color:var(--text);font-weight:500;border-left:2px solid var(--accent,#4a9eff)}
+.trx-item.trx-active-item .trx-dot{color:var(--accent,#4a9eff)}
+.trx-sidebar-btns{padding:8px;border-top:0.5px solid var(--border,#444);margin-top:auto;display:flex;gap:6px}
+.trx-sidebar-btns button{flex:1;padding:5px 4px;font-size:12px;background:var(--bg2,#222);border:0.5px solid var(--border,#444);border-radius:5px;cursor:pointer;color:var(--text);display:flex;align-items:center;justify-content:center;gap:4px}
+.trx-sidebar-btns button:hover{background:var(--panel)}
+.trx-panel{padding:14px 18px;display:flex;flex-direction:column;gap:11px;overflow-y:auto;max-height:560px}
+.trx-panel-hdr{display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:0.5px solid var(--border,#444)}
+.trx-name-input{font-size:15px;font-weight:500;border:none;background:transparent;color:var(--text);outline:none;flex:1;min-width:0;padding:2px 4px;border-radius:4px}
+.trx-name-input:hover,.trx-name-input:focus{background:var(--bg2,#222)}
+.trx-badge{font-size:11px;padding:3px 8px;border-radius:5px;background:var(--accent-bg,rgba(74,158,255,.15));color:var(--accent,#4a9eff);white-space:nowrap;flex-shrink:0}
+.trx-sec{margin-bottom:2px}
+.trx-sec-lbl{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}
+.trx-grid{display:grid;gap:8px 10px}
+.trx-g2{grid-template-columns:1fr 1fr}
+.trx-g3{grid-template-columns:1fr 1fr 1fr}
+.trx-g21{grid-template-columns:2fr 1fr}
+.trx-field{display:flex;flex-direction:column;gap:3px}
+.trx-field label{font-size:12px;color:var(--text2)}
+.trx-field input,.trx-field select{padding:5px 8px;font-size:13px;border:0.5px solid var(--border,#444);border-radius:5px;background:var(--bg,#111);color:var(--text);width:100%}
+.trx-field input:focus,.trx-field select:focus{outline:none;border-color:var(--accent,#4a9eff)}
+.trx-toggle-row{display:flex;align-items:center;gap:9px;padding:4px 0;font-size:13px;color:var(--text2)}
+.trx-tog{position:relative;width:32px;height:17px;flex-shrink:0}
+.trx-tog input{opacity:0;width:0;height:0;position:absolute}
+.trx-tog-sl{position:absolute;inset:0;background:var(--border,#555);border-radius:9px;cursor:pointer;transition:.18s}
+.trx-tog-sl:before{content:'';position:absolute;width:13px;height:13px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.18s}
+.trx-tog input:checked+.trx-tog-sl{background:var(--accent,#4a9eff)}
+.trx-tog input:checked+.trx-tog-sl:before{transform:translateX(15px)}
+.trx-divider{border:none;border-top:0.5px solid var(--border,#444);margin:2px 0}
+.trx-footer{display:flex;align-items:center;justify-content:space-between;padding-top:9px;border-top:0.5px solid var(--border,#444)}
+.trx-btn{padding:6px 11px;font-size:12px;border-radius:5px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:0.5px solid var(--border,#444);background:var(--bg2,#222);color:var(--text)}
+.trx-btn:hover{background:var(--panel)}
+.trx-btn-primary{background:var(--accent,#4a9eff);color:#000;border-color:var(--accent,#4a9eff)}
+.trx-btn-primary:hover{opacity:.88}
+.trx-btn-danger{color:var(--red,#f44336);border-color:var(--red,#f44336)}
+.trx-btn-danger:hover{background:rgba(244,67,54,.1)}
+.trx-empty{color:var(--text2);font-size:.9rem;padding:1rem 0}
 </style>
 </head>
 <body>
@@ -1784,9 +1825,9 @@ h2:first-child { margin-top: 0; }
           <button class="subtab-btn active" data-sub="general">Allgemein</button>
           <button class="subtab-btn" data-sub="gateway_tx">Gateway &amp; TX</button>
           <button class="subtab-btn" data-sub="audio_rx">Audio &amp; RX</button>
-          <button class="subtab-btn" data-sub="rigctld">CAT / rigctld</button>
-          <button class="subtab-btn" data-sub="trx_profiles">TRX-Profile</button>
+          <button class="subtab-btn" data-sub="cat_trx">CAT &amp; TRX-Profile</button>
           <button class="subtab-btn" data-sub="sdr">SDR</button>
+          <button class="subtab-btn" data-sub="auth">🔑 AUTH-Keys</button>
         </div>
 
         <div class="cfgedit-sub" id="cfgsub-general">
@@ -1847,8 +1888,143 @@ h2:first-child { margin-top: 0; }
           </div>
         </div>
 
-        <div class="cfgedit-sub" id="cfgsub-rigctld" style="display:none">
-          <div class="cfg-card">
+        <div class="cfgedit-sub" id="cfgsub-cat_trx" style="display:none">
+          <div class="trx-editor">
+
+            <div class="trx-sidebar">
+              <div class="trx-sidebar-hdr">TRX-Profile</div>
+              <div id="trx-profile-list"></div>
+              <div class="trx-sidebar-btns">
+                <button onclick="trxNewProfile()" title="Neues Profil">＋ Neu</button>
+                <button onclick="trxDuplicateProfile()" title="Profil duplizieren">⧉ Kopie</button>
+              </div>
+            </div>
+
+            <div class="trx-panel" id="trx-edit-panel">
+              <div id="trx-no-profile" class="trx-empty" style="display:none">
+                Kein Profil ausgewählt.
+              </div>
+              <div id="trx-edit-form">
+
+                <div class="trx-panel-hdr">
+                  <input class="trx-name-input" id="trx-edit-name"
+                         type="text" placeholder="Profilname" aria-label="Profilname">
+                  <span class="trx-badge" id="trx-active-badge" style="display:none">
+                    ✓ aktiv
+                  </span>
+                </div>
+
+                <div class="trx-sec">
+                  <div class="trx-sec-lbl">CAT / rigctld</div>
+                  <div class="trx-grid trx-g21">
+                    <div class="trx-field">
+                      <label>Rig-Modell</label>
+                      <select id="trx-edit-rigmodel" onchange="trxOnRigChange()">
+                      </select>
+                    </div>
+                    <div class="trx-field">
+                      <label>COM-Port</label>
+                      <input type="text" id="trx-edit-device" placeholder="COM11">
+                    </div>
+                  </div>
+                  <div class="trx-grid trx-g3" style="margin-top:7px">
+                    <div class="trx-field">
+                      <label>Baudrate</label>
+                      <select id="trx-edit-baud">
+                        <option>4800</option><option>9600</option>
+                        <option>19200</option><option>38400</option><option>57600</option>
+                      </select>
+                    </div>
+                    <div class="trx-field">
+                      <label>Host</label>
+                      <input type="text" id="trx-edit-host" value="127.0.0.1">
+                    </div>
+                    <div class="trx-field">
+                      <label>Port</label>
+                      <input type="number" id="trx-edit-port" value="4532">
+                    </div>
+                  </div>
+                </div>
+
+                <hr class="trx-divider">
+
+                <div class="trx-sec">
+                  <div class="trx-sec-lbl">Audio</div>
+                  <div class="trx-field">
+                    <label>TX-Audiogerät</label>
+                    <select id="trx-edit-audiotx"></select>
+                  </div>
+                  <div class="trx-field" style="margin-top:7px">
+                    <label>RX-Audiogerät</label>
+                    <select id="trx-edit-audiorx"></select>
+                  </div>
+                  <div class="trx-grid trx-g3" style="margin-top:7px">
+                    <div class="trx-field">
+                      <label>PTT-Backend</label>
+                      <select id="trx-edit-ptt">
+                        <option value="hamlib">hamlib</option>
+                        <option value="gpio">gpio</option>
+                        <option value="null">null</option>
+                      </select>
+                    </div>
+                    <div class="trx-field">
+                      <label>PTT-Verzögerung (ms)</label>
+                      <input type="number" id="trx-edit-pttdelay" min="0" max="2000">
+                    </div>
+                    <div class="trx-field">
+                      <label>TX-Pegel (%)</label>
+                      <input type="number" id="trx-edit-level" min="1" max="100">
+                    </div>
+                  </div>
+                </div>
+
+                <hr class="trx-divider">
+
+                <div class="trx-sec">
+                  <div class="trx-sec-lbl">Erweitert</div>
+                  <div style="display:flex;gap:24px;flex-wrap:wrap">
+                    <div class="trx-toggle-row">
+                      <label class="trx-tog">
+                        <input type="checkbox" id="trx-edit-autostart">
+                        <span class="trx-tog-sl"></span>
+                      </label>
+                      <span>Auto-Start rigctld</span>
+                    </div>
+                    <div class="trx-toggle-row">
+                      <label class="trx-tog">
+                        <input type="checkbox" id="trx-edit-deep">
+                        <span class="trx-tog-sl"></span>
+                      </label>
+                      <span>Deep Decode</span>
+                    </div>
+                    <div class="trx-toggle-row">
+                      <label class="trx-tog">
+                        <input type="checkbox" id="trx-edit-txon">
+                        <span class="trx-tog-sl"></span>
+                      </label>
+                      <span>TX aktiviert</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="trx-footer">
+                  <button class="trx-btn trx-btn-danger"
+                          onclick="trxDeleteProfile()">🗑 Löschen</button>
+                  <div style="display:flex;gap:7px">
+                    <button class="trx-btn" id="trx-btn-activate"
+                            onclick="trxSetActive()">Als aktiv setzen</button>
+                    <button class="trx-btn"
+                            onclick="trxSaveAs()">⧉ Speichern als…</button>
+                    <button class="trx-btn trx-btn-primary"
+                            onclick="trxSave()">💾 Speichern</button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <div class="cfg-card" style="margin-top:1rem">
             <h3>rigctld (globale Basis)</h3>
             <label class="cfg-toggle">Auto-Start<input id="cfg-rig-autostart" type="checkbox"></label>
             <label>Rig-Modell<input id="cfg-rig-model" type="number" min="1"></label>
@@ -1860,29 +2036,6 @@ h2:first-child { margin-top: 0; }
             <label>Host<input id="cfg-rig-host" type="text"></label>
             <label>Port<input id="cfg-rig-port" type="number" min="1024" max="65535"></label>
             <div style="margin-top:.8rem"><button onclick="cfgSaveRigctld()">💾 Speichern</button></div>
-          </div>
-        </div>
-
-        <div class="cfgedit-sub" id="cfgsub-trx_profiles" style="display:none">
-          <div id="cfgedit-trx-list"></div>
-          <div class="cfg-card" style="margin-top:1rem">
-            <h3>➕ Neues Profil</h3>
-            <label>Name<input id="cfg-trx-new-name" type="text" placeholder="IC-7300"></label>
-            <label>Rig-Modell<input id="cfg-trx-new-rigmodel" type="number" placeholder="3073"></label>
-            <label>COM-Port<input id="cfg-trx-new-device" type="text" placeholder="COM5"></label>
-            <label>Baudrate<select id="cfg-trx-new-baud">
-              <option>4800</option><option>9600</option>
-              <option>19200</option><option selected>38400</option><option>57600</option>
-            </select></label>
-            <label>TX-Audio ID<input id="cfg-trx-new-audiotx" type="number" min="0"></label>
-            <label>RX-Audio ID<input id="cfg-trx-new-audiorx" type="number" min="0"></label>
-            <label>PTT-Backend<select id="cfg-trx-new-ptt">
-              <option value="hamlib">hamlib</option>
-              <option value="gpio">gpio</option>
-              <option value="null">null</option>
-            </select></label>
-            <label class="cfg-toggle">Auto-Start<input id="cfg-trx-new-autostart" type="checkbox" checked></label>
-            <div style="margin-top:.8rem"><button onclick="cfgTrxAdd()">➕ Profil hinzufügen</button></div>
           </div>
         </div>
 
@@ -1903,6 +2056,53 @@ h2:first-child { margin-top: 0; }
             <label>TX-Kanal<input id="cfg-sdr-txch" type="number" min="0"></label>
             <div style="margin-top:.8rem"><button onclick="cfgSaveSdr()">💾 Speichern</button></div>
           </div>
+        </div>
+
+        <div class="cfgedit-sub" id="cfgsub-auth" style="display:none">
+
+          <div class="cfg-card">
+            <h3>Authentifizierung (HMAC-SHA256)</h3>
+            <label class="cfg-toggle">
+              AUTH aktiviert
+              <input id="cfg-auth-enabled" type="checkbox">
+            </label>
+            <div style="margin-top:.8rem">
+              <button onclick="cfgSaveAuthEnabled()">💾 Speichern</button>
+            </div>
+          </div>
+
+          <div id="cfgedit-auth-list" style="margin-top:1rem"></div>
+
+          <div class="cfg-card" style="margin-top:1rem">
+            <h3>➕ Schlüssel hinzufügen</h3>
+            <label>Rufzeichen (Partner)
+              <input id="cfg-auth-new-callsign" type="text"
+                     maxlength="9" placeholder="OE1XTU"
+                     style="text-transform:uppercase">
+            </label>
+            <label>key_hex (64 Hex-Zeichen)
+              <input id="cfg-auth-new-keyhex" type="text"
+                     maxlength="64" placeholder="2f7615ad… (leer = automatisch generiert)"
+                     style="font-family:monospace;font-size:.85rem">
+            </label>
+            <label>Kommentar (optional)
+              <input id="cfg-auth-new-comment" type="text"
+                     placeholder="Bilateraler Schlüssel mit OE1XTU">
+            </label>
+            <div style="margin-top:.8rem;display:flex;gap:.5rem;flex-wrap:wrap">
+              <button onclick="cfgAuthAdd()">➕ Hinzufügen</button>
+              <button onclick="cfgAuthGenKey()"
+                      title="Zufälligen 32-Byte-Schlüssel erzeugen">
+                🎲 Schlüssel generieren
+              </button>
+            </div>
+            <div id="cfg-auth-genkey-box"
+                 style="display:none;margin-top:.6rem;padding:.6rem;
+                        background:var(--bg);border:1px solid var(--border);
+                        border-radius:4px;font-family:monospace;font-size:.82rem;
+                        word-break:break-all;color:var(--accent)"></div>
+          </div>
+
         </div>
 
 </div><!-- /#tab-cfgedit -->
@@ -5767,7 +5967,8 @@ document.querySelectorAll('.subtab-btn').forEach(btn => {
     document.querySelectorAll('.cfgedit-sub').forEach(d => d.style.display = 'none');
     const el = document.getElementById('cfgsub-' + sub);
     if (el) el.style.display = '';
-    if (sub === 'trx_profiles') cfgRenderTrxList();
+    if (sub === 'cat_trx') cfgRenderTrxList();
+    if (sub === 'auth') cfgRenderAuthList();
   });
 });
 
@@ -5948,67 +6149,422 @@ async function cfgSaveSdr() {
   } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
 }
 
-// ── TRX-Profile ───────────────────────────────────────────
-async function cfgRenderTrxList() {
+// ── TRX-Profile (WSJT-X Style Editor) ────────────────────
+
+// Hamlib Rig-Modelle — Kernauswahl (erweiterbar via API)
+const TRX_RIG_MODELS = [
+  {id:314,  name:'Yaesu FT-818'},
+  {id:311,  name:'Yaesu FT-817'},
+  {id:361,  name:'Yaesu FT-991A'},
+  {id:1035, name:'Elecraft K3'},
+  {id:1038, name:'Elecraft KX3'},
+  {id:2007, name:'Kenwood TS-790'},
+  {id:2014, name:'Kenwood TS-590S'},
+  {id:2025, name:'Kenwood TS-890S'},
+  {id:3073, name:'Icom IC-7300'},
+  {id:3078, name:'Icom IC-7610'},
+  {id:3085, name:'Icom IC-705'},
+  {id:3086, name:'Icom IC-9700'},
+  {id:3090, name:'Icom IC-7100'},
+  {id:3081, name:'Icom IC-7851'},
+  {id:3068, name:'Icom IC-7200'},
+];
+
+// Audio-Geräte — werden per API geladen, Fallback auf leere Liste
+let _trxAudioDevices = [];
+
+async function trxLoadAudioDevices() {
   try {
-    const cfg = await apiFetch('/api/config');
-    const profiles = cfg.trx_profiles || [];
-    const active   = cfg.active_trx_profile || '';
-    const container = document.getElementById('cfgedit-trx-list');
-    if (!profiles.length) {
-      container.innerHTML = '<p style="color:var(--text-dim)">Keine Profile vorhanden.</p>';
+    // Versuch: /api/audio/devices (falls vorhanden)
+    const r = await fetch('/api/audio/devices');
+    if (r.ok) {
+      const d = await r.json();
+      _trxAudioDevices = d.devices || d || [];
       return;
     }
-    container.innerHTML = profiles.map(p => `
-      <div class="cfg-card" style="position:relative">
-        <h3>${p.name}${p.name===active?' <span style="color:var(--accent);font-size:.8rem">● aktiv</span>':''}</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .8rem;font-size:.85rem">
-          <span>Rig-Modell:</span><span>${p.rig_model}</span>
-          <span>COM-Port:</span><span>${p.device}</span>
-          <span>Baudrate:</span><span>${p.baud}</span>
-          <span>TX-Audio ID:</span><span>${p.audio_device_tx ?? '–'}</span>
-          <span>RX-Audio ID:</span><span>${p.audio_device_rx ?? '–'}</span>
-          <span>PTT-Backend:</span><span>${p.ptt_backend}</span>
-          <span>Auto-Start:</span><span>${p.auto_start ? '✅' : '—'}</span>
-        </div>
-        <div style="margin-top:.8rem;display:flex;gap:.5rem">
-          ${p.name!==active?`<button onclick="cfgTrxDelete('${p.name}')">🗑 Löschen</button>`:''}
-        </div>
-      </div>`).join('');
-  } catch(e) { cfgBanner('TRX-Liste laden: ' + e.message, false); }
+  } catch(_) {}
+  // Fallback: /api/config für bekannte IDs aus trx_profiles
+  try {
+    const cfg = await apiFetch('/api/config');
+    const seen = new Set();
+    const devs = [];
+    (cfg.trx_profiles || []).forEach(p => {
+      [p.audio_device_tx, p.audio_device_rx].forEach(id => {
+        if (id != null && !seen.has(id)) {
+          seen.add(id);
+          devs.push({id, name: `Gerät ${id}`});
+        }
+      });
+    });
+    _trxAudioDevices = devs;
+  } catch(_) {}
 }
 
-async function cfgTrxAdd() {
-  const profile = {
-    name:          document.getElementById('cfg-trx-new-name').value.trim(),
-    rig_model:     parseInt(document.getElementById('cfg-trx-new-rigmodel').value),
-    device:        document.getElementById('cfg-trx-new-device').value.trim(),
-    baud:          parseInt(document.getElementById('cfg-trx-new-baud').value),
-    audio_device_tx: parseInt(document.getElementById('cfg-trx-new-audiotx').value),
-    audio_device_rx: parseInt(document.getElementById('cfg-trx-new-audiorx').value),
-    ptt_backend:   document.getElementById('cfg-trx-new-ptt').value,
-    auto_start:    document.getElementById('cfg-trx-new-autostart').checked
+function trxRigOptions(currentId) {
+  const sel = document.getElementById('trx-edit-rigmodel');
+  if (!sel) return;
+  const cur = parseInt(currentId) || 0;
+  // Bekannte Modelle
+  let html = TRX_RIG_MODELS.map(m =>
+    `<option value="${m.id}" ${m.id===cur?'selected':''}>
+       ${m.id} — ${m.name}
+     </option>`
+  ).join('');
+  // Falls aktueller Wert nicht in Liste: als erstes einfügen
+  if (cur && !TRX_RIG_MODELS.find(m => m.id===cur)) {
+    html = `<option value="${cur}" selected>${cur} — (benutzerdefiniert)</option>` + html;
+  }
+  sel.innerHTML = html;
+}
+
+function trxAudioOptions(selId, currentVal) {
+  const sel = document.getElementById(selId);
+  if (!sel) return;
+  const cur = parseInt(currentVal);
+  let html = '';
+  if (!_trxAudioDevices.length) {
+    // Nur aktuellen Wert anzeigen
+    html = `<option value="${cur||0}" selected>${cur != null ? cur : '—'}</option>`;
+  } else {
+    html = _trxAudioDevices.map(d => {
+      const id = d.id ?? d.index ?? d;
+      const name = d.name || d.label || `Gerät ${id}`;
+      return `<option value="${id}" ${id===cur?'selected':''}>${id} — ${name}</option>`;
+    }).join('');
+    // Aktuellen Wert einfügen falls nicht in Liste
+    if (cur != null && !_trxAudioDevices.find(d=>(d.id??d.index??d)===cur)) {
+      html = `<option value="${cur}" selected>${cur} — (ID ${cur})</option>` + html;
+    }
+  }
+  sel.innerHTML = html;
+}
+
+function trxOnRigChange() {
+  // Bei Auswahl eines bekannten Modells Baudrate vorschlagen
+  const sel = document.getElementById('trx-edit-rigmodel');
+  const id = parseInt(sel?.value);
+  const baudMap = {314:38400, 311:38400, 361:38400, 3073:19200,
+                   3078:19200, 3085:19200, 3086:19200, 3090:19200,
+                   2007:4800, 2014:9600, 2025:115200, 1035:38400};
+  if (baudMap[id]) {
+    const bs = document.getElementById('trx-edit-baud');
+    if (bs) bs.value = baudMap[id];
+  }
+}
+
+let _trxProfiles2 = [];
+let _trxActive2   = '';
+let _trxCurIdx    = -1;
+
+async function cfgRenderTrxList() {
+  await trxLoadAudioDevices();
+  try {
+    const cfg = await apiFetch('/api/config');
+    _trxProfiles2 = cfg.trx_profiles || [];
+    _trxActive2   = cfg.active_trx_profile || '';
+    trxBuildSidebar();
+    if (_trxProfiles2.length) {
+      trxSelectIdx(0);
+    } else {
+      document.getElementById('trx-no-profile').style.display = '';
+      document.getElementById('trx-edit-form').style.display  = 'none';
+    }
+  } catch(e) { cfgBanner('TRX-Profile laden: ' + e.message, false); }
+}
+
+function trxBuildSidebar() {
+  const list = document.getElementById('trx-profile-list');
+  if (!list) return;
+  list.innerHTML = _trxProfiles2.map((p, i) => `
+    <div class="trx-item ${p.name===_trxActive2?'trx-active-item':''}"
+         onclick="trxSelectIdx(${i})">
+      <span class="trx-dot">📻</span>
+      <span>${p.name}</span>
+    </div>`).join('') || '<div style="padding:8px 12px;font-size:12px;color:var(--text2)">Keine Profile</div>';
+}
+
+function trxSelectIdx(idx) {
+  _trxCurIdx = idx;
+  const p = _trxProfiles2[idx];
+  if (!p) return;
+  document.getElementById('trx-no-profile').style.display  = 'none';
+  document.getElementById('trx-edit-form').style.display   = '';
+  // Sidebar-Highlight
+  document.querySelectorAll('#trx-profile-list .trx-item').forEach((el,i) => {
+    el.classList.toggle('trx-active-item', i === idx || _trxProfiles2[i]?.name === _trxActive2);
+  });
+  // Felder befüllen
+  document.getElementById('trx-edit-name').value         = p.name || '';
+  document.getElementById('trx-edit-device').value       = p.device || '';
+  document.getElementById('trx-edit-host').value         = p.host || p.hamlib_host || '127.0.0.1';
+  document.getElementById('trx-edit-port').value         = p.port || p.hamlib_port || 4532;
+  document.getElementById('trx-edit-pttdelay').value     = p.ptt_delay_ms ?? 250;
+  document.getElementById('trx-edit-level').value        = p.level ?? 30;
+  document.getElementById('trx-edit-autostart').checked  = !!p.auto_start;
+  document.getElementById('trx-edit-deep').checked       = !!p.deep_decode;
+  document.getElementById('trx-edit-txon').checked       = p.tx_enabled !== false;
+  const bs = document.getElementById('trx-edit-baud');
+  if (bs) bs.value = p.baud || 19200;
+  const ps = document.getElementById('trx-edit-ptt');
+  if (ps) ps.value = p.ptt_backend || 'hamlib';
+  trxRigOptions(p.rig_model);
+  trxAudioOptions('trx-edit-audiotx', p.audio_device_tx);
+  trxAudioOptions('trx-edit-audiorx', p.audio_device_rx);
+  // Badge
+  const badge = document.getElementById('trx-active-badge');
+  badge.style.display = p.name === _trxActive2 ? '' : 'none';
+  const btnAct = document.getElementById('trx-btn-activate');
+  if (btnAct) btnAct.style.display = p.name === _trxActive2 ? 'none' : '';
+}
+
+function trxReadForm() {
+  return {
+    name:            document.getElementById('trx-edit-name').value.trim(),
+    rig_model:       parseInt(document.getElementById('trx-edit-rigmodel').value),
+    device:          document.getElementById('trx-edit-device').value.trim(),
+    baud:            parseInt(document.getElementById('trx-edit-baud').value),
+    hamlib_host:     document.getElementById('trx-edit-host').value.trim(),
+    hamlib_port:     parseInt(document.getElementById('trx-edit-port').value),
+    audio_device_tx: parseInt(document.getElementById('trx-edit-audiotx').value),
+    audio_device_rx: parseInt(document.getElementById('trx-edit-audiorx').value),
+    ptt_backend:     document.getElementById('trx-edit-ptt').value,
+    ptt_delay_ms:    parseInt(document.getElementById('trx-edit-pttdelay').value),
+    level:           parseInt(document.getElementById('trx-edit-level').value),
+    auto_start:      document.getElementById('trx-edit-autostart').checked,
+    deep_decode:     document.getElementById('trx-edit-deep').checked,
+    tx_enabled:      document.getElementById('trx-edit-txon').checked,
   };
-  if (!profile.name) { cfgBanner('Name darf nicht leer sein', false); return; }
+}
+
+async function trxSave() {
+  const p = trxReadForm();
+  if (!p.name) { cfgBanner('Profilname darf nicht leer sein', false); return; }
+  const oldName = _trxProfiles2[_trxCurIdx]?.name;
+  // Bei Namensänderung: altes Profil entfernen
+  if (oldName && oldName !== p.name) {
+    const r = await fetch('/api/config/trx_profile/' + encodeURIComponent(oldName),
+                          {method:'DELETE'});
+    if (!r.ok && r.status !== 404) {
+      cfgBanner('Altes Profil entfernen fehlgeschlagen', false); return;
+    }
+  }
   try {
     const r = await fetch('/api/config/trx_profile', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(profile)
+      body: JSON.stringify(p)
     });
     if (!r.ok) throw new Error(await r.text());
-    cfgBanner('✅ Profil "' + profile.name + '" hinzugefügt');
-    cfgRenderTrxList();
+    cfgBanner('✅ Profil "' + p.name + '" gespeichert');
+    await cfgRenderTrxList();
+    // Neu gewähltes Profil selektieren
+    const newIdx = _trxProfiles2.findIndex(x => x.name === p.name);
+    if (newIdx >= 0) trxSelectIdx(newIdx);
   } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
 }
 
-async function cfgTrxDelete(name) {
-  if (!confirm('Profil "' + name + '" wirklich löschen?')) return;
+async function trxSaveAs() {
+  const newName = prompt('Neuer Profilname:', _trxProfiles2[_trxCurIdx]?.name + ' (Kopie)');
+  if (!newName?.trim()) return;
+  const p = {...trxReadForm(), name: newName.trim()};
   try {
-    const r = await fetch('/api/config/trx_profile/' + encodeURIComponent(name),
+    const r = await fetch('/api/config/trx_profile', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(p)
+    });
+    if (!r.ok) throw new Error(await r.text());
+    cfgBanner('✅ Kopie "' + p.name + '" erstellt');
+    await cfgRenderTrxList();
+    const idx = _trxProfiles2.findIndex(x => x.name === p.name);
+    if (idx >= 0) trxSelectIdx(idx);
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+async function trxSetActive() {
+  const p = _trxProfiles2[_trxCurIdx];
+  if (!p) return;
+  try {
+    await cfgPatch('_root', {active_trx_profile: p.name});
+    _trxActive2 = p.name;
+    cfgBanner('✅ Profil "' + p.name + '" ist jetzt aktiv');
+    trxBuildSidebar();
+    trxSelectIdx(_trxCurIdx);
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+async function trxDeleteProfile() {
+  const p = _trxProfiles2[_trxCurIdx];
+  if (!p) return;
+  if (p.name === _trxActive2) {
+    cfgBanner('Aktives Profil kann nicht gelöscht werden', false); return;
+  }
+  if (!confirm('Profil "' + p.name + '" wirklich löschen?')) return;
+  try {
+    const r = await fetch('/api/config/trx_profile/' + encodeURIComponent(p.name),
                           {method:'DELETE'});
     if (!r.ok) throw new Error(await r.text());
-    cfgBanner('✅ Profil "' + name + '" gelöscht');
-    cfgRenderTrxList();
+    cfgBanner('✅ Profil "' + p.name + '" gelöscht');
+    await cfgRenderTrxList();
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+function trxNewProfile() {
+  const name = prompt('Name des neuen Profils:');
+  if (!name?.trim()) return;
+  _trxProfiles2.push({
+    name: name.trim(), rig_model: 3073, device: 'COM5',
+    baud: 19200, audio_device_tx: 0, audio_device_rx: 0,
+    ptt_backend: 'hamlib', ptt_delay_ms: 250, level: 30,
+    auto_start: true, deep_decode: false, tx_enabled: true
+  });
+  trxBuildSidebar();
+  trxSelectIdx(_trxProfiles2.length - 1);
+}
+
+function trxDuplicateProfile() {
+  const p = _trxProfiles2[_trxCurIdx];
+  if (!p) return;
+  const name = prompt('Name der Kopie:', p.name + ' (Kopie)');
+  if (!name?.trim()) return;
+  _trxProfiles2.push({...p, name: name.trim()});
+  trxBuildSidebar();
+  trxSelectIdx(_trxProfiles2.length - 1);
+}
+
+// cfgTrxAdd und cfgTrxDelete bleiben als Stub erhalten (Backend-API unverändert)
+async function cfgTrxAdd() { await trxSave(); }
+async function cfgTrxDelete(name) {
+  _trxCurIdx = _trxProfiles2.findIndex(p => p.name === name);
+  await trxDeleteProfile();
+}
+
+// ── AUTH-Keys ──────────────────────────────────────────────
+async function cfgRenderAuthList() {
+  try {
+    const cfg = await apiFetch('/api/config');
+    const auth = cfg.auth || {};
+    const enabled = !!auth.enabled;
+    document.getElementById('cfg-auth-enabled').checked = enabled;
+    const keys = auth.keys || [];
+    const container = document.getElementById('cfgedit-auth-list');
+    if (!keys.length) {
+      container.innerHTML =
+        '<p style="color:var(--text-dim);font-size:.9rem">' +
+        'Keine Schlüssel konfiguriert.</p>';
+      return;
+    }
+    container.innerHTML = keys.map((k, idx) => `
+      <div class="cfg-card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h3 style="margin:0">🔑 ${k.callsign || '?'}</h3>
+          <button onclick="cfgAuthDelete('${k.callsign}')"
+                  style="padding:.2rem .6rem;font-size:.8rem">🗑 Entfernen</button>
+        </div>
+        <div style="margin-top:.6rem;font-size:.85rem">
+          <div style="color:var(--text-dim);margin-bottom:.3rem">
+            ${k._comment || ''}
+          </div>
+          <div style="font-family:monospace;font-size:.82rem;
+                      word-break:break-all;color:var(--text-dim)">
+            <span id="cfg-auth-hex-${idx}">
+              ${k.key_hex ? k.key_hex.substring(0,8)+'…'+k.key_hex.substring(56) : '–'}
+            </span>
+            <button onclick="cfgAuthReveal(${idx},'${k.key_hex||''}')"
+                    style="margin-left:.5rem;padding:.1rem .4rem;font-size:.75rem"
+                    title="Schlüssel anzeigen/verbergen">👁</button>
+          </div>
+        </div>
+      </div>`).join('');
+  } catch(e) { cfgBanner('AUTH-Liste laden: ' + e.message, false); }
+}
+
+function cfgAuthReveal(idx, hex) {
+  const el = document.getElementById('cfg-auth-hex-' + idx);
+  if (!el) return;
+  const short = hex.substring(0,8) + '…' + hex.substring(56);
+  el.textContent = el.textContent.trim() === hex ? short : hex;
+}
+
+function cfgAuthGenKey() {
+  // 32 zufällige Bytes als Hex — Web Crypto API
+  const buf = new Uint8Array(32);
+  crypto.getRandomValues(buf);
+  const hex = Array.from(buf).map(b => b.toString(16).padStart(2,'0')).join('');
+  document.getElementById('cfg-auth-new-keyhex').value = hex;
+  const box = document.getElementById('cfg-auth-genkey-box');
+  box.style.display = '';
+  box.textContent = hex;
+}
+
+async function cfgSaveAuthEnabled() {
+  try {
+    await cfgPatch('auth', {
+      enabled: document.getElementById('cfg-auth-enabled').checked
+    });
+    cfgBanner('✅ AUTH-Status gespeichert');
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+async function cfgAuthAdd() {
+  const callsign = document.getElementById('cfg-auth-new-callsign')
+                           .value.trim().toUpperCase();
+  let   keyHex   = document.getElementById('cfg-auth-new-keyhex')
+                           .value.trim().toLowerCase();
+  const comment  = document.getElementById('cfg-auth-new-comment')
+                           .value.trim();
+
+  if (!callsign) {
+    cfgBanner('Rufzeichen ist Pflicht', false); return;
+  }
+  // Leeres key_hex → serverseitig generieren (gust_keygen-Logik im Browser)
+  if (!keyHex) {
+    const buf = new Uint8Array(32);
+    crypto.getRandomValues(buf);
+    keyHex = Array.from(buf).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+  if (!/^[0-9a-f]{64}$/.test(keyHex)) {
+    cfgBanner('key_hex: genau 64 Hex-Zeichen (0–9, a–f)', false); return;
+  }
+
+  let cfg;
+  try { cfg = await apiFetch('/api/config'); }
+  catch(e) { cfgBanner('Laden fehlgeschlagen: ' + e.message, false); return; }
+
+  const keys = (cfg.auth || {}).keys || [];
+  // Bestehendes Rufzeichen überschreiben oder neu anhängen
+  const idx = keys.findIndex(k =>
+    (k.callsign || '').toUpperCase() === callsign);
+  const entry = {
+    callsign,
+    key_hex: keyHex,
+    _comment: comment || `Bilateraler Schlüssel mit ${callsign}`
+  };
+  if (idx >= 0) keys[idx] = entry;
+  else          keys.push(entry);
+
+  try {
+    await cfgPatch('auth', { keys });
+    cfgBanner(`✅ Schlüssel für ${callsign} gespeichert — `+
+              `Partner muss denselben key_hex eintragen`);
+    document.getElementById('cfg-auth-new-callsign').value = '';
+    document.getElementById('cfg-auth-new-keyhex').value   = '';
+    document.getElementById('cfg-auth-new-comment').value  = '';
+    document.getElementById('cfg-auth-genkey-box').style.display = 'none';
+    cfgRenderAuthList();
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+async function cfgAuthDelete(callsign) {
+  if (!confirm(`Schlüssel für ${callsign} wirklich entfernen?`)) return;
+  let cfg;
+  try { cfg = await apiFetch('/api/config'); }
+  catch(e) { cfgBanner('Laden fehlgeschlagen: ' + e.message, false); return; }
+
+  const keys = ((cfg.auth || {}).keys || [])
+    .filter(k => (k.callsign || '').toUpperCase() !== callsign.toUpperCase());
+  try {
+    await cfgPatch('auth', { keys });
+    cfgBanner(`✅ Schlüssel für ${callsign} entfernt`);
+    cfgRenderAuthList();
   } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
 }
 </script>
@@ -6316,10 +6872,22 @@ class WebServer:
             raise web.HTTPInternalServerError(text='Lang file error')
 
     async def _handle_config(self, _request: web.Request) -> web.Response:
-        """Aktuelle Konfiguration zurückgeben — API-Key wird ausgeblendet."""
-        safe = {k: v for k, v in self._config.items()
-                if k not in ("web",)}
-        # web-Abschnitt ohne api_key
+        """Aktuelle Konfiguration zurückgeben — API-Key und bytes werden bereinigt."""
+        import copy
+
+        def _sanitize(obj):
+            """Rekursiv bytes→Hex, _auth_keys-Block entfernen."""
+            if isinstance(obj, bytes):
+                return obj.hex()
+            if isinstance(obj, dict):
+                return {k: _sanitize(v) for k, v in obj.items()
+                        if k != "_auth_keys"}
+            if isinstance(obj, list):
+                return [_sanitize(i) for i in obj]
+            return obj
+
+        safe = _sanitize({k: v for k, v in self._config.items()
+                          if k not in ("web",)})
         web_safe = {k: v for k, v in self._config.get("web", {}).items()
                     if k != "api_key"}
         safe["web"] = web_safe
