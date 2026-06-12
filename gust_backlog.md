@@ -26,11 +26,11 @@
 | P5-08 | 🟡 | feature | Web-UI: Kanalübersicht | 10-Kanal-Grid, ★ Heimatkanal, Aktivitäts-Flash | ✅ |
 | P5-09 | 🟡 | feature | API-Key Authentifizierung | X-API-Key + Bearer Token, WS via ?api_key= | ✅ |
 | P5-10 | 🟡 | refactor | Event-Bus in Gateway | Verdrahtung in demo_wiring.py + gust.py daemon | ✅ |
-| P5-11 | 🟢 | feature | Web-UI: Dark + Light Theme | Dark Amber + Light Clean, localStorage | ✅ |
+| P5-11 | 🟢 | feature | Web-UI: Themes | 4 Themes: Dark Amber, Aero (Windows-Blau), Mono (monochrom), Light Clean. Theme-Cycle-Button (Dark→Aero→Mono→Light→Dark). Swimlane-Canvas theme-aware. localStorage-Persistenz. | ✅ |
 | P5-12 | 🟢 | feature | Web-UI: Frame-History | deque(maxlen=50), /api/log beim Laden, /ws/rx Echtzeit | ✅ |
-| P5-13 | 🟡 | refactor | Web-UI Config-Tab: Strukturierung in Unterseiten | Sub-Navigation mit 4 Unterseiten: Audio & PTT, Transceiver (Hamlib), SDR-TX (SoapySDR), Darstellung. Aktiver Sub-Tab in localStorage. | ✅ |
-| P5-14 | 🟡 | feature | Web-UI: Hamlib/rigctld-Konfiguration | 6 Endpunkte: ports/models/status/start/stop/config. COM-Port-Dropdown, Rig-Modell-Suche, Baudrate, Auto-Start, Verbinden & Testen. | ✅ |
-| P5-15 | 🟡 | feature | Web-UI: Tune-Button | 15-s-Sinuston (1000 Hz) mit PTT via Hamlib, Countdown-Anzeige, vorzeitiger Stop, Polling-Pause während TX. | ✅ |
+| P5-13 | 🟢 | refactor | ~~Web-UI Config-Tab: Strukturierung in Unterseiten~~ | Entfernt (Juni 2026, refactor P5-24): Sub-Tabs Audio&PTT/Transceiver/SDR-TX/Darstellung aus Status-Tab entfernt. Konfiguration ausschließlich über cfgedit-Tab (P5-23). | ❌ obsolet |
+| P5-14 | 🟢 | feature | ~~Web-UI: Hamlib/rigctld-Konfiguration (Status-Tab)~~ | Entfernt (Juni 2026, refactor P5-24): Hamlib-Konfig-Formular aus Status-Tab entfernt. rigctld-Parameter jetzt ausschließlich im cfgedit-Tab → CAT & TRX-Profile. Backend-Endpunkte /api/hamlib/* bleiben erhalten. | ❌ obsolet |
+| P5-15 | 🟡 | feature | Web-UI: Tune-Button | 15-s-Sinuston (1000 Hz) mit PTT via Hamlib, Countdown-Anzeige, vorzeitiger Stop, Polling-Pause während TX. Tune-Button nach Entfernung des alten Konfig-Bereichs noch vorhanden — Verortung prüfen. | ✅ |
 | P5-16 | 🟡 | feature | Web-UI: Kommunikations-Tab | Inbox (RX-Freitext mit Fragment-Reassembly), Gesendet-Liste (tx_done), Sub-Navigation RX/TX. | ✅ |
 | P5-17 | 🟡 | feature | Web-UI: Aktivitätslog + ON AIR Banner | Echtzeit-Systemlog via /ws/log, ON AIR Banner während TX. | ✅ |
 | P5-18 | 🟡 | feature | TRX-Profile: Mehrgeräteverwaltung | `gateway.json` speichert Array `trx_profiles` + `active_trx_profile`. Web-UI Dropdown → `POST /api/trx/activate` → schreibt rigctld/audio-Block + stößt conflict-aware rigctld-Neustart an. Profil-Anlage manuell in gateway.json. Erstes Profil wird beim Hamlib-Config-Speichern automatisch angelegt. Rückwärtskompatibel. Felder: `name`, `rig_model`, `device`, `baud`, `audio_device_tx`, `audio_device_rx`, `ptt_backend`, `auto_start`. | ✅ |
@@ -38,7 +38,13 @@
 | P5-20 | 🟡 | feature | Web-UI: TX-Warteschlange löschen | Button „✕ Warteschlange löschen" über der TX-Queue-Anzeige. `DELETE /api/tx/queue` → `TxGateway.clear_queue()` → gibt Anzahl gelöschter Frames zurück. Frames die gerade gesendet werden bleiben unberührt. | ✅ |
 | P5-21 | 🟢 | feature | Web-UI: Mehrsprachigkeit (i18n DE/EN) | `locales/de.json` + `locales/en.json` (194 Keys). `/api/lang/<code>`-Endpunkt. JS-Mechanismus `t('key')`, `loadLang()`, `applyI18n()` mit `data-i18n` / `data-i18n-html` / `data-i18n-placeholder`. Sprachschalter im Darstellung-Tab, `localStorage`-Persistenz. | ✅ |
 | P5-22 | 🟢 | feature | Web-UI: Inbox-Kosmetik fehlende Frames | Fehlende Frames im Nachrichtentext als `[…fehlt…]`-Badge (inline, orange gestrichelt). Nachrichtentext in `var(--text)` und `var(--fs-lg)` für bessere Lesbarkeit. | ✅ |
-| P5-23 | 🟡 | feature | Web-UI: gateway.json Editor (cfgedit-Tab) | Neuer Tab „📝 Konfig" mit 6 Sub-Sektionen: Allgemein, Gateway & TX, Audio & RX, CAT/rigctld, TRX-Profile, SDR. Backend: PATCH /api/config/section, POST/DELETE /api/config/trx_profile. JS: cfgLoad/cfgPatch/cfgSave*/cfgTrxAdd/cfgTrxDelete. Funktioniert in allen Modi (daemon, --sim, --dry-run, rx). Commit 67ad017. | ✅ |
+| P5-23 | 🟡 | feature | Web-UI: gateway.json Editor (cfgedit-Tab) | Tab „📝 Konfig" mit 5 Sub-Sektionen: Allgemein, Gateway & TX, RX/Decoder, CAT & TRX-Profile, SDR, AUTH-Keys. Backend: PATCH /api/config/section, POST/DELETE /api/config/trx_profile. WSJT-X-Style TRX-Editor (Sidebar + Formular, Rig-Dropdown via rigctld -l, Audio-Dropdown via /api/audio/devices). AUTH-Keys Sidebar-Editor (masked/reveal/generate). Info-Icons (ⓘ) bei Decoder, SDR, Simulator-Feldern. Funktioniert in allen Modi. | ✅ |
+| P5-24 | 🟡 | refactor | Web-UI: Konsolidierung Status-Tab | Alter Konfig-Bereich (Audio&PTT, Transceiver/Hamlib, SDR-TX, Darstellung, ~1590 Zeilen JS+HTML+CSS) aus Status-Tab entfernt. Tab umbenannt: „Status & Config" → „⚙ Status". Shadowing-Konflikt trxNewProfile/trxDeleteProfile behoben. Konfiguration ausschließlich über cfgedit-Tab (P5-23). | ✅ |
+| P5-25 | 🟡 | feature | Web-UI: Log in Status integriert | Log-Tab entfernt. Aktivitätslog + Systemlog direkt unterhalb des System-Status-Grids im Status-Tab. Tab-Navigation vereinfacht auf 6 Tabs. | ✅ |
+| P5-26 | 🟡 | feature | Web-UI: TRX-Editor Rig-Typeahead | Rig-Modell-Dropdown durch Live-Suchfeld + gefilterte Listbox ersetzt. rigctld -l Cap 50→2000 (vollständige ~312-Modell-Liste). Suche clientseitig über _rigAllModels. | ✅ |
+| P5-27 | 🟡 | feature | Web-UI: Audio-Dropdown alle Host-APIs | TRX-Editor Audio-Dropdown zeigt alle Windows-APIs (MME/DirectSound/WASAPI/WDM-KS) gruppiert mit optgroup. Bug: fehlender </optgroup>-Tag verursachte Abschneiden bei MME. | ✅ |
+| P5-28 | 🟡 | feature | gust.py: JSON-Validierung beim Start | validate_json_file() prüft gateway.json + meshcore.json auf Syntaxfehler vor dem Start. Fehlermeldung mit Zeilennummer + Kontext. sys.exit(1) bei Fehler statt stiller Fallback. | ✅ |
+| P5-29 | 🟢 | feature | Web-UI: cfgedit Verbesserungen | Gateway&TX 3-Spalten-Layout. SDR I/Q-Input/Output nebeneinander. RX/Decoder Audio-Dropdown mit Vorauswahl aus aktivem TRX-Profil. Info-Icons (ⓘ) bei SDR, Adapter, Emergency, Drift. | ✅ |
 
 ### Umsetzungsnotiz P5-13 / P5-14 (Mai 2026)
 
@@ -54,6 +60,12 @@ Alle Änderungen ausschließlich in `gust_web.py`; Spec in `gust_spec.md §4.4` 
 - **Abweichungen:** Gateway- und Connectors-Sektion zurückgestellt; Hamlib-Unterseite
   immer sichtbar (kein Auto-Ausblenden); models-Label = vollständige rigctld-Zeile.
 
+**Nachträgliche Änderung (Juni 2026, P5-24):** Der gesamte in
+P5-13/P5-14 implementierte Konfig-Bereich wurde aus dem Status-Tab
+entfernt und durch den cfgedit-Tab (P5-23) ersetzt. Die
+Backend-Endpunkte `/api/hamlib/*` bleiben erhalten. Siehe
+Umsetzungsnotiz P5-24.
+
 ### Umsetzungsnotiz P5-18 / P5-19 / P5-20 (Juni 2026)
 
 - **TRX-Profile (P5-18):** JSON-Schema mit `audio_device_tx`/`audio_device_rx` statt
@@ -66,29 +78,117 @@ Alle Änderungen ausschließlich in `gust_web.py`; Spec in `gust_spec.md §4.4` 
 - **Warteschlange löschen (P5-20):** `TxGateway.clear_queue()` gibt Anzahl zurück;
   `DELETE /api/tx/queue` in gust_spec.md §4.4 dokumentiert.
 
-### Umsetzungsnotiz P5-23 (Juni 2026)
+### Umsetzungsnotiz P5-23 (Juni 2026, mehrere Iterationen)
 
-Alle Änderungen in `gust_web.py` (531 Zeilen, Commit 67ad017):
-- **Backend:** `_handle_cfg_section_patch()` (PATCH `/api/config/section`),
-  `_handle_cfg_trx_add()` (POST), `_handle_cfg_trx_delete()` (DELETE).
-  Schreibt in `self._config` und persistiert via `_save_config_atomic()`.
-  Bei `config_path=None` (kein gateway.json auf Disk) nur In-Memory — kein Fehler.
-  `web`-Sektion schützt `api_key` (wird nie überschrieben); aktives TRX-Profil
-  kann nicht gelöscht werden (409).
-- **HTML:** Tab-Button + `#tab-cfgedit`-Panel mit 6 Sub-Sektionen,
-  CSS-Klassen `.cfg-card`, `.cfg-toggle`, `.subtab-btn`.
-- **JS:** `cfgLoad()` befüllt alle Felder aus `GET /api/config`,
-  `cfgPatch()` sendet `PATCH /api/config/section`,
-  je ein `cfgSave*()` pro Sub-Sektion, TRX-Profil-CRUD.
-- **Tab-Integration:** Nav-Button `onclick="switchTab('cfgedit',this);cfgLoad()"`
-  (diese UI nutzt `switchTab(name, btn)`, **kein** `showTab()`); Panel
-  `#tab-cfgedit.tab-panel`, Sichtbarkeit über die `.active`-Klasse. Sub-Tabs
-  über den `.subtab-btn`-Handler (zeigt `#cfgsub-*`).
-- **Abweichungen ggü. Vorlage:** Panel-ID `tab-cfgedit` statt `cfgedit-tab`
-  (passt zum `switchTab`/`#tab-<name>`-Schema); cfgLoad im Button-onclick statt
-  über einen `.tab-btn[data-tab]`-Listener (existiert in dieser UI nicht); CSS-
-  Variablen `--panel`→`--bg2` und `--text-dim`→`--text2` (Theme definiert nur
-  `--bg2`/`--text2`). Funktionsumfang unverändert.
+Alle Änderungen in `gust_web.py`. Finale Sub-Sektionen des cfgedit-Tabs:
+
+**Allgemein**
+- Rufzeichen, Web-Server-Adresse + Port
+
+**Gateway & TX**
+- Sendezyklus (Intervall, Min. TX-Abstand)
+- Simulator (Adapter-Auswahl mit ⓘ, Koordinaten, Intervalle,
+  Emergency ⓘ + Drift ⓘ)
+
+**RX / Decoder** (ehemals „Audio & RX", bereinigt)
+- Audioeingang: RX aktiviert ⓘ, RX-Audiogerät als Dropdown
+  (aus `/api/audio/devices`, MME+WASAPI, Vorauswahl aus aktivem TRX-Profil)
+- Decoder: Scan-Intervall ⓘ / Fenster ⓘ / Dedup-TTL ⓘ in einer 3-Spalten-Zeile
+- TX-Audio-Duplikate entfernt (leben ausschließlich in TRX-Profilen)
+
+**CAT & TRX-Profile** (WSJT-X-Style)
+- Sidebar links: Profilliste, + Neu / ⧉ Kopie
+- Detail rechts: Name editierbar, Rig-Modell-Dropdown (via
+  `/api/hamlib/models`, rigctld -l, sync-first + async Nachladen),
+  COM-Port, Baudrate (String-Match gefixt), Hamlib-Host:Port kombiniert,
+  TX/RX-Audio-Dropdown (MME+WASAPI, TX filtert outs>0, RX filtert ins>0,
+  Gruppenheader), PTT/Delay/Pegel, Auto-Start/Deep Decode/TX aktiviert Toggles
+- Als aktiv setzen, Speichern als…, Speichern, Löschen
+- ID-Kollision mit altem TRX-Formular behoben (separater Namespace)
+
+**SDR**
+- RTL-SDR IQ-Eingang: Aktiviert ⓘ, Freq/Rate/Gain/PPM ⓘ
+- SoapySDR TX: Aktiviert ⓘ, Freq/Rate/Antenne/Gain/Kanal
+
+**AUTH-Keys** (WSJT-X-Style)
+- Sidebar links: Partner-Rufzeichen-Liste, + Neu
+- Detail rechts: Rufzeichen editierbar, key_hex masked (type=password),
+  👁 Reveal-Toggle, 🎲 Auto-Generate (crypto.getRandomValues), Kommentar
+- AUTH aktiviert Toggle mit ⓘ (speichert sofort)
+- Entfernen / Speichern
+
+**Backend-Endpunkte (neu in P5-23):**
+- `PATCH /api/config/section` — schreibt Sektion in self._config + gateway.json
+- `POST /api/config/trx_profile` — Profil hinzufügen/überschreiben
+- `DELETE /api/config/trx_profile/<name>` — Profil löschen (aktives: 409)
+- `GET /api/audio/devices` — sounddevice-Geräteliste {input, output}
+- `GET /api/hamlib/models` — rigctld -l als JSON {models:[{id,name}]}
+
+**Wichtige Fixes in dieser Iterationsreihe:**
+- `_handle_config`: `_auth_keys` (bytes) via `_sanitize()` aus JSON-Response entfernt
+- ID-Kollision TRX-Editor mit altem Status-Tab-Formular (gleiche IDs, verschiedene DOM-Elemente)
+- Baudrate String-Match (`bs.value = String(p.baud)`)
+- Audio-API Format-Adapter: Response hat `input`/`output`-Arrays (nicht `devices`)
+- rigctld -l label-Parser: `"Yaesu  FT-818  20221117.0  Stable  RIG_MODEL_FT818"` → `"1041 — Yaesu FT-818"`
+- cfgLoad() + cfgSaveAudioRx(): verwaiste TX-Audio-Refs nach Bereinigung entfernt
+
+### Umsetzungsnotiz P5-24 (Juni 2026)
+
+Alle Änderungen in `gust_web.py` (−1590 Zeilen):
+- **Entfernt:** Konfig-Bereich im Status-Tab mit 4 Sub-Tabs
+  (Audio & PTT, Transceiver/Hamlib, SDR-TX/SoapySDR, Darstellung).
+- **Entfernt:** JS-Cluster `saveHamlibConfig`, `loadHamlibConfig`,
+  `loadTrxProfiles`, `onTrxProfileChange`, `trxFillEditForm`,
+  `trxNewProfile`/`trxSaveProfile`/`trxDeleteProfile` (alte Versionen),
+  `activateTrxProfile`, `_showHamlibConflictDialog`,
+  `searchHamlibModels`, `onHamlibModelSelect`, `savePttDelay`.
+- **Entfernt:** CSS-Orphans `.cfg-subnav`, `.cfg-subpanel`,
+  `.hamlib-status-*`.
+- **Behalten:** System-Status-Grid (Rufzeichen, Kanal, TX/RX-Stats).
+- **Behalten:** Backend-Endpunkte `/api/hamlib/*` — werden weiterhin
+  vom cfgedit-Tab TRX-Editor verwendet.
+- **Tab-Button:** `data-i18n` entfernt (verhindert Überschreiben durch
+  `applyI18n()` aus locales/de.json).
+- **Nebeneffekt behoben:** Shadowing-Konflikt der alten
+  `trxNewProfile`/`trxDeleteProfile` gegen cfgedit-Versionen beseitigt.
+
+### Umsetzungsnotiz P5-25 bis P5-29 (Juni 2026)
+
+**P5-25 Log→Status:**
+`switchTab('status')` ruft jetzt `loadStatus()` + `connectWsLog()`.
+Log-Panel direkt im tab-status nach dem Status-Grid.
+
+**P5-26 Rig-Typeahead:**
+`trxRigOptions()` befüllt sofort mit statischer `TRX_RIG_MODELS`-Liste,
+dann async `/api/hamlib/models` nachgeladen. `_handle_hamlib_models`:
+Cap `>= 50` → `>= 2000`, dadurch ~312 Modelle statt 51.
+`rigSearchFilter()` / `rigSearchCommit()` / `rigSearchOpen()`: Live-Filter
+clientseitig auf `_rigAllModels`. Listbox `display:none` → `.open`-Klasse
+beim Fokus/Tippen, verschwindet nach Auswahl.
+
+**P5-27 Audio alle APIs:**
+`trxLoadAudioDevices()`: Map-Key `host_api + '_' + id` — jedes Gerät
+pro API-Gruppe separat. `API_ORDER`-Sortierung: MME→DS→WASAPI→WDM-KS.
+Root-Bug: `trxAudioOptions()` hatte kein `</optgroup>` → Browser
+interpretierte alle Gruppen als eine. Fix: `</optgroup>` vor neuer
+Gruppe + abschließendes `</optgroup>`.
+Timing-Bug: `trxLoadAudioDevices()` lud async nach `trxSelectIdx()` →
+Dropdowns nach Load neu befüllen mit aktuellem Profil.
+MME-Namen auf 31 Zeichen begrenzt (Windows-Limit) → `title`-Attribut
+für Tooltip mit vollem Namen.
+
+**P5-28 JSON-Validierung:**
+`validate_json_file(path, label)` in `gust.py` vor `load_config()`.
+`json.JSONDecodeError` → Zeilennummer + Kontext (3 Zeilen) + Tipp.
+`load_config()`: bei `JSONDecodeError` → `sys.exit(1)` statt Warning.
+Startup prüft: gateway.json + meshcore.json (aus Kandidatenliste).
+
+**P5-29 cfgedit Verbesserungen:**
+Gateway&TX: 3 Cards nebeneinander (Sendezyklus / Datenquelle / Simulator).
+SDR: 2 Blöcke nebeneinander (I/Q-Input RX + I/Q-Output TX).
+RX/Decoder: Audio-Dropdown mit Vorauswahl aus aktivem TRX-Profil.
+Info-Icons bei: SDR Aktiviert, PPM-Korrektur, Datenquelle/Adapter,
+Emergency, Drift-Simulation, RX aktiviert.
 
 ---
 
@@ -150,7 +250,11 @@ Heltec V4, Stand Juni 2026). Siehe gust_knowledge.md §31.
 
 | ID | Prio | Typ | Titel | Beschreibung | Status |
 |---|---|---|---|---|---|
-| P6-20 | 🟢 | feature | MeshCore TX-Pfad: GUST → MQTT → MeshCore | GUST RX_FRAME (TEXT) → MQTTConnector Outbound → MQTT: `meshcore/tx/text` → `gust_meshcore_bridge.py` → USB-Serial → Heltec V4 → LoRa-Netz. Voraussetzung: P6-19 ✅, P6-01 (MQTTConnector Outbound). Hinweis: zwei `fragment_text`-Versionen (`gust_frame.py` + Bridge-Fallback) — beide bei Änderungen synchron halten. | 🔲 |
+| P6-20 | 🟢 | feature | MeshCore HF-Forward: MC → GUST → HF | Zwei-Pfad-Architektur in `_process_channel_msg()`: Pfad A (immer) = 1 × RX_FRAME (frag_total=1) für WebGUI/Inbox/MQTT ohne Fragment-Lärm. Pfad B (opt-in) = HF-Forward via `TxGateway.enqueue()` wenn `hf_forward: true` im Kanal-Slot. Drei Entscheidungsebenen: `gust_forward` (aufnehmen), implizit WebGUI, `hf_forward` (HF senden, Default false). Wiring: `bridge._gateway = gateway` in gust.py (ADR-18). meshcore.json manuell um `hf_forward`-Felder ergänzen. **Umgesetzt Juni 2026.** | ✅ |
+| P6-20b | 🟢 | feature | WebGUI-Antwort auf MC-Nachrichten | Antwort-Funktion im Monitor-Tab: `send_chan_msg()` aus WebGUI auslösen. Neuer API-Endpunkt `POST /api/meshcore/tx/channel`. Voraussetzung: P6-20 ✅. | 🔲 |
+| P6-20c | 🟡 | task | meshcore.json hf_forward manuell setzen | Slot 6 (GUST): `"hf_forward": true` in meshcore.json eintragen. Danach Browser-Test: MC-Nachricht auf #GUST → HF-Forward via TxGateway prüfen. | 🔲 |
+| P6-23 | 🟡 | feature | MeshCore Kanal-Management aus WebGUI | `set_channel`/`get_channel` direkt aus Konfig-Tab statt nur über meshcore-cli. Neue Buttons in Kanal-Card 3. Voraussetzung: P6-20 ✅. | 🔲 |
+| P6-24 | 🟡 | task | node_* Migration gateway.json → Single Source | `node_callsign`, `node_name`, `connection_port`, `connection_baudrate` aktuell in gateway.json gespeichert, Bridge liest noch aus meshcore.json. Migration auf gateway.json als Single-Source-of-Truth. | 🔲 |
 | P6-22 | 🟢 | feature | Repeater-Steuerung via Text-CLI | Zweiter Heltec V4 (COM19) läuft als Repeater-Firmware. Steuerung nur via `meshcore-cli -r -s COM19` (Text-CLI). Nicht über meshcore-Python-Library ansprechbar. Dokumentation der CLI-Befehle in `gust_knowledge.md`. | 🔲 |
 
 ### MeshCore — Bugs (aus Session Juni 2026)

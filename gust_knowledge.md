@@ -903,7 +903,7 @@ GUST:
 
 ### Tune-Button
 
-GUST hat einen Tune-Button (analog WSJT-X) im Config-Tab → Transceiver (Hamlib). Er sendet 15 Sekunden lang einen 1000-Hz-Sinuston mit aktivierter PTT — nützlich um Ausgangsleistung und SWR zu prüfen. Der Button ist ein Toggle: erster Klick startet, zweiter Klick stoppt vorzeitig. Das Frequenz-Polling wird während Tune automatisch pausiert um CAT-Kollisionen zu vermeiden.
+GUST hat einen Tune-Button (analog WSJT-X). Er sendet 15 Sekunden lang einen 1000-Hz-Sinuston mit aktivierter PTT — nützlich um Ausgangsleistung und SWR zu prüfen. Der Button ist ein Toggle: erster Klick startet, zweiter Klick stoppt vorzeitig. Das Frequenz-Polling wird während Tune automatisch pausiert um CAT-Kollisionen zu vermeiden.
 
 ### Windows IPv4/IPv6-Konflikt bei rigctld
 
@@ -2004,8 +2004,343 @@ verwenden, nicht `min-width`. `min-width` lässt ein langes Rufzeichen die
 Folge-Spalten verschieben → die Zeilen sind dann untereinander nicht mehr
 bündig. Fixe Breite hält die Ausrichtung und schafft trotzdem den Abstand.
 
+## 35. Web-UI Tab-Struktur (aktuell, Juni 2026)
+
+| Tab | Inhalt |
+|---|---|
+| Monitor | Kanal-Grid (8 Kanäle), RX-Frame-Feed, Swimlane-Zeitachse, Audio-Meter |
+| Senden | TX-Formulare: Wetter, Position, Text (QSO-Modus), Notfall, Tune |
+| Kommunikation | Inbox (RX-Freitext, Fragment-Reassembly, Antwort), Gesendet |
+| ⚙ Status | System-Status-Grid + Aktivitätslog + Systemlog (Log-Tab entfernt) |
+| Stresstest | Stress-Test-Steuerung und Ergebnisanzeige |
+| 📝 Konfig | gateway.json Editor — 6 Sub-Sektionen |
+
+**cfgedit-Tab Sub-Sektionen (finaler Stand Juni 2026):**
+
+| Sub-Tab | Inhalt |
+|---|---|
+| Allgemein | Rufzeichen; Adresse des Web-Servers (Host + Port) |
+| Gateway & TX | Sendezyklus; Datenquelle/Adapter ⓘ; Simulator (Koordinaten, Intervalle, Emergency ⓘ, Drift ⓘ) |
+| RX / Decoder | Audioeingang (RX aktiviert ⓘ, Dropdown); Decoder (Scan ⓘ / Fenster ⓘ / Dedup ⓘ nebeneinander) |
+| CAT & TRX-Profile | WSJT-X-Style Sidebar + Formular; Rig-Typeahead (rigctld -l, ~312 Modelle); Audio-Dropdown (alle Host-APIs, optgroup); Hamlib-Host:Port kombiniert |
+| SDR | RTL-SDR IQ ⓘ + PPM ⓘ; SoapySDR TX ⓘ |
+| AUTH-Keys | WSJT-X-Style Sidebar; key_hex maskiert, Reveal/Generate; AUTH-Toggle ⓘ |
+
+**Merksätze:**
+- TX-Audio lebt ausschließlich in TRX-Profilen — kein globaler TX-Audio-Block mehr im cfgedit-Tab
+- RX-Audiogerät-Dropdown: Vorauswahl aus aktivem TRX-Profil (`audio_device_rx`)
+- Rig-Modell: statische Fallback-Liste sofort, dann async rigctld -l (kein Flash)
+- key_hex ist type=password (maskiert), Toggle auf type=text; Generate via crypto.getRandomValues
+- Der alte „Status & Config"-Tab mit Audio&PTT/Hamlib/SDR-TX/Darstellung wurde in P5-24 entfernt
+
+**API-Endpunkte des cfgedit-Tabs:**
+- `PATCH /api/config/section` + `POST/DELETE /api/config/trx_profile`
+- `GET /api/audio/devices` → `{input:[...], output:[...]}` (sounddevice)
+- `GET /api/hamlib/models` → `{models:[{id, label}]}` (rigctld -l, Cap 2000)
+
+**Theme-System (Juni 2026):**
+4 Themes via Cycle-Button (Dark→Aero→Mono→Light→Dark):
+- Dark Amber: `--bg:#0d1117`, Akzent Amber `#e6a817` (Standard)
+- Aero: `--bg:#e8eef4`, Akzent Windows-Blau `#0078d4`
+- Mono: `--bg:#ebebeb`, monochrom schwarz/grau, eckige Buttons
+- Light Clean: `--bg:#ffffff`, Akzent GitHub-Blau `#0969da`
+Swimlane-Canvas theme-aware via `slTheme()`.
+`applyTheme()` via `data-theme`-Attribut auf `<html>`.
+
+**JSON-Startup-Validierung:**
+`validate_json_file()` in `gust.py` prüft `gateway.json` und
+`meshcore.json` vor dem Start. Bei `JSONDecodeError`: Fehlermeldung
+mit Zeilennummer + Kontext, dann `sys.exit(1)`.
+
+---
+
+## 36. MeshCore WebGUI-Konfigurationsseite (Juni 2026)
+
+### Überblick
+
+Im cfgedit-Tab wurde ein neuer Sub-Tab **🔷 MeshCore** implementiert.
+Drei Dateien waren beteiligt, mit einer bewussten architektonischen
+Abweichung von der ursprünglichen Planung.
+
+### Architekturentscheidung: server._mc_bridge via Post-Init-Wiring
+
+**Problem:** In `gust.py` läuft `WebServer(...)` (Zeile ~665) **vor**
+dem MeshCore-Block, der `_bridge` erzeugt. Ein Konstruktor-Parameter
+hätte daher immer `None` übergeben.
+
+**Lösung:** Zwei-Stufen-Wiring:
+1. `WebServer.__init__` bekommt optionalen Parameter `meshcore_bridge=None`
+   → gespeichert als `self._mc_bridge`.
+2. Nach Bridge-Erzeugung in `gust.py`: `server._mc_bridge = _bridge` setzt
+   die Live-Referenz nach.
+
+```python
+# gust.py — Daemon-Start-Sequenz
+_bridge = None                          # Vorbelegen (immer definiert)
+server = WebServer(cfg, ..., meshcore_bridge=None)   # Start ohne Bridge
+# ... [MeshCore-Block] ...
+if mc_cfg.get("enabled"):
+    _bridge = MeshCoreBridge(mc_config, bus)
+    server._mc_bridge = _bridge         # Live-Wiring nach Erzeugung
+```
+
+Damit können `_handle_config` und alle künftigen Handler zur Request-Zeit
+auf `self._mc_bridge.channel_map`, `self._mc_bridge.mc.self_info` und
+`self._mc_bridge.get_neighbours()` zugreifen.
+
+**ADR-18:** `WebServer` bekommt externe Objekte per Parameter/Post-Init,
+nie per globaler Variable. Muster analog zu `self._gateway`.
+
+### Implementierte Komponenten
+
+**gust_web.py — HTML (cfgsub-meshcore, finales 2-Block-Layout):**
+
+| Block | Inhalt | Datenquelle |
+|---|---|---|
+| 1 Bridge-Verbindung (links) | Bridge-Toggle, meshcore.json-Pfad, HR-Trenner, Auto-Fetch, Timeout, Reconnect-Delay, Public-Forward, Raw-Log, Unknown-Sender | gateway.json > meshcore + meshcore.bridge |
+| 2 Companion Node (rechts) | Rufzeichen, Node-Name, Port, Baudrate | gateway.json > meshcore.node_* |
+| 3 Kanäle — volle Breite | Index/Name + editierbare gust_forward/hf_forward-Checkboxen | /api/config > meshcore_channels + PATCH /api/meshcore/channels |
+| 4 Neighbours — volle Breite | Name, Rufzeichen, SNR, Hops, Geodaten, Distanz, Karten-Links | /api/status > meshcore_bridge.neighbours |
+
+Ein gemeinsamer **„💾 Einstellungen speichern"**-Button (`mcSaveAll()`)
+unterhalb der zwei Blöcke speichert alle Felder in einer Aktion.
+`mcSaveAll()` ruft sequenziell `mcSaveBridge()` + `mcSaveNode()` +
+`mcSaveBehaviour()` auf (alle internen Helfer ohne eigenes try/catch).
+
+**gust_web.py — JavaScript (10 Funktionen):**
+`mcLoad`, `mcSaveBridge`, `mcSaveNode`, `mcSaveBehaviour`, `mcSaveAll`,
+`mcRenderChannels`, `mcSaveChannelForwards`, `mcRenderMapLinks`,
+`mcLoadNeighbours`, `mcRenderNeighbours`
+
+**Neu: PATCH /api/meshcore/channels:**
+Schreibt nur `gust_forward`/`hf_forward` in `meshcore.json` —
+Name/Key werden nie verändert. Aktualisiert `channel_map` in-memory
+sofort (kein Bridge-Neustart nötig).
+
+**gust_web.py — Backend:**
+- `_handle_config`: liefert `meshcore_channels` aus `self._mc_bridge.channel_map`
+  (ohne Schlüssel). Fallback `[]` wenn Bridge nicht aktiv.
+- `applyStatusPush()`: ruft `window._mcStatusHandler(mc)` auf wenn
+  `data.meshcore_bridge` vorhanden → aktiviert Live-Status-Badge im Tab.
+
+**gust_meshcore_bridge.py — neue Methode:**
+
+```python
+def get_neighbours(self) -> list[dict]:
+    """
+    Baut Neighbour-Liste aus self.mc.contacts + self.mc.self_info.
+    Felder: name, pubkey_prefix, callsign, lat, lon, dist_km,
+            snr_db, hops, last_heard_ago, own.
+    Eigener Node als erster Eintrag (own=True).
+    Geodaten: int Mikrograd → float Dezimalgrad.
+    Distanz: Haversine-Formel.
+    """
+```
+
+**gust.py:**
+- `_bridge = None` Vorbelegen vor WebServer-Aufruf.
+- `server._mc_bridge = _bridge` nach Bridge-Erzeugung.
+- `_mc_status["neighbours"] = _bridge.get_neighbours()` im 60s-Status-Event.
+
+### Karten-Links (Externe Kartenanbieter)
+
+Für Nodes mit Positionsdaten werden drei Links erzeugt — analog zum
+bestehenden Positions-Frame-Modal-Muster:
+
+```javascript
+// OSM — Hauptmarker auf eigenem Node, Ausschnitt über alle Nodes
+`https://www.openstreetmap.org/?mlat=${own.lat}&mlon=${own.lon}&zoom=12`
+
+// Google Maps — alle Nodes als Wegpunkte (kein API-Key nötig)
+`https://www.google.com/maps/dir/${[own,...others].map(n=>`${n.lat},${n.lon}`).join('/')}`
+
+// GeoURI — öffnet native Karten-App auf Mobilgeräten
+`geo:${own.lat},${own.lon}?q=${own.lat},${own.lon}`
+```
+
+**Entscheidung gegen eingebettete Karte (Leaflet/Tiles):**
+- Zero Performance-Impact auf Daemon und WebGUI
+- Kein Tile-Server nötig (RPi-offline-fähig)
+- Konsistent mit bestehendem Modal-Muster
+- Externer Tab akzeptabel für Betriebstool
+
+### MeshCore Python Library — Befehlsübersicht (Companion)
+
+Vollständiger Zugriff aus GUST via `self.mc.commands.*`:
+
+**Messaging:**
+- `send_msg(dst, text)` — Direktnachricht mit ACK
+- `send_msg_with_retry(dst, text, max_attempts=3)` — Retry + Flood-Fallback
+- `send_chan_msg(chan_idx, text)` — Kanal-Broadcast (für Antworten!)
+- `send_cmd(dst, cmd)` — Command-Nachricht (nicht Text)
+
+**Kanäle: kein Abonnieren/Abbestellen nötig** — gesetzter Kanal-Slot
+ist automatisch aktiv. `set_channel(idx, name, key)` = Abonnieren,
+Slot löschen = Abbestellen. Kanal-Filterung läuft in GUST (gust_forward).
+
+**Antworten auf empfangene Frames:**
+```python
+# Zurück in denselben Kanal:
+await mc.commands.send_chan_msg(event.payload["channel_idx"], "ACK 73 de OE3GAS")
+# Direktnachricht an Absender (falls Kontakt bekannt):
+contact = mc.get_contact_by_key_prefix(event.payload["pubkey_prefix"])
+if contact:
+    await mc.commands.send_msg(contact, "Direkt-ACK")
+```
+
+**Device-Konfiguration:** `set_name`, `set_coords`, `set_time`,
+`set_tx_power`, `set_radio`, `send_advert`, `reboot`, `get_bat`,
+`get_self_telemetry`, `send_device_query`
+
+**Kontakte:** `get_contacts`, `get_contact_by_name`,
+`get_contact_by_key_prefix`, `send_path_discovery`
+
+**Statistik/Diagnose:** `get_stats_core/radio/packets`,
+`send_statusreq(dst)`, `send_telemetry_req(dst)`, `send_trace`
+
+### Zwei-Pfad-Architektur: WebGUI vs. HF-Forward (Juni 2026)
+
+**Problem (behoben):** `_process_channel_msg()` fragmentierte jede
+MC-Nachricht in 14-Byte-Chunks → `fragCache`-Lärm im WebGUI-Monitor
+(mehrere Fragment-Zeilen pro Nachricht). Ursache: HF-TX-Pfad und
+WebGUI-Pfad liefen über denselben Fragment-EventBus.
+
+**Lösung: Entkopplung in zwei Pfade:**
+
+```python
+# Pfad A — immer: ein RX_FRAME (frag_total=1) für WebGUI/Inbox/MQTT
+single_payload = encode_text_fragment("BROADCAST", full_text, seq, 0, 1)
+await self.bus.publish(make_rx_frame_event(frame_single))
+
+# Pfad B — opt-in: HF-Forward via TxGateway
+if ch_info.get("hf_forward", False) and self._gateway is not None:
+    self._gateway.enqueue({"frame_type": "text",
+                           "data": {"text": full_text, "to": "BROADCAST"},
+                           "from": from_call}, priority=4)
+```
+
+**Drei Entscheidungsebenen in meshcore.json:**
+
+| Flag | Wert | Effekt |
+|---|---|---|
+| `gust_forward` | `false` | Kanal komplett ignorieren (kein WebGUI, kein HF) |
+| `gust_forward` | `true` | In WebGUI anzeigen (Standard, immer wenn aufgenommen) |
+| `hf_forward` | `true` | Zusätzlich auf HF senden via TxGateway (opt-in) |
+| `hf_forward` | `false` | Nur anzeigen, nicht senden (**Default** — niemals versehentlich) |
+
+**meshcore.json Beispiel:**
+```json
+{"channels": {"slots": [
+  {"index": 6, "name": "GUST",  "gust_forward": true, "hf_forward": true},
+  {"index": 1, "name": "at-hl", "gust_forward": true, "hf_forward": false},
+  {"index": 0, "name": "Public","gust_forward": false}
+]}}
+```
+
+**Wiring:** `bridge._gateway = gateway` in `gust.py` nach Bridge-Erzeugung
+(analog ADR-18). Default `self._gateway = None` → Warning statt Exception
+wenn `hf_forward=true` aber Gateway nicht gesetzt.
+
+**WebGUI-Effekt:** `frag_total=1` → `fragCache` rendert sofort als
+`assembled-row`, keine Einzel-Fragment-Zeilen. Kein WebGUI-Code geändert.
+
+**TxGateway-Pfad:** `frame_type="text"` → `_encode_payload()` →
+`fragment_text()` intern → GUST 0x40-Frames → HF-TX. Identisch zum
+Web-UI-TX-Pfad (priority=4, Slot-terminiert).
+
+**P6-20 Status:** HF-Forward implementiert ✅. Noch offen:
+direktes Antworten aus WebGUI via `send_chan_msg` (neuer API-Endpunkt).
+
+### Folge-Implementierungen (offen)
+
+- **WebGUI-Antwort-Funktion**: `send_chan_msg` aus Monitor-Tab auslösen,
+  neuer Endpunkt `POST /api/meshcore/tx/channel`
+- **Kanal-Management aus WebGUI**: `set_channel`/`get_channel` direkt
+  statt nur über meshcore-cli (neue Buttons in Card 4)
+- **node_* Migration**: `node_callsign`, `node_name`, `connection_port`,
+  `connection_baudrate` aktuell in gateway.json gespeichert,
+  aber Bridge liest noch aus meshcore.json. Migration auf gateway.json
+  als Single-Source-of-Truth geplant.
+- **T-MC-06–09**: Tests für BLE-Companion, TX-Pfad, Repeater-CLI,
+  Auto-Reconnect (siehe gust_testplan.md)
+
+---
+
+## 37. WebGUI UI-Verbesserungen — Button-Konsistenz & MeshCore-Layout (Juni 2026)
+
+### Problem: Inkonsistente Button-Stile
+
+Vier verschiedene Button-Varianten existierten parallel:
+- `<button>` nackt (Browser-Default) auf Allgemein/Gateway/RX/SDR-Tabs
+- `class="btn"` auf MeshCore, TX-Senden, Status
+- `class="trx-btn trx-btn-primary"` auf CAT&TRX-Profile, AUTH-Keys
+- `class="trx-btn"` für Sekundär-Actions
+
+### Lösung: Einheitliche `.btn`-Klasse
+
+**Schritt 1:** Alle 4 nackten `<button>`-Speichern-Elemente (cfgSaveGeneral,
+cfgSaveGatewayTx, cfgSaveAudioRx, cfgSaveSdr) bekommen `class="btn"`.
+
+**Schritt 2:** `.trx-btn-primary` delegiert auf `.btn`-Farblogik:
+```css
+.trx-btn-primary { background:var(--accent); color:#fff; border-color:var(--accent) }
+[data-theme="dark"] .trx-btn-primary { color:#000 }
+```
+
+**Künftige Regel:** Jeder primäre Action-Button → `class="btn"`.
+Sekundär-Actions (Speichern als…, Aktivieren, Aktualisieren) → `class="btn secondary"`.
+Gefahr/Löschen → `class="btn danger"` oder `class="trx-btn trx-btn-danger"`.
+
+### Button-Textfarbe Theme-korrekt
+
+**Problem:** `.btn` hatte `color:#000` als Basis — funktioniert im
+Dark-Theme (heller Akzent), aber nicht in Aero/Light (blauer Akzent `#0078d4`).
+
+**Lösung:** Basis `color:#fff`, Dark-Theme-Override `color:#000`:
+```css
+.btn { color: #fff; ... }
+[data-theme="dark"] .btn:not(.secondary):not(.btn-secondary):not(.danger) { color:#000 !important }
+[data-theme="dark"] .subtab-btn.active { color:#000 !important }
+```
+`.subtab-btn.active` ebenso von `#000` auf `#fff` Basis umgestellt.
+
+### cfg-info Icon: inline neben Feldbezeichnung
+
+**Problem:** `<label>` ist `flex-direction:column` → `.cfg-info` stand
+unter dem Label-Text statt daneben.
+
+**Lösung:** Neue Klasse `.cfg-label-row` (flex-direction:row):
+```css
+.cfg-label-row { display:flex; flex-direction:row; align-items:center; gap:0 }
+```
+Alle Labels in `cfgsub-meshcore` wrappen Labeltext + `.cfg-info` in
+`<span class="cfg-label-row">`. Andere cfgedit-Tabs unberührt.
+
+### MeshCore Konfig-Layout: 2 gleichbreite Blöcke
+
+Endgültiges Layout der cfgsub-meshcore-Seite:
+- **2-Spalten-Grid** (`1fr 1fr`): Block 1 „Bridge-Verbindung" (links) +
+  Block 2 „Companion Node" (rechts)
+- Block 1 enthält Bridge-Toggle, Pfad, HR-Trenner, alle Verbindungsparameter
+- **Status-Banner** `#mc-cfg-status-bar` oben zeigt Bridge-Status —
+  die frühere `#mc-live-status`-Box in Block 1 wurde entfernt
+- **Ein gemeinsamer Speichern-Button** `mcSaveAll()` unterhalb des Grids
+- **Karten 3+4** (Kanäle + Neighbours) weiterhin volle Breite darunter
+
+### Kanal-Forwarding-Editor
+
+Kanal-Tabelle zeigt editierbare Checkboxen für `gust_forward` und
+`hf_forward` pro Slot. Neuer Endpunkt `PATCH /api/meshcore/channels`
+schreibt nur die Forwarding-Flags in `meshcore.json` — Name/Key
+werden nie verändert. `channel_map` wird in-memory sofort aktualisiert.
+
+**`hf_forward` in meshcore.json manuell setzen** für Slot 6 (GUST):
+```json
+{"index": 6, "name": "GUST", "gust_forward": true, "hf_forward": true}
+```
+
 ---
 
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · §32 P8-14 LDPC-Soft schlägt RS bei −10 dB (Juni 2026) · §33 MeshCore Bridge-Repeater & KISS (Juni 2026) · §34 Web-UI Darstellungs-Details (Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*
+*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · §32 P8-14 LDPC-Soft schlägt RS bei −10 dB (Juni 2026) · §33 MeshCore Bridge-Repeater & KISS (Juni 2026) · §34 Web-UI Darstellungs-Details (Juni 2026) · §35 Web-UI Tab-Struktur (Juni 2026, P5-24) · §36 MeshCore WebGUI-Konfigurationsseite (Juni 2026) · §37 WebGUI UI-Verbesserungen Button-Konsistenz & Layout (Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*
