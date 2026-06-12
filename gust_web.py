@@ -1628,7 +1628,7 @@ h2:first-child { margin-top: 0; }
                   <label style="margin-top:.6rem">
                     Kommentar (optional)
                     <input id="auth-edit-comment" type="text"
-                           placeholder="Bilateraler Schlüssel mit OE1XTU"
+                           placeholder="Bilateraler Schlüssel mit …"
                            style="margin-top:4px">
                   </label>
                 </div>
@@ -4952,9 +4952,12 @@ async function cfgRenderAuthList() {
 function _authBuildSidebar() {
   const list = document.getElementById('auth-key-list');
   if (!list) return;
-  list.innerHTML = _authKeys2.map((k, i) => `
-    <div class="auth-item ${i===_authCurIdx?'auth-sel':''}"
-         onclick="_authSelectIdx(${i})">
+  const sorted = [..._authKeys2]
+    .map((k, i) => ({...k, _origIdx: i}))
+    .sort((a, b) => (a.callsign||'').localeCompare(b.callsign||''));
+  list.innerHTML = sorted.map((k) => `
+    <div class="auth-item ${k._origIdx===_authCurIdx?'auth-sel':''}"
+         onclick="_authSelectIdx(${k._origIdx})">
       🔑 <span>${k.callsign || '?'}</span>
     </div>`).join('')
     || '<div style="padding:8px 12px;font-size:12px;color:var(--text2)">Keine Partner</div>';
