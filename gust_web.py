@@ -218,6 +218,15 @@ _HTML_UI = r"""<!DOCTYPE html>
 [data-theme="mono"] .trx-tog-sl {
   border-radius: 0 !important;
 }
+[data-theme="mono"] nav button.active {
+  font-weight: 700;
+  border-width: 2px;
+}
+[data-theme="mono"] .sub-nav button.active,
+[data-theme="mono"] .subtab-btn.active {
+  font-weight: 700;
+  border-width: 2px;
+}
 [data-theme="mono"] .trx-item.trx-active-item,
 [data-theme="mono"] .auth-item.auth-sel {
   background: var(--text) !important;
@@ -1395,6 +1404,7 @@ h2:first-child { margin-top: 0; }
           <button class="subtab-btn" data-sub="audio_rx">RX / Decoder</button>
           <button class="subtab-btn" data-sub="cat_trx">CAT &amp; TRX-Profile</button>
           <button class="subtab-btn" data-sub="sdr">SDR</button>
+          <button class="subtab-btn" data-sub="meshcore">🔷 MeshCore</button>
           <button class="subtab-btn" data-sub="auth">🔑 AUTH-Keys</button>
         </div>
 
@@ -1786,6 +1796,239 @@ h2:first-child { margin-top: 0; }
             </div>
           </div>
         </div>
+
+        <!-- ══════════════════════════════════════════════════════
+             MeshCore-Konfiguration (cfgsub-meshcore)
+        ══════════════════════════════════════════════════════ -->
+        <div class="cfgedit-sub" id="cfgsub-meshcore" style="display:none">
+
+          <!-- Status-Banner (live, aus /api/status) -->
+          <div id="mc-cfg-status-bar" style="
+              display:none;
+              padding:.5rem 1rem;
+              border-radius:6px;
+              margin-bottom:1rem;
+              font-size:.85rem;
+              background:var(--success-bg,#1a3a1a);
+              color:var(--success,#4caf50)">
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:start">
+
+            <!-- ── Karte 1: Bridge-Verbindung ── -->
+            <div class="cfg-card">
+              <h3>Bridge-Verbindung</h3>
+
+              <label class="cfg-toggle">
+                <input id="mc-enabled" type="checkbox">
+                MeshCore Bridge aktiviert
+                <span class="cfg-info"
+                  title="Aktiviert die gust_meshcore_bridge.py beim Daemon-Start.
+Erfordert 'enabled: true' in gateway.json unter 'meshcore'.
+Änderung wird beim nächsten Daemon-Neustart wirksam.">i</span>
+              </label>
+
+              <label style="margin-top:.6rem">
+                meshcore.json Pfad
+                <span class="cfg-info"
+                  title="Pfad zur meshcore.json — enthält Kanalschlüssel.
+Nicht ins Git-Repo einchecken (.gitignore prüfen).">i</span>
+                <input id="mc-config-path" type="text"
+                       placeholder="meshcore.json"
+                       style="font-family:monospace;font-size:12px">
+              </label>
+
+              <div style="margin-top:.8rem">
+                <button onclick="mcSaveBridge()">💾 Speichern</button>
+              </div>
+
+              <!-- Live-Status (aus loadStatus()) -->
+              <div id="mc-live-status" style="
+                  margin-top:.8rem;
+                  padding:.4rem .7rem;
+                  border-radius:4px;
+                  font-size:.8rem;
+                  background:var(--bg3,#1c2330);
+                  border:1px solid var(--border,#30363d);
+                  display:none">
+                <span id="mc-live-dot">●</span>
+                <span id="mc-live-text">—</span>
+              </div>
+            </div>
+
+            <!-- ── Karte 2: Companion Node ── -->
+            <div class="cfg-card">
+              <h3>Companion Node</h3>
+
+              <label>
+                Eigenes Rufzeichen (FROM-Feld in HF-Frames)
+                <input id="mc-callsign" type="text"
+                       maxlength="9" placeholder="OE3GAS"
+                       style="text-transform:uppercase">
+              </label>
+
+              <label style="margin-top:.5rem">
+                Erwarteter Node-Name
+                <span class="cfg-info"
+                  title="GUST loggt eine Warnung wenn beim Verbinden ein
+abweichender Node-Name erkannt wird. Leer = keine Prüfung.">i</span>
+                <input id="mc-node-name" type="text"
+                       placeholder="AT-HL-OE3GAS-🦚">
+              </label>
+
+              <label style="margin-top:.5rem">
+                Serieller Port
+                <span class="cfg-info"
+                  title="COM-Port des Companion-Nodes (Windows: COM18,
+Linux: /dev/ttyUSB0). Wird in meshcore.json gespeichert,
+nicht in gateway.json.">i</span>
+                <input id="mc-port" type="text"
+                       placeholder="COM18"
+                       style="font-family:monospace;width:120px">
+              </label>
+
+              <label style="margin-top:.5rem">
+                Baudrate
+                <select id="mc-baudrate" style="width:120px">
+                  <option value="115200" selected>115200</option>
+                  <option value="57600">57600</option>
+                  <option value="38400">38400</option>
+                </select>
+              </label>
+
+              <div style="margin-top:.8rem">
+                <button onclick="mcSaveNode()">💾 Speichern</button>
+              </div>
+            </div>
+
+          </div><!-- /grid row 1 -->
+
+          <!-- ── Karte 3: Bridge-Verhalten (volle Breite) ── -->
+          <div class="cfg-card" style="margin-top:1rem">
+            <h3>Bridge-Verhalten</h3>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem">
+
+              <label>
+                Auto-Fetch-Intervall (s)
+                <span class="cfg-info"
+                  title="Wie oft der Companion-Node nach wartenden
+Nachrichten abgefragt wird. Standard: 5 s.">i</span>
+                <input id="mc-fetch-interval" type="number"
+                       min="1" max="60" value="5" style="width:80px">
+              </label>
+
+              <label>
+                Verbindungs-Timeout (s)
+                <span class="cfg-info"
+                  title="Timeout beim Verbindungsaufbau zum Companion-Node.">i</span>
+                <input id="mc-timeout" type="number"
+                       min="1" max="120" value="10" style="width:80px">
+              </label>
+
+              <label>
+                Reconnect-Delay (s)
+                <span class="cfg-info"
+                  title="Wartezeit nach Verbindungsabbruch vor dem
+nächsten Verbindungsversuch.">i</span>
+                <input id="mc-reconnect-delay" type="number"
+                       min="5" max="300" value="30" style="width:80px">
+              </label>
+
+            </div>
+
+            <div style="margin-top:.7rem">
+
+              <label class="cfg-toggle">
+                <input id="mc-forward-public" type="checkbox">
+                Public Channel (Slot 0) nach HF weiterleiten
+                <span class="cfg-info"
+                  title="Empfohlen: Aus. Der Public Channel enthält
+viel Fremdverkehr und ist für HF-Übertragung ungeeignet.">i</span>
+              </label>
+
+              <label class="cfg-toggle" style="margin-top:.4rem">
+                <input id="mc-log-raw" type="checkbox">
+                Raw-Frame-Logging (alle MeshCore-Binärframes ins Debug-Log)
+                <span class="cfg-info"
+                  title="Nur für Protokoll-Analyse. Erzeugt sehr viel
+Log-Output — nicht im Dauerbetrieb aktivieren.">i</span>
+              </label>
+
+            </div>
+
+            <label style="margin-top:.7rem">
+              Unbekannter Absender
+              <span class="cfg-info"
+                title="Wenn kein Rufzeichen aus dem MeshCore-Node-Namen
+extrahierbar ist:
+  pubkey_prefix: erste 6 Hex-Zeichen als Pseudo-Rufzeichen
+  skip:          Nachricht verwerfen
+  placeholder:   UNKNWN als Rufzeichen verwenden">i</span>
+              <select id="mc-unknown-sender" style="max-width:260px">
+                <option value="pubkey_prefix">pubkey_prefix — erste 6 Hex-Byte</option>
+                <option value="skip">skip — Nachricht verwerfen</option>
+                <option value="placeholder">placeholder — "UNKNWN"</option>
+              </select>
+            </label>
+
+            <div style="margin-top:.8rem">
+              <button onclick="mcSaveBehaviour()">💾 Speichern</button>
+            </div>
+          </div>
+
+          <!-- ── Karte 4: Kanäle (Slots, read-only Übersicht) ── -->
+          <div class="cfg-card" style="margin-top:1rem">
+            <h3>
+              Kanäle (Slots)
+              <span style="font-size:.8rem;font-weight:normal;
+                           color:var(--text2,#8b949e);margin-left:.5rem">
+                aus meshcore.json — Schlüssel nur dort bearbeiten
+              </span>
+            </h3>
+
+            <div id="mc-channels-table" style="font-size:.85rem">
+              <div style="color:var(--text2,#8b949e);font-size:.8rem">
+                Lade Kanäle …
+              </div>
+            </div>
+
+            <!-- Karten-Links -->
+            <div id="mc-map-links" style="margin-top:.7rem;display:none;
+                                          font-size:.85rem">
+            </div>
+
+            <div style="margin-top:.6rem;font-size:.78rem;
+                        color:var(--text2,#8b949e)">
+              ⚠ Kanalschlüssel werden in
+              <code style="font-size:.78rem">meshcore.json</code>
+              gespeichert — Datei von Versionskontrolle ausschließen.
+              Schlüssel hier nicht im Klartext angezeigt.
+            </div>
+          </div>
+
+          <!-- ── Karte 5: Neighbours ── -->
+          <div class="cfg-card" style="margin-top:1rem">
+            <h3>
+              Nachbarn (Neighbours)
+              <span style="font-size:.8rem;font-weight:normal;
+                           color:var(--text2,#8b949e);margin-left:.5rem">
+                live vom Companion — nur sichtbar wenn Bridge verbunden
+              </span>
+              <button onclick="mcLoadNeighbours()"
+                      style="float:right;font-size:.75rem;
+                             padding:2px 8px;margin-top:0">
+                ↻ Aktualisieren
+              </button>
+            </h3>
+
+            <div id="mc-neighbours-list"
+                 style="font-size:.85rem;color:var(--text2,#8b949e)">
+              Noch nicht geladen.
+            </div>
+          </div>
+
+        </div><!-- /#cfgsub-meshcore -->
 
 </div><!-- /#tab-cfgedit -->
 
@@ -2281,6 +2524,321 @@ function clearForm(type) {
 }
 
 // ── Alter Konfig-/Hamlib-/Tune-Block entfernt (durch cfgedit-Tab ersetzt) ──
+
+// ══════════════════════════════════════════════════════════════
+// MESHCORE-KONFIG (cfgsub-meshcore)
+// ══════════════════════════════════════════════════════════════
+
+// Sub-Tab-Aktivierung: Daten laden wenn MeshCore-Tab geöffnet wird
+document.querySelectorAll('.subtab-btn').forEach(btn => {
+  if (btn.dataset.sub === 'meshcore') {
+    btn.addEventListener('click', mcLoad);
+  }
+});
+
+// ── Daten laden ──────────────────────────────────────────────
+
+async function mcLoad() {
+  try {
+    const cfg = await apiFetch('/api/config');
+    const mc  = cfg.meshcore || {};
+    const br  = mc.bridge    || {};
+
+    // Karte 1: Bridge-Verbindung
+    const enEl = document.getElementById('mc-enabled');
+    if (enEl) enEl.checked = !!mc.enabled;
+    const cpEl = document.getElementById('mc-config-path');
+    if (cpEl) cpEl.value = mc.config ?? 'meshcore.json';
+
+    // Karte 2: Companion Node — aus meshcore.json lesen via /api/config
+    // gateway.json speichert nur "meshcore.enabled" und "meshcore.config"
+    // Die restlichen Werte kommen aus meshcore.json selbst — wir zeigen
+    // sie read-only aus dem zuletzt bekannten Status (mc.node_*)
+    const csEl = document.getElementById('mc-callsign');
+    if (csEl) csEl.value = mc.node_callsign ?? cfg.callsign ?? '';
+    const nnEl = document.getElementById('mc-node-name');
+    if (nnEl) nnEl.value = mc.node_name ?? '';
+    const ptEl = document.getElementById('mc-port');
+    if (ptEl) ptEl.value = mc.connection_port ?? '';
+    const bdEl = document.getElementById('mc-baudrate');
+    if (bdEl) bdEl.value = mc.connection_baudrate ?? 115200;
+
+    // Karte 3: Bridge-Verhalten (aus gateway.json > meshcore.bridge)
+    _mcSetVal('mc-fetch-interval',    br.auto_fetch_interval_s  ?? 5);
+    _mcSetVal('mc-timeout',           br.timeout_s              ?? 10);
+    _mcSetVal('mc-reconnect-delay',   br.reconnect_delay_s      ?? 30);
+    _mcSetCheck('mc-forward-public',  !!br.forward_public_channel);
+    _mcSetCheck('mc-log-raw',         !!br.log_raw_frames);
+    _mcSetVal('mc-unknown-sender',    br.unknown_sender_policy  ?? 'pubkey_prefix');
+
+    // Karte 4: Kanal-Tabelle rendern
+    mcRenderChannels(cfg.meshcore_channels || []);
+
+    // Karte 5: Neighbours — Platzhalter, werden separat per Button geladen
+    const nbEl = document.getElementById('mc-neighbours-list');
+    if (nbEl) nbEl.innerHTML =
+      '<span style="color:var(--text2)">Klick auf ↻ Aktualisieren zum Laden.</span>';
+
+    // Live-Status aus letztem loadStatus()-Aufruf einblenden
+    mcUpdateLiveStatus(window._lastMcBridgeStatus);
+
+  } catch(e) {
+    cfgBanner('MeshCore: Fehler beim Laden — ' + e.message, false);
+  }
+}
+
+// ── Speicher-Funktionen ──────────────────────────────────────
+
+async function mcSaveBridge() {
+  try {
+    await cfgPatch('meshcore', {
+      enabled: document.getElementById('mc-enabled')?.checked ?? false,
+      config:  document.getElementById('mc-config-path')?.value.trim() || 'meshcore.json',
+    });
+    cfgBanner('MeshCore Bridge-Einstellungen gespeichert — Neustart erforderlich');
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+async function mcSaveNode() {
+  // Node-Einstellungen landen in gateway.json > meshcore.node_*
+  // (wird von gust_meshcore_bridge.py beim Start ausgewertet)
+  try {
+    await cfgPatch('meshcore', {
+      node_callsign:        (document.getElementById('mc-callsign')?.value || '').trim().toUpperCase(),
+      node_name:            (document.getElementById('mc-node-name')?.value || '').trim(),
+      connection_port:      (document.getElementById('mc-port')?.value || '').trim(),
+      connection_baudrate:  parseInt(document.getElementById('mc-baudrate')?.value || '115200'),
+    });
+    cfgBanner('Companion-Node-Einstellungen gespeichert — Neustart erforderlich');
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+async function mcSaveBehaviour() {
+  try {
+    await cfgPatch('meshcore.bridge', {
+      auto_fetch_interval_s:  parseInt(document.getElementById('mc-fetch-interval')?.value || '5'),
+      timeout_s:              parseInt(document.getElementById('mc-timeout')?.value || '10'),
+      reconnect_delay_s:      parseInt(document.getElementById('mc-reconnect-delay')?.value || '30'),
+      forward_public_channel: document.getElementById('mc-forward-public')?.checked ?? false,
+      log_raw_frames:         document.getElementById('mc-log-raw')?.checked ?? false,
+      unknown_sender_policy:  document.getElementById('mc-unknown-sender')?.value || 'pubkey_prefix',
+    });
+    cfgBanner('Bridge-Verhalten gespeichert');
+  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+}
+
+// ── Kanal-Tabelle ─────────────────────────────────────────────
+
+function mcRenderChannels(channels) {
+  const el = document.getElementById('mc-channels-table');
+  if (!el) return;
+
+  if (!channels || channels.length === 0) {
+    el.innerHTML =
+      '<span style="color:var(--text2,#8b949e);font-size:.8rem">' +
+      'Keine Kanäle in meshcore.json gefunden oder Bridge nicht verbunden.' +
+      '</span>';
+    return;
+  }
+
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:.82rem">';
+  html += '<thead><tr style="color:var(--text2);font-size:.78rem;text-transform:uppercase;letter-spacing:.5px">' +
+          '<th style="padding:4px 8px;text-align:left;border-bottom:1px solid var(--border)">Slot</th>' +
+          '<th style="padding:4px 8px;text-align:left;border-bottom:1px solid var(--border)">Name</th>' +
+          '<th style="padding:4px 8px;text-align:left;border-bottom:1px solid var(--border)">→ HF-Forward</th>' +
+          '</tr></thead><tbody>';
+
+  channels.forEach((ch, i) => {
+    const fwd = ch.gust_forward;
+    const fwdHtml = fwd
+      ? '<span style="color:var(--success,#3fb950)">✓ HF</span>'
+      : '<span style="color:var(--text2,#8b949e)">✗ Aus</span>';
+    const nameStyle = ch.name === 'GUST'
+      ? 'color:var(--mc,#9f7aea);font-weight:bold'
+      : '';
+    const bg = i % 2 === 0 ? '' : 'background:var(--bg3,#1c2330)';
+    html += `<tr style="${bg}">` +
+            `<td style="padding:4px 8px;font-family:monospace">${ch.index ?? i}</td>` +
+            `<td style="padding:4px 8px;${nameStyle}">${_esc(ch.name || '?')}</td>` +
+            `<td style="padding:4px 8px">${fwdHtml}</td>` +
+            `</tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+
+  // Karten-Links bauen (Nodes mit Position)
+  mcRenderMapLinks(channels);
+}
+
+// ── Karten-Links ──────────────────────────────────────────────
+
+function mcRenderMapLinks(channels) {
+  // Wird aufgerufen sobald Node-Positionsdaten aus Neighbours vorliegen
+  // Hier nur Platzhalter — mcRenderNeighbours() füllt ihn aus
+}
+
+// ── Neighbours ───────────────────────────────────────────────
+
+async function mcLoadNeighbours() {
+  const el = document.getElementById('mc-neighbours-list');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text2)">Lade …</span>';
+
+  try {
+    // Neighbours werden aus /api/status > meshcore_bridge.neighbours gelesen
+    // Falls der Daemon dieses Feld noch nicht liefert: Fallback-Meldung
+    const st = await apiFetch('/api/status');
+    const nb = st.meshcore_bridge?.neighbours;
+
+    if (!nb || nb.length === 0) {
+      el.innerHTML =
+        '<span style="color:var(--text2,#8b949e);font-size:.82rem">' +
+        'Keine Nachbarn bekannt oder Bridge nicht verbunden.<br>' +
+        '<span style="font-size:.75rem">Tipp: ' +
+        '<code>meshcore-cli -s COM18 get_channels</code> zeigt aktive Kanäle.' +
+        '</span></span>';
+      return;
+    }
+    mcRenderNeighbours(nb);
+  } catch(e) {
+    el.innerHTML =
+      '<span style="color:var(--error,#f85149)">Fehler: ' + _esc(e.message) + '</span>';
+  }
+}
+
+function mcRenderNeighbours(nodes) {
+  const el = document.getElementById('mc-neighbours-list');
+  if (!el || !nodes) return;
+
+  // Karten-Links bauen (Nodes mit lat/lon)
+  const withPos = nodes.filter(n => n.lat != null && n.lon != null);
+  const mapLinksEl = document.getElementById('mc-map-links');
+  if (mapLinksEl && withPos.length > 0) {
+    const own = withPos.find(n => n.own) || withPos[0];
+    const others = withPos.filter(n => !n.own);
+
+    // OpenStreetMap — eigener Node als Hauptmarker
+    const osmUrl = `https://www.openstreetmap.org/?mlat=${own.lat}&mlon=${own.lon}&zoom=12`;
+
+    // Google Maps — alle Nodes als Wegpunkte
+    const gmWp = [own, ...others].map(n => `${n.lat},${n.lon}`).join('/');
+    const gmUrl = `https://www.google.com/maps/dir/${gmWp}`;
+
+    // GeoURI — für mobile Karten-App
+    const geoUrl = `geo:${own.lat},${own.lon}?q=${own.lat},${own.lon}`;
+
+    mapLinksEl.innerHTML =
+      '🗺 Nodes auf Karte: ' +
+      `<a href="${osmUrl}" target="_blank" style="color:var(--accent)">OpenStreetMap</a> · ` +
+      `<a href="${gmUrl}"  target="_blank" style="color:var(--accent)">Google Maps</a> · ` +
+      `<a href="${geoUrl}" style="color:var(--accent)">📱 Karten-App</a>`;
+    mapLinksEl.style.display = '';
+  }
+
+  // Node-Cards rendern
+  let html = '';
+  nodes.forEach(n => {
+    const snrVal  = n.snr_db != null ? n.snr_db.toFixed(1) + ' dB' : '—';
+    const snrCol  = n.snr_db == null ? 'var(--text2)'
+                  : n.snr_db >= 6  ? 'var(--success,#3fb950)'
+                  : n.snr_db >= 0  ? 'var(--warn,#d29922)'
+                  : 'var(--error,#f85149)';
+    const hopStr  = n.hops != null
+                  ? (n.hops === 0 ? '0 (direkt)' : String(n.hops))
+                  : '—';
+    const posStr  = n.lat != null && n.lon != null
+                  ? `📍 ${n.lat.toFixed(4)}° N · ${n.lon.toFixed(4)}° E`
+                  : '<span style="color:var(--text2)">— keine Geodaten</span>';
+    const distStr = n.dist_km != null
+                  ? `~${n.dist_km.toFixed(1)} km`
+                  : '';
+    const heard   = n.last_heard_ago != null
+                  ? `vor ${n.last_heard_ago}`
+                  : '—';
+
+    // Einzel-Karten-Link wenn Position vorhanden
+    const singleMap = (n.lat != null && n.lon != null)
+      ? ` <a href="https://www.openstreetmap.org/?mlat=${n.lat}&mlon=${n.lon}&zoom=14"
+             target="_blank" style="font-size:.75rem;color:var(--accent)">🗺</a>`
+      : '';
+
+    html +=
+      `<div style="background:var(--bg3,#1c2330);border:1px solid var(--border,#30363d);` +
+      `border-radius:5px;padding:.6rem .9rem;margin-bottom:.5rem">` +
+      `<div style="display:flex;align-items:center;gap:.5rem">` +
+      `<span style="color:var(--mc,#9f7aea);font-weight:bold;font-size:.9rem">` +
+      `${_esc(n.name || '?')}${singleMap}</span>` +
+      (n.own ? '<span style="font-size:.72rem;color:var(--text2)">(eigener Node)</span>' : '') +
+      `</div>` +
+      `<div style="display:flex;gap:1.2rem;margin-top:.3rem;flex-wrap:wrap;font-size:.8rem">` +
+      `<span>SNR <b style="color:${snrCol}">${snrVal}</b></span>` +
+      `<span>Hops <b>${_esc(hopStr)}</b></span>` +
+      `<span>Gehört <b>${_esc(heard)}</b></span>` +
+      (distStr ? `<span>Distanz <b>${_esc(distStr)}</b></span>` : '') +
+      `</div>` +
+      `<div style="margin-top:.2rem;font-size:.78rem;color:var(--text2)">${posStr}</div>` +
+      `</div>`;
+  });
+  el.innerHTML = html || '<span style="color:var(--text2)">Keine Nachbarn.</span>';
+}
+
+// ── Live-Status aus loadStatus() einblenden ──────────────────
+
+// Wird von loadStatus() aufgerufen wenn meshcore_bridge-Daten ankommen
+window._lastMcBridgeStatus = null;
+const _origMcStatusHandler = window._mcStatusHandler;
+window._mcStatusHandler = function(mc) {
+  window._lastMcBridgeStatus = mc;
+  mcUpdateLiveStatus(mc);
+};
+
+function mcUpdateLiveStatus(mc) {
+  if (!mc) return;
+  const bar = document.getElementById('mc-cfg-status-bar');
+  const dot = document.getElementById('mc-live-dot');
+  const txt = document.getElementById('mc-live-text');
+  const box = document.getElementById('mc-live-status');
+
+  if (bar) {
+    if (mc.enabled) {
+      const ok = mc.connected;
+      bar.style.display = '';
+      bar.style.background = ok
+        ? 'var(--success-bg,#1a3a1a)'
+        : 'var(--warn-bg,#3a2e1a)';
+      bar.style.color = ok
+        ? 'var(--success,#4caf50)'
+        : 'var(--warn,#d29922)';
+      bar.textContent = ok
+        ? `● Bridge verbunden — ${mc.port || '?'}`
+        : `⚠ Bridge getrennt — ${mc.port || '?'} — Neustart prüfen`;
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+
+  if (dot && txt && box) {
+    box.style.display = mc.enabled ? '' : 'none';
+    if (mc.enabled) {
+      dot.style.color  = mc.connected ? 'var(--success,#3fb950)' : 'var(--error,#f85149)';
+      dot.textContent  = '●';
+      txt.textContent  = mc.connected
+        ? `Verbunden · Port: ${mc.port || '?'}`
+        : `Getrennt · Port: ${mc.port || '?'}`;
+    }
+  }
+}
+
+// ── Hilfsfunktionen ──────────────────────────────────────────
+
+function _mcSetVal(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.value = val;
+}
+function _mcSetCheck(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.checked = !!val;
+}
 
 // ═══════════════════════════ CHANNEL GRID ═════════════════════
 function buildChannelGrid(homeChannel) {
@@ -5118,7 +5676,7 @@ function trxBuildSidebar() {
   const list = document.getElementById('trx-profile-list');
   if (!list) return;
   list.innerHTML = _trxProfiles2.map((p, i) => `
-    <div class="trx-item ${p.name===_trxActive2?'trx-active-item':''}"
+    <div class="trx-item"
          onclick="trxSelectIdx(${i})">
       <span class="trx-dot">📻</span>
       <span>${p.name}</span>
@@ -5133,7 +5691,7 @@ function trxSelectIdx(idx) {
   document.getElementById('trx-edit-form').style.display   = '';
   // Sidebar-Highlight
   document.querySelectorAll('#trx-profile-list .trx-item').forEach((el,i) => {
-    el.classList.toggle('trx-active-item', i === idx || _trxProfiles2[i]?.name === _trxActive2);
+    el.classList.toggle('trx-active-item', i === idx);
   });
   // Felder befüllen
   document.getElementById('trx-edit-name').value         = p.name || '';
