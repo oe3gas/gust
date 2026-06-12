@@ -313,6 +313,43 @@ class MeshCoreBridge:
         log.info("Kanäle geladen: %s",
                  {idx: v.get("name", "?") for idx, v in sorted(self.channel_map.items())})
 
+    async def get_channels_from_companion(self) -> list[dict]:
+        """
+        Liest alle belegten Kanal-Slots direkt vom Companion via
+        get_channel(i)-Loop. Gibt eine Liste von Dicts zurück:
+          [{"index": i, "name": "...", "key": "hex..."}, ...]
+        Leerer Slot (kein Name) = Ende der Schleife.
+        Schlüssel wird als Hex-String geliefert (lowercase).
+        """
+        if not self.mc or not self.mc.is_connected:
+            raise RuntimeError("Bridge nicht verbunden")
+
+        channels = []
+        for i in range(MAX_CHANNEL_SLOTS):
+            try:
+                ch = await self.mc.commands.get_channel(i)
+                payload = getattr(ch, "payload", None)
+                if not payload:
+                    break
+                name = payload.get("channel_name", "")
+                if not name:
+                    break   # leerer Slot = Ende
+                # Key: je nach Library-Version als bytes oder hex-String
+                raw_key = payload.get("channel_key") or payload.get("key", b"")
+                if isinstance(raw_key, (bytes, bytearray)):
+                    key_hex = raw_key.hex()
+                else:
+                    key_hex = str(raw_key).lower()
+                channels.append({
+                    "index": i,
+                    "name":  name,
+                    "key":   key_hex,
+                })
+            except Exception:
+                break   # Slot nicht lesbar = Ende
+
+        return channels
+
     # ── Eingehende Channel-Messages ────────────────────────────────────
 
     async def _on_channel_msg(self, event) -> None:

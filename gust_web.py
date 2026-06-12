@@ -1962,6 +1962,11 @@ nicht in gateway.json.">i</span></span>
                            color:var(--text2,#8b949e);margin-left:.5rem">
                 aus meshcore.json — Schlüssel nur dort bearbeiten
               </span>
+              <button class="btn secondary" onclick="mcSyncChannels()"
+                      style="float:right;font-size:.78rem;
+                             padding:3px 10px;margin-top:0">
+                ↻ Kanalliste aktualisieren
+              </button>
             </h3>
 
             <div id="mc-channels-table" style="font-size:.85rem">
@@ -2673,6 +2678,28 @@ function mcRenderChannels(channels) {
 
   // Karten-Links bauen (Nodes mit Position)
   mcRenderMapLinks(channels);
+}
+
+// ── Kanal-Sync vom Companion ──────────────────────────────────
+
+async function mcSyncChannels() {
+  const btn = document.querySelector('button[onclick="mcSyncChannels()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Abrufe Kanäle…'; }
+
+  try {
+    const res  = await apiFetch('/api/meshcore/channels/sync', {method: 'POST'});
+    const info = `${res.total} Kanal/Kanäle — +${res.added} neu, -${res.removed} entfernt`;
+    cfgBanner(`✅ Kanalliste synchronisiert: ${info}`);
+
+    // Tabelle sofort mit neuen Daten neu rendern
+    window._mcChannels = res.slots;
+    mcRenderChannels(res.slots);
+
+  } catch(e) {
+    cfgBanner('Fehler beim Kanal-Sync: ' + e.message, false);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Kanalliste aktualisieren'; }
+  }
 }
 
 // ── Forwarding-Regeln speichern ───────────────────────────────
@@ -6256,6 +6283,7 @@ class WebServer:
         app.router.add_get("/api/config",    self._handle_config)
         app.router.add_patch("/api/config",  self._handle_config_patch)
         app.router.add_patch("/api/meshcore/channels", self._handle_meshcore_channels_patch)
+        app.router.add_post("/api/meshcore/channels/sync", self._handle_meshcore_channels_sync)
         app.router.add_post("/api/config",   self._handle_config_post)
         app.router.add_get("/api/log",       self._handle_log)
         app.router.add_post("/api/tx/weather",   self._handle_tx_weather)
@@ -6427,6 +6455,114 @@ class WebServer:
             safe["meshcore_channels"] = []
 
         return web.json_response(safe)
+
+    async def _handle_meshcore_channels_sync(self,
+                                              request: web.Request) -> web.Response:
+        """
+        POST /api/meshcore/channels/sync
+        Liest Kanäle vom Companion, synchronisiert meshcore.json:
+          - Neue Slots werden hinzugefügt (gust_forward=True, hf_forward=False)
+          - Fehlende Slots werden entfernt
+          - Bestehende Slots: Name + Key vom Companion, GUST-Flags bleiben erhalten
+        Gibt die aktualisierte Slot-Liste zurück.
+        """
+        import pathlib, json as _json
+
+        if self._mc_bridge is None:
+            raise web.HTTPServiceUnavailable(
+                text='{"error":"Bridge nicht aktiv"}',
+                content_type="application/json"
+            )
+
+        # Kanäle vom Companion holen
+        try:
+            companion_channels = await self._mc_bridge.get_channels_from_companion()
+        except Exception as exc:
+            raise web.HTTPBadGateway(
+                text=f'{{"error":"Companion-Abfrage fehlgeschlagen: {exc}"}}',
+                content_type="application/json"
+            )
+
+        # meshcore.json lesen
+        mc_cfg       = self._config.get("meshcore", {})
+        mc_json_path = pathlib.Path(mc_cfg.get("config", "meshcore.json"))
+
+        if not mc_json_path.exists():
+            raise web.HTTPNotFound(
+                text='{"error":"meshcore.json nicht gefunden"}',
+                content_type="application/json"
+            )
+
+        async with self._config_write_lock:
+            try:
+                mc_data = _json.loads(mc_json_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"meshcore.json lesen fehlgeschlagen: {exc}"}}',
+                    content_type="application/json"
+                )
+
+            # Bestehende Slots als Index-Map (GUST-Flags + Comments erhalten)
+            old_slots    = mc_data.get("channels", {}).get("slots", [])
+            old_by_index = {s.get("index"): s for s in old_slots
+                            if s.get("index") is not None}
+
+            # Neue Slot-Liste aus Companion-Daten aufbauen
+            new_slots = []
+            for ch in companion_channels:
+                idx  = ch["index"]
+                old  = old_by_index.get(idx, {})
+                slot = {
+                    "index":        idx,
+                    "name":         ch["name"],
+                    "key":          ch["key"],
+                    # GUST-Flags: erhalten wenn Slot bekannt war, sonst Defaults
+                    "gust_forward": old.get("gust_forward", True),
+                    "hf_forward":   old.get("hf_forward",   False),
+                }
+                # _comment erhalten wenn vorhanden
+                if "_comment" in old:
+                    slot["_comment"] = old["_comment"]
+                new_slots.append(slot)
+
+            # In meshcore.json schreiben
+            if "channels" not in mc_data:
+                mc_data["channels"] = {}
+            mc_data["channels"]["slots"] = new_slots
+
+            try:
+                mc_json_path.write_text(
+                    _json.dumps(mc_data, ensure_ascii=False, indent=2),
+                    encoding="utf-8"
+                )
+            except Exception as exc:
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"meshcore.json schreiben fehlgeschlagen: {exc}"}}',
+                    content_type="application/json"
+                )
+
+        # channel_map der laufenden Bridge sofort aktualisieren
+        if self._mc_bridge is not None:
+            new_map = {}
+            for slot in new_slots:
+                new_map[slot["index"]] = dict(slot)
+            self._mc_bridge.channel_map = new_map
+
+        added   = [c for c in companion_channels
+                   if c["index"] not in {s.get("index") for s in old_slots}]
+        removed = [s for s in old_slots
+                   if s.get("index") not in {c["index"] for c in companion_channels}]
+
+        log.info("MC Channels Sync: %d Slots vom Companion, +%d neu, -%d entfernt",
+                 len(new_slots), len(added), len(removed))
+
+        return web.json_response({
+            "ok":      True,
+            "slots":   new_slots,
+            "added":   len(added),
+            "removed": len(removed),
+            "total":   len(new_slots),
+        })
 
     async def _handle_meshcore_channels_patch(self,
                                                request: web.Request) -> web.Response:
