@@ -848,8 +848,9 @@ h2:first-child { margin-top: 0; }
 .rig-search-select{width:100%;padding:4px 8px;font-size:13px;
   border:0.5px solid var(--border,#444);border-top:none;
   border-radius:0 0 5px 5px;background:var(--bg,#111);
-  color:var(--text);min-width:0;
-  max-height:220px}
+  color:var(--text);min-width:0;max-height:220px;
+  display:none}
+.rig-search-select.open{display:block}
 .rig-search-hint{font-size:11px;color:var(--text2);margin-top:2px}
 </style>
 </head>
@@ -1544,6 +1545,7 @@ h2:first-child { margin-top: 0; }
                                type="text"
                                placeholder="Suche: Icom, Yaesu, Kenwood, ID…"
                                oninput="rigSearchFilter()"
+                               onfocus="rigSearchOpen()"
                                autocomplete="off">
                         <select id="trx-edit-rigmodel"
                                 class="rig-search-select"
@@ -4882,25 +4884,43 @@ async function trxLoadAudioDevices() {
     const r = await fetch('/api/audio/devices');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
-    // Alle Host-APIs — aber nur host_api 0 (MME) und 2 (WASAPI) für
-    // übersichtliche, doppelfreie Liste. DirectSound (1) und WDM-KS (3)
-    // sind dieselben Geräte unter anderem Namen → weglassen.
-    const KEEP_API = new Set([0, 2]);
-    const ins  = (d.input  || []).filter(x => KEEP_API.has(x.host_api));
-    const outs = (d.output || []).filter(x => KEEP_API.has(x.host_api));
-    // id→{id, name, host_api_name, ins, outs}
+    const API_ORDER = ['MME','Windows DirectSound','Windows WASAPI','Windows WDM-KS'];
     const map = {};
-    ins.forEach(x => {
-      map[x.id] = {id:x.id, name:x.name,
-                   api:x.host_api_name||'', ins:1, outs:0};
+    // Input-Geräte → ins:1
+    (d.input || []).forEach(x => {
+      const key = x.host_api + '_' + x.id;
+      if (map[key]) { map[key].ins = 1; }
+      else map[key] = {
+        id: x.id, name: x.name,
+        api: x.host_api_name || 'MME',
+        api_idx: x.host_api,
+        ins: 1, outs: 0
+      };
     });
-    outs.forEach(x => {
-      if (map[x.id]) { map[x.id].outs = 1; }
-      else map[x.id] = {id:x.id, name:x.name,
-                        api:x.host_api_name||'', ins:0, outs:1};
+    // Output-Geräte → outs:1
+    (d.output || []).forEach(x => {
+      const key = x.host_api + '_' + x.id;
+      if (map[key]) { map[key].outs = 1; }
+      else map[key] = {
+        id: x.id, name: x.name,
+        api: x.host_api_name || 'MME',
+        api_idx: x.host_api,
+        ins: 0, outs: 1
+      };
     });
-    _trxAudioDevices = Object.values(map).sort((a,b) =>
-      (a.api||'').localeCompare(b.api||'') || a.id - b.id);
+    _trxAudioDevices = Object.values(map).sort((a, b) => {
+      const ai = API_ORDER.indexOf(a.api);
+      const bi = API_ORDER.indexOf(b.api);
+      const ao = ai < 0 ? 99 : ai;
+      const bo = bi < 0 ? 99 : bi;
+      return ao !== bo ? ao - bo : a.id - b.id;
+    });
+    // Dropdowns neu befüllen falls ein Profil bereits geladen ist
+    if (_trxCurIdx >= 0 && _trxProfiles2[_trxCurIdx]) {
+      const p = _trxProfiles2[_trxCurIdx];
+      trxAudioOptions('trx-edit-audiotx', p.audio_device_tx);
+      trxAudioOptions('trx-edit-audiorx', p.audio_device_rx);
+    }
   } catch(e) {
     console.warn('trxLoadAudioDevices:', e);
     _trxAudioDevices = [];
@@ -4955,6 +4975,11 @@ function _trxSetRigOptions(sel, cur, models) {
   rigSearchFilter();
   // Aktuelle Auswahl im Select setzen
   if (sel) sel.value = String(cur);
+  // Programmatisches Laden (Profilwechsel) ist KEIN Fokus-Event:
+  // gewähltes Label ins Suchfeld, Listbox eingeklappt lassen
+  const chosen = _rigAllModels.find(m => m.id === cur);
+  if (chosen && searchInp) searchInp.value = chosen._label;
+  if (sel) sel.classList.remove('open');
 }
 
 function trxAudioOptions(selId, currentVal) {
@@ -4972,13 +4997,14 @@ function trxAudioOptions(selId, currentVal) {
   let lastApi = null;
   list.forEach(d => {
     if (d.api && d.api !== lastApi) {
+      if (lastApi !== null) html += `</optgroup>`;
       html += `<optgroup label="${d.api}">`;
       lastApi = d.api;
     }
-    html += `<option value="${d.id}" ${d.id===cur?'selected':''}>
-               ${d.id} — ${d.name}
-             </option>`;
+    html += `<option value="${d.id}" ${d.id===cur?'selected':''}
+      title="${d.id} — ${d.name}">${d.id} — ${d.name}</option>`;
   });
+  if (lastApi !== null) html += `</optgroup>`;
   // Aktuellen Wert einfügen falls nicht in Liste
   if (!isNaN(cur) && !list.find(d => d.id === cur)) {
     html = `<option value="${cur}" selected>${cur} — (ID ${cur})</option>` + html;
@@ -5007,23 +5033,52 @@ function rigSearchFilter() {
   sel.innerHTML = html;
   // Größe anpassen: min 3, max 8 sichtbare Einträge
   sel.size = Math.min(8, Math.max(3, list.length));
+  sel.classList.add('open');
   if (hint) hint.textContent = list.length < _rigAllModels.length
     ? `${list.length} von ${_rigAllModels.length} Modellen`
     : `${_rigAllModels.length} Modelle`;
+  // Aktuelle Auswahl wiederherstellen
+  if (cur) sel.value = String(cur);
 }
 
+function rigSearchOpen() {
+  const inp = document.getElementById('trx-rig-search');
+  const sel = document.getElementById('trx-edit-rigmodel');
+  if (!inp || !sel) return;
+  // Suchfeld leeren und volle Liste zeigen
+  const prev = inp.value;
+  inp.value = '';
+  rigSearchFilter();
+  // Aktuelle Auswahl im Select markieren
+  const cur = _rigAllModels.find(m => m._label === prev);
+  if (cur) sel.value = String(cur.id);
+  if (sel) sel.classList.add('open');
+}
+
+document.addEventListener('click', function(e) {
+  const wrap = document.querySelector('.rig-search-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    const sel = document.getElementById('trx-edit-rigmodel');
+    if (sel) sel.classList.remove('open');
+  }
+});
+
 function rigSearchCommit() {
-  // Gewähltes Modell ins Suchfeld schreiben
   const sel = document.getElementById('trx-edit-rigmodel');
   const inp = document.getElementById('trx-rig-search');
+  const hint = document.getElementById('trx-rig-hint');
   if (!sel || !inp) return;
   const chosen = _rigAllModels.find(m => m.id === parseInt(sel.value));
-  if (chosen) inp.value = chosen._label;
-  // Filter zurücksetzen → volle Liste zeigen
-  setTimeout(() => {
-    document.getElementById('trx-rig-search').value = '';
-    rigSearchFilter();
-  }, 100);
+  if (!chosen) return;
+  // Gewähltes Modell im Suchfeld anzeigen
+  inp.value = chosen._label;
+  // Liste auf nur diesen Eintrag reduzieren (Auswahl sichtbar)
+  sel.innerHTML = `<option value="${chosen.id}" selected>${chosen._label}</option>`;
+  sel.size = 1;
+  sel.classList.remove('open');
+  if (hint) hint.textContent = chosen._label;
+  // Baud-Vorschlag
+  trxOnRigChange();
 }
 
 function trxOnRigChange() {
