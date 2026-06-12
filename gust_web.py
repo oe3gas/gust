@@ -2026,19 +2026,6 @@ h2:first-child { margin-top: 0; }
             </div>
           </div>
 
-          <div class="cfg-card" style="margin-top:1rem">
-            <h3>rigctld (globale Basis)</h3>
-            <label class="cfg-toggle">Auto-Start<input id="cfg-rig-autostart" type="checkbox"></label>
-            <label>Rig-Modell<input id="cfg-rig-model" type="number" min="1"></label>
-            <label>COM-Port<input id="cfg-rig-device" type="text" placeholder="COM10"></label>
-            <label>Baudrate<select id="cfg-rig-baud">
-              <option>4800</option><option>9600</option>
-              <option>19200</option><option>38400</option><option>57600</option>
-            </select></label>
-            <label>Host<input id="cfg-rig-host" type="text"></label>
-            <label>Port<input id="cfg-rig-port" type="number" min="1024" max="65535"></label>
-            <div style="margin-top:.8rem"><button onclick="cfgSaveRigctld()">💾 Speichern</button></div>
-          </div>
         </div>
 
         <div class="cfgedit-sub" id="cfgsub-sdr" style="display:none">
@@ -6025,14 +6012,7 @@ async function cfgLoad() {
     document.getElementById('cfg-rx-scan').value        = rx.scan_interval_s ?? 2.0;
     document.getElementById('cfg-rx-window').value      = rx.window_s        ?? 9.0;
     document.getElementById('cfg-rx-dedup').value       = rx.dedup_ttl_s     ?? 30;
-    // rigctld
-    const rig = cfg.rigctld || {};
-    document.getElementById('cfg-rig-autostart').checked = !!rig.auto_start;
-    document.getElementById('cfg-rig-model').value  = rig.rig_model ?? '';
-    document.getElementById('cfg-rig-device').value = rig.device    ?? '';
-    document.getElementById('cfg-rig-baud').value   = rig.baud      ?? 4800;
-    document.getElementById('cfg-rig-host').value   = rig.host      ?? 'localhost';
-    document.getElementById('cfg-rig-port').value   = rig.port      ?? 4532;
+    // rigctld-Basis-Card entfernt — TRX-Profile ersetzen sie
     // SDR
     const rtl = cfg.rtlsdr || {};
     document.getElementById('cfg-rtl-enabled').checked = !!rtl.enabled;
@@ -6178,17 +6158,24 @@ let _trxAudioDevices = [];
 async function trxLoadAudioDevices() {
   try {
     const r = await fetch('/api/audio/devices');
-    if (r.ok) {
-      const d = await r.json();
-      _trxAudioDevices = (d.devices || []).map(dev => ({
-        id:   dev.id,
-        name: dev.name,
-        ins:  dev.inputs  || 0,
-        outs: dev.outputs || 0,
-      }));
-      return;
-    }
-  } catch(_) {}
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    // API liefert {input:[...], output:[...]}
+    // Nur MME (host_api=0) — übersichtlichste Liste, keine Duplikate
+    const mmeIn  = (d.input  || []).filter(x => x.host_api === 0);
+    const mmeOut = (d.output || []).filter(x => x.host_api === 0);
+    // Gemeinsame Map id→{id,name,ins,outs} aufbauen
+    const map = {};
+    mmeIn.forEach(x  => { map[x.id] = {id:x.id, name:x.name, ins:x.channels||1, outs:0}; });
+    mmeOut.forEach(x => {
+      if (map[x.id]) { map[x.id].outs = x.channels||1; }
+      else map[x.id] = {id:x.id, name:x.name, ins:0, outs:x.channels||1};
+    });
+    _trxAudioDevices = Object.values(map).sort((a,b) => a.id-b.id);
+    return;
+  } catch(e) {
+    console.warn('trxLoadAudioDevices:', e);
+  }
   _trxAudioDevices = [];
 }
 
