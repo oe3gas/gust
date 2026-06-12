@@ -4203,98 +4203,6 @@ function slRoundRectPath(ctx, x, y, w, h, r) {
   else               ctx.rect(x, y, w, h);
 }
 
-function slTheme() {
-  const t = localStorage.getItem('gust-theme') || 'dark';
-  if (t === 'mono') return {
-    bg:         '#ebebeb',
-    bgHeader:   '#d8d8d8',
-    gridLine:   '#b0b0b0',
-    gridLineSub:'#cccccc',
-    borderLine: '#888888',
-    textHeader: '#111111',
-    textLabel:  '#333333',
-    textTime:   '#555555',
-    nowLine:    '#111111',
-    frameBg:    (ft) => ({
-      WEATHER:'#555555', POSITION:'#333333',
-      EMERG_BEACON:'#111111', EMERG_RSRC:'#111111',
-      STATION_TLM:'#777777', TEXT:'#444444', CQ:'#888888'
-    })[ft] || '#555555',
-    frameText:  '#ffffff',
-    frameBorder:'#111111',
-    legend:     (ft) => ({
-      WEATHER:'#555', POSITION:'#333', EMERG_BEACON:'#111',
-      EMERG_RSRC:'#111', STATION_TLM:'#777', TEXT:'#444', CQ:'#888'
-    })[ft] || '#555',
-  };
-  if (t === 'aero') return {
-    bg:         '#e8eef4',
-    bgHeader:   '#cdd8e3',
-    gridLine:   '#b0bfcc',
-    gridLineSub:'#d0dce8',
-    borderLine: '#8090a8',
-    textHeader: '#1a2430',
-    textLabel:  '#1a2430',
-    textTime:   '#556070',
-    nowLine:    '#0078d4',
-    frameBg:    (ft) => ({
-      WEATHER:'#0078d4', POSITION:'#107c10',
-      EMERG_BEACON:'#c42b1c', EMERG_RSRC:'#ca5010',
-      STATION_TLM:'#6b3fa0', TEXT:'#ca5010', CQ:'#005fa3'
-    })[ft] || '#0078d4',
-    frameText:  '#ffffff',
-    frameBorder:'transparent',
-    legend:     (ft) => ({
-      WEATHER:'#0078d4', POSITION:'#107c10', EMERG_BEACON:'#c42b1c',
-      EMERG_RSRC:'#ca5010', STATION_TLM:'#6b3fa0', TEXT:'#ca5010', CQ:'#005fa3'
-    })[ft] || '#0078d4',
-  };
-  if (t === 'light') return {
-    bg:         '#f8f8f8',
-    bgHeader:   '#e8e8e8',
-    gridLine:   '#cccccc',
-    gridLineSub:'#e8e8e8',
-    borderLine: '#aaaaaa',
-    textHeader: '#222222',
-    textLabel:  '#222222',
-    textTime:   '#666666',
-    nowLine:    '#e53935',
-    frameBg:    (ft) => ({
-      WEATHER:'#1565c0', POSITION:'#2e7d32',
-      EMERG_BEACON:'#c62828', EMERG_RSRC:'#e65100',
-      STATION_TLM:'#6a1b9a', TEXT:'#ef6c00', CQ:'#0277bd'
-    })[ft] || '#1565c0',
-    frameText:  '#ffffff',
-    frameBorder:'transparent',
-    legend:     (ft) => ({
-      WEATHER:'#1565c0', POSITION:'#2e7d32', EMERG_BEACON:'#c62828',
-      EMERG_RSRC:'#e65100', STATION_TLM:'#6a1b9a', TEXT:'#ef6c00', CQ:'#0277bd'
-    })[ft] || '#1565c0',
-  };
-  return {
-    bg:         '#162032',
-    bgHeader:   '#1a2540',
-    gridLine:   '#253550',
-    gridLineSub:'#1e2d45',
-    borderLine: '#304060',
-    textHeader: '#c8d8e8',
-    textLabel:  '#c8d8e8',
-    textTime:   '#8090a8',
-    nowLine:    '#e05050',
-    frameBg:    (ft) => ({
-      WEATHER:'#1565c0', POSITION:'#2e7d32',
-      EMERG_BEACON:'#b71c1c', EMERG_RSRC:'#e65100',
-      STATION_TLM:'#6a1b9a', TEXT:'#e65100', CQ:'#0277bd'
-    })[ft] || '#1565c0',
-    frameText:  '#ffffff',
-    frameBorder:'transparent',
-    legend:     (ft) => ({
-      WEATHER:'#1e88e5', POSITION:'#43a047', EMERG_BEACON:'#e53935',
-      EMERG_RSRC:'#fb8c00', STATION_TLM:'#8e24aa', TEXT:'#fb8c00', CQ:'#039be5'
-    })[ft] || '#1e88e5',
-  };
-}
-
 function slDraw() {
   const canvas = document.getElementById('sl-canvas');
   if (!canvas) return;
@@ -4636,6 +4544,9 @@ function cfgBanner(msg, ok=true) {
   setTimeout(() => { el.style.display = 'none'; }, 3500);
 }
 
+// Audio-Geräte — werden per API geladen, Fallback auf leere Liste
+let _trxAudioDevices = [];
+
 async function cfgLoad() {
   try {
     const cfg = await apiFetch('/api/config');
@@ -4834,8 +4745,97 @@ const TRX_RIG_MODELS = [
   {id:3068, name:'Icom IC-7200'},
 ];
 
-// Audio-Geräte — werden per API geladen, Fallback auf leere Liste
-let _trxAudioDevices = [];
+function slTheme() {
+  const t = localStorage.getItem('gust-theme') || 'dark';
+  if (t === 'mono') return {
+    bg:         '#ebebeb',
+    bgHeader:   '#d8d8d8',
+    gridLine:   '#b0b0b0',
+    gridLineSub:'#cccccc',
+    borderLine: '#888888',
+    textHeader: '#111111',
+    textLabel:  '#333333',
+    textTime:   '#555555',
+    nowLine:    '#111111',
+    frameBg:    (ft) => ({
+      WEATHER:'#555555', POSITION:'#333333',
+      EMERG_BEACON:'#111111', EMERG_RSRC:'#111111',
+      STATION_TLM:'#777777', TEXT:'#444444', CQ:'#888888'
+    })[ft] || '#555555',
+    frameText:  '#ffffff',
+    frameBorder:'#111111',
+    legend:     (ft) => ({
+      WEATHER:'#555', POSITION:'#333', EMERG_BEACON:'#111',
+      EMERG_RSRC:'#111', STATION_TLM:'#777', TEXT:'#444', CQ:'#888'
+    })[ft] || '#555',
+  };
+  if (t === 'aero') return {
+    bg:         '#e8eef4',
+    bgHeader:   '#cdd8e3',
+    gridLine:   '#b0bfcc',
+    gridLineSub:'#d0dce8',
+    borderLine: '#8090a8',
+    textHeader: '#1a2430',
+    textLabel:  '#1a2430',
+    textTime:   '#556070',
+    nowLine:    '#0078d4',
+    frameBg:    (ft) => ({
+      WEATHER:'#0078d4', POSITION:'#107c10',
+      EMERG_BEACON:'#c42b1c', EMERG_RSRC:'#ca5010',
+      STATION_TLM:'#6b3fa0', TEXT:'#ca5010', CQ:'#005fa3'
+    })[ft] || '#0078d4',
+    frameText:  '#ffffff',
+    frameBorder:'transparent',
+    legend:     (ft) => ({
+      WEATHER:'#0078d4', POSITION:'#107c10', EMERG_BEACON:'#c42b1c',
+      EMERG_RSRC:'#ca5010', STATION_TLM:'#6b3fa0', TEXT:'#ca5010', CQ:'#005fa3'
+    })[ft] || '#0078d4',
+  };
+  if (t === 'light') return {
+    bg:         '#f8f8f8',
+    bgHeader:   '#e8e8e8',
+    gridLine:   '#cccccc',
+    gridLineSub:'#e8e8e8',
+    borderLine: '#aaaaaa',
+    textHeader: '#222222',
+    textLabel:  '#222222',
+    textTime:   '#666666',
+    nowLine:    '#e53935',
+    frameBg:    (ft) => ({
+      WEATHER:'#1565c0', POSITION:'#2e7d32',
+      EMERG_BEACON:'#c62828', EMERG_RSRC:'#e65100',
+      STATION_TLM:'#6a1b9a', TEXT:'#ef6c00', CQ:'#0277bd'
+    })[ft] || '#1565c0',
+    frameText:  '#ffffff',
+    frameBorder:'transparent',
+    legend:     (ft) => ({
+      WEATHER:'#1565c0', POSITION:'#2e7d32', EMERG_BEACON:'#c62828',
+      EMERG_RSRC:'#e65100', STATION_TLM:'#6a1b9a', TEXT:'#ef6c00', CQ:'#0277bd'
+    })[ft] || '#1565c0',
+  };
+  return {
+    bg:         '#162032',
+    bgHeader:   '#1a2540',
+    gridLine:   '#253550',
+    gridLineSub:'#1e2d45',
+    borderLine: '#304060',
+    textHeader: '#c8d8e8',
+    textLabel:  '#c8d8e8',
+    textTime:   '#8090a8',
+    nowLine:    '#e05050',
+    frameBg:    (ft) => ({
+      WEATHER:'#1565c0', POSITION:'#2e7d32',
+      EMERG_BEACON:'#b71c1c', EMERG_RSRC:'#e65100',
+      STATION_TLM:'#6a1b9a', TEXT:'#e65100', CQ:'#0277bd'
+    })[ft] || '#1565c0',
+    frameText:  '#ffffff',
+    frameBorder:'transparent',
+    legend:     (ft) => ({
+      WEATHER:'#1e88e5', POSITION:'#43a047', EMERG_BEACON:'#e53935',
+      EMERG_RSRC:'#fb8c00', STATION_TLM:'#8e24aa', TEXT:'#fb8c00', CQ:'#039be5'
+    })[ft] || '#1e88e5',
+  };
+}
 
 async function trxLoadAudioDevices() {
   try {
