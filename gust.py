@@ -340,6 +340,60 @@ def _resolve_sdr_tx_cfg(cfg: dict) -> "dict | None":
     return None
 
 
+def validate_json_file(path: str, label: str) -> bool:
+    """
+    Prüft eine JSON-Datei auf syntaktische Korrektheit.
+    Gibt True zurück wenn OK oder Datei nicht existiert.
+    Gibt False zurück und gibt Fehlermeldung aus wenn Syntaxfehler.
+
+    Args:
+        path:  Pfad zur JSON-Datei
+        label: Anzeigename für Fehlermeldung (z.B. "gateway.json")
+    """
+    from pathlib import Path as _Path
+    import json as _json
+
+    p = _Path(path)
+    if not p.exists():
+        return True   # Nicht vorhanden = kein Fehler (Standardwerte greifen)
+
+    try:
+        with open(p, encoding="utf-8") as f:
+            content = f.read()
+        _json.loads(content)
+        log.info("[JSON-Check] %s — OK", label)
+        return True
+    except _json.JSONDecodeError as e:
+        # Kontext: Zeile um den Fehler herum anzeigen
+        lines = content.splitlines()
+        err_line = e.lineno
+        ctx_start = max(0, err_line - 3)
+        ctx_end   = min(len(lines), err_line + 2)
+        ctx = "\n".join(
+            f"  {'>>>' if i+1 == err_line else '   '} "
+            f"{i+1:4d} | {lines[i]}"
+            for i in range(ctx_start, ctx_end)
+        )
+        print(
+            f"\n{'═'*60}\n"
+            f"  FEHLER: {label} enthält ungültiges JSON!\n"
+            f"{'═'*60}\n"
+            f"  Zeile {e.lineno}, Spalte {e.colno}: {e.msg}\n\n"
+            f"{ctx}\n\n"
+            f"  Tipp: JSON-Syntax prüfen unter https://jsonlint.com\n"
+            f"        oder: py -c \"import json; json.load(open('{path}'))\"\n"
+            f"{'═'*60}\n",
+            file=sys.stderr
+        )
+        return False
+    except Exception as e:
+        print(
+            f"\n[FEHLER] {label} konnte nicht gelesen werden: {e}\n",
+            file=sys.stderr
+        )
+        return False
+
+
 def load_config(path: Optional[str], callsign: Optional[str]) -> dict:
     """
     Konfiguration laden und mit Standardwerten zusammenführen.
@@ -356,8 +410,13 @@ def load_config(path: Optional[str], callsign: Optional[str]) -> dict:
                     file_cfg = json.load(f)
                 cfg = _deep_merge(cfg, file_cfg)
                 log.info("Konfiguration geladen: %s", cfg_path)
+            except json.JSONDecodeError as e:
+                # Syntaxfehler → validate_json_file gibt detaillierte Meldung aus
+                validate_json_file(str(cfg_path), str(cfg_path.name))
+                sys.exit(1)
             except Exception as e:
-                log.warning("gateway.json Fehler: %s — Standardwerte verwenden.", e)
+                log.warning("%s Fehler: %s — Standardwerte verwenden.",
+                            cfg_path.name, e)
         else:
             log.info("Keine gateway.json gefunden — Standardwerte aktiv.")
 
@@ -589,8 +648,13 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
     gateway = TxGateway(cfg, event_bus=bus, dry_run=dry_run)
 
     # ── WebServer ─────────────────────────────────────────────────────
+    # _bridge wird ggf. weiter unten (MeshCore-Block) erzeugt; der Server
+    # wird vor dem Bridge-Block gestartet, daher hier None übergeben und
+    # die Live-Referenz nach Bridge-Erzeugung an den Server gehängt.
+    _bridge = None
     server = WebServer(cfg, event_bus=bus, gateway=gateway,
-                       config_path=cfg.get("_config_path"))
+                       config_path=cfg.get("_config_path"),
+                       meshcore_bridge=_bridge)
     await server.start()
     await gateway.start()
     await asyncio.sleep(0.1)   # EventBus-Reader Zeit zum Subscriben geben
@@ -668,6 +732,10 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
             import json as _json
             mc_config = _json.loads(Path(mc_config_path).read_text(encoding="utf-8"))
             _bridge = MeshCoreBridge(mc_config, bus)
+            # Live-Referenz an den (bereits gestarteten) WebServer hängen,
+            # damit /api/config + /api/status auf channel_map/self_info zugreifen.
+            server._mc_bridge = _bridge
+            _bridge._gateway  = gateway   # HF-Forward: MC → TxGateway (P6-20)
             meshcore_task = asyncio.create_task(
                 _bridge.start(), name="meshcore_bridge"
             )
@@ -717,6 +785,13 @@ async def cmd_daemon(cfg: dict, dry_run: bool, use_sim: bool) -> None:
                         "connection", {}).get("port", "?")
                 except Exception:
                     pass
+
+                # Neighbours aus laufender Bridge holen (falls verfügbar)
+                if _bridge is not None:
+                    try:
+                        _mc_status["neighbours"] = _bridge.get_neighbours()
+                    except Exception:
+                        _mc_status["neighbours"] = []
 
                 await bus.publish(make_status_event(
                     callsign       = cfg["callsign"],
@@ -1369,6 +1444,32 @@ def main() -> None:
 
     # Logging früh initialisieren (ohne Bus, wird bei daemon/rx neu gesetzt)
     setup_logging(args.verbose)
+
+    # ── JSON-Validierung vor dem Start ───────────────────────────────
+    _json_ok = True
+    # gateway.json
+    _gw_path = getattr(args, 'config', 'gateway.json') or 'gateway.json'
+    if not validate_json_file(_gw_path, 'gateway.json'):
+        _json_ok = False
+    # meshcore.json (Standard-Pfad, falls vorhanden)
+    import os as _os
+    _mc_candidates = [
+        getattr(args, 'meshcore_config', None),
+        'meshcore.json',
+        _os.path.join(_os.path.dirname(__file__), 'meshcore.json'),
+    ]
+    for _mc_path in _mc_candidates:
+        if _mc_path and _os.path.exists(_mc_path):
+            if not validate_json_file(_mc_path, 'meshcore.json'):
+                _json_ok = False
+            break
+    if not _json_ok:
+        print(
+            "\nGUST konnte nicht gestartet werden — "
+            "bitte JSON-Fehler beheben und erneut starten.\n",
+            file=sys.stderr
+        )
+        sys.exit(1)
 
     # ── Subcommands ohne asyncio ──────────────────────────────────────
     if args.cmd == "info":

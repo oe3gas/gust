@@ -167,7 +167,16 @@ def fragment_text(text: str, chunk_size: int = 14) -> list[bytes]:
 class MeshCoreBridge:
     """
     Verbindet MeshCore Companion (USB) mit dem GUST-EventBus.
-    Inbound only (P6-19). TX kommt in P6-20.
+
+    Zwei-Pfad-Architektur (P6-19 + P6-20):
+      Pfad A — immer: ein RX_FRAME-Event (frag_total=1) für WebGUI/Inbox/MQTT.
+      Pfad B — opt-in: HF-Forward via TxGateway wenn hf_forward=true im
+               Kanal-Slot und bridge._gateway gesetzt.
+
+    Konfiguration (meshcore.json, channels.slots):
+      gust_forward: false → Kanal komplett ignorieren
+      gust_forward: true  → in WebGUI anzeigen (Standard)
+      hf_forward:   true  → zusätzlich auf HF senden (Default: false)
     """
 
     def __init__(self, config: dict, bus: EventBus):
@@ -199,6 +208,11 @@ class MeshCoreBridge:
             idx = slot.get("index")
             if idx is not None:
                 self.channel_map[idx] = dict(slot)
+
+        # TxGateway-Referenz für HF-Forward (Pfad B).
+        # Wird nach Erzeugung von außen gesetzt: bridge._gateway = gateway
+        # Analog zu server._mc_bridge = _bridge (ADR-18).
+        self._gateway = None
 
         # Laufzeit-Status
         self._seq = 0                                    # GUST-Text-Sequenznummer
@@ -353,49 +367,68 @@ class MeshCoreBridge:
             # Absender auflösen (Channel-Msgs: aus Text bzw. eigenes Rufzeichen)
             from_call = resolve_sender(pubkey, text, self.contacts, self.own_callsign)
 
-            # Mesh-Kontext in den Text packen (Kanal + Absender bleiben sichtbar)
+            # Volltext mit Mesh-Kontext (Kanal + Absender als Präfix)
             full_text = f"{ch_name}/{from_call}: {text}"
 
             log.info("MeshCore MSG  ch=%s  from=%s  text=%r",
                      ch_name, from_call, text[:60])
 
-            # GUST-Text-Fragmente erzeugen (BROADCAST-Ziel, gemeinsame Seq-Nr)
-            # UTF-8-sichere Byte-Chunks (BUG-MC-03) → GUST-0x40-Payloads
+            # ── Pfad A: WebGUI / Inbox / MQTT / Logging ───────────────────
+            # Ein einziges RX_FRAME-Event — kein fragment_text(), kein
+            # fragCache-Lärm. frag_total=1 → WebGUI rendert direkt als
+            # assembled-row ohne Zwischen-Fragmente.
             seq = self._next_seq()
-            text_chunks = fragment_text(full_text, chunk_size=14)
-            total = len(text_chunks)
-            fragments = [
-                encode_text_fragment("BROADCAST", chunk.decode("utf-8"),
-                                     seq, i, total)
-                for i, chunk in enumerate(text_chunks)
-            ]
+            single_payload = encode_text_fragment(
+                "BROADCAST", full_text, seq, 0, 1
+            )
+            decoded_single = decode_text_fragment(single_payload)
+            frame_single = {
+                "frame_type":      TYPE_TEXT,
+                "type":            TYPE_TEXT,
+                "type_name":       frame_type_name(TYPE_TEXT),
+                "from":            from_call,
+                "channel":         ch_idx,   # MeshCore-Slot, KEIN HF-Kanal
+                "test":            False,
+                "crc_ok":          True,
+                "payload_decoded": decoded_single,
+                "payload_hex":     single_payload.hex(),
+                "synthetic":       True,
+                "source":          "meshcore",
+                "meta": {
+                    "channel_idx":   ch_idx,
+                    "channel_name":  ch_name,
+                    "pubkey_prefix": pubkey,
+                    "meshcore_ts":   timestamp,
+                },
+            }
+            await self.bus.publish(make_rx_frame_event(frame_single))
+            log.debug("RX_FRAME publiziert (single): from=%s  ch=%s  %dB",
+                      from_call, ch_name, len(single_payload))
 
-            for frag_payload in fragments:
-                # Zurückdekodieren → JSON-fähiges payload_decoded fürs WebGUI
-                decoded = decode_text_fragment(frag_payload)
-                frame = {
-                    "frame_type":      TYPE_TEXT,
-                    "type":            TYPE_TEXT,
-                    "type_name":       frame_type_name(TYPE_TEXT),
-                    "from":            from_call,
-                    "channel":         ch_idx,   # MeshCore-Slot, KEIN HF-Kanal
-                    "test":            False,
-                    "crc_ok":          True,
-                    "payload_decoded": decoded,
-                    "payload_hex":     frag_payload.hex(),
-                    "synthetic":       True,
-                    "source":          "meshcore",
-                    "meta": {
-                        "channel_idx":   ch_idx,
-                        "channel_name":  ch_name,
-                        "pubkey_prefix": pubkey,
-                        "meshcore_ts":   timestamp,
+            # ── Pfad B: HF-Forward ────────────────────────────────────────
+            # Nur wenn hf_forward=true im Kanal-Slot UND TxGateway verfügbar.
+            # TxGateway.enqueue() mit frame_type="text" → fragmentiert intern
+            # (identisch zum Web-UI-TX-Pfad). Default: false — nie versehentlich
+            # fremden Mesh-Traffic auf HF senden.
+            hf_forward = ch_info.get("hf_forward", False)
+            if hf_forward and self._gateway is not None:
+                hf_frame = {
+                    "frame_type": "text",
+                    "from":       from_call,
+                    "data": {
+                        "text": full_text,
+                        "to":   "BROADCAST",
                     },
+                    "ts": timestamp or 0,
                 }
-                await self.bus.publish(make_rx_frame_event(frame))
-                log.debug("RX_FRAME publiziert: from=%s  frag %d/%d  %dB",
-                          from_call, decoded.get("frag_index", 0) + 1,
-                          decoded.get("frag_total", 1), len(frag_payload))
+                self._gateway.enqueue(hf_frame, priority=4)
+                log.info("HF-Forward: ch=%s  from=%s  text=%r",
+                         ch_name, from_call, full_text[:60])
+            elif hf_forward and self._gateway is None:
+                log.warning(
+                    "HF-Forward für ch=%s gewünscht, aber kein TxGateway "
+                    "verfügbar (bridge._gateway nicht gesetzt)", ch_name
+                )
 
         except Exception as e:
             log.exception("Fehler beim Verarbeiten der Channel-Message: %s", e)
@@ -408,6 +441,139 @@ class MeshCoreBridge:
             pubkey = payload.get("public_key", "")[:12]
             cs     = extract_callsign(name)
             log.debug("ADV: %s  key=%s  rufz=%s", name, pubkey, cs or "—")
+
+    def get_neighbours(self) -> list[dict]:
+        """
+        Gibt aufbereitete Kontakt-/Neighbour-Liste zurück für WebGUI.
+
+        Quellen:
+          - self.mc.contacts (von meshcore-Library gepflegt, aus ADV-Events)
+          - self.contacts    (bekannte Kontakte aus meshcore.json)
+          - self.own_pubkey  (eigener Node — als erster Eintrag, own=True)
+
+        Felder pro Eintrag:
+          name, pubkey_prefix, callsign, lat, lon, dist_km,
+          snr_db, hops, last_heard_ago, own
+        """
+        if not self.mc:
+            return []
+
+        result = []
+
+        # Eigener Node zuerst
+        info = self.mc.self_info or {}
+        own_lat = info.get("coords_lat")
+        own_lon = info.get("coords_lon")
+        # coords_lat/lon kommen als int (Mikrograd) → in Dezimalgrad umrechnen
+        if own_lat is not None:
+            own_lat = own_lat / 1_000_000
+        if own_lon is not None:
+            own_lon = own_lon / 1_000_000
+
+        result.append({
+            "name":           info.get("adv_name") or info.get("name", "?"),
+            "pubkey_prefix":  self.own_pubkey or "",
+            "callsign":       self.own_callsign,
+            "lat":            own_lat,
+            "lon":            own_lon,
+            "dist_km":        None,
+            "snr_db":         None,
+            "hops":           None,
+            "last_heard_ago": None,
+            "own":            True,
+        })
+
+        # Kontakte aus meshcore-Library (aus ADV-Events gepflegt)
+        mc_contacts = []
+        try:
+            # mc.contacts ist ein Dict {pubkey_hex: contact_dict}
+            raw = self.mc.contacts
+            if isinstance(raw, dict):
+                mc_contacts = list(raw.values())
+            elif isinstance(raw, list):
+                mc_contacts = raw
+        except Exception:
+            pass
+
+        import math
+
+        def _haversine(lat1, lon1, lat2, lon2) -> float:
+            """Entfernung in km (Haversine)."""
+            R = 6371.0
+            φ1, φ2 = math.radians(lat1), math.radians(lat2)
+            Δφ = math.radians(lat2 - lat1)
+            Δλ = math.radians(lon2 - lon1)
+            a = math.sin(Δφ/2)**2 + math.cos(φ1)*math.cos(φ2)*math.sin(Δλ/2)**2
+            return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+        def _ago(ts) -> str | None:
+            """Relativer Zeitstempel als lesbarer String."""
+            if ts is None:
+                return None
+            import time
+            delta = int(time.time() - ts)
+            if delta < 60:
+                return f"{delta} s"
+            if delta < 3600:
+                return f"{delta // 60} min"
+            return f"{delta // 3600} h"
+
+        seen_keys = {self.own_pubkey}
+
+        for c in mc_contacts:
+            # pubkey: volle Hex-Darstellung oder Prefix
+            pk = c.get("public_key", "") or c.get("pubkey_prefix", "")
+            pk_prefix = pk[:12] if pk else ""
+            if pk_prefix in seen_keys:
+                continue
+            seen_keys.add(pk_prefix)
+
+            # Name + Rufzeichen
+            name = (c.get("adv_name") or c.get("name") or
+                    c.get("adv_name_str") or "?")
+            cs = extract_callsign(name)
+            # Rufzeichen aus bekannten Kontakten ergänzen
+            for known in self.contacts:
+                if known.get("pubkey_prefix", "").lower() == pk_prefix.lower():
+                    cs = known.get("callsign", cs)
+                    break
+
+            # Geodaten (aus ADV, int Mikrograd → float Grad)
+            raw_lat = c.get("adv_lat")
+            raw_lon = c.get("adv_lon")
+            lat = raw_lat / 1_000_000 if raw_lat is not None else None
+            lon = raw_lon / 1_000_000 if raw_lon is not None else None
+
+            # Distanz berechnen
+            dist = None
+            if (lat is not None and lon is not None
+                    and own_lat is not None and own_lon is not None):
+                try:
+                    dist = round(_haversine(own_lat, own_lon, lat, lon), 2)
+                except Exception:
+                    pass
+
+            # SNR, Hops, last_heard — Feldnamen je nach Library-Version
+            snr   = c.get("last_snr") or c.get("snr_db")
+            hops  = c.get("out_path_len")   # -1 = Flood, 0 = direkt
+            if hops is not None and hops < 0:
+                hops = None  # Flood → unbekannte Hop-Zahl
+            ts    = c.get("last_heard") or c.get("last_advert_time")
+
+            result.append({
+                "name":           name,
+                "pubkey_prefix":  pk_prefix,
+                "callsign":       cs,
+                "lat":            lat,
+                "lon":            lon,
+                "dist_km":        dist,
+                "snr_db":         round(snr, 1) if snr is not None else None,
+                "hops":           hops,
+                "last_heard_ago": _ago(ts),
+                "own":            False,
+            })
+
+        return result
 
     # ── interne Helfer ─────────────────────────────────────────────────
 

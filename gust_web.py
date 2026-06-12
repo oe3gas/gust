@@ -200,7 +200,8 @@ _HTML_UI = r"""<!DOCTYPE html>
   border-radius: 2px !important;
 }
 [data-theme="mono"] .btn.primary,
-[data-theme="mono"] button.btn-primary {
+[data-theme="mono"] button.btn-primary,
+[data-theme="mono"] .trx-btn-primary {
   background: var(--text) !important;
   color: #fff !important;
   border: 2px solid var(--text) !important;
@@ -240,8 +241,11 @@ _HTML_UI = r"""<!DOCTYPE html>
 /* Light-Theme: bold für bessere Lesbarkeit auf hellem Hintergrund */
 [data-theme="light"] body { font-weight: bold; }
 /* Light-Theme: gefüllte (primäre) Buttons brauchen weißen Text auf Akzentblau */
-[data-theme="light"] .btn:not(.secondary):not(.btn-secondary) {
-  color: #ffffff !important;
+[data-theme="dark"] .btn:not(.secondary):not(.btn-secondary):not(.danger) {
+  color: #000 !important;
+}
+[data-theme="dark"] .subtab-btn.active {
+  color: #000 !important;
 }
 [data-theme="light"] .tx-prio-info,
 [data-theme="light"] .ch-freq,
@@ -487,7 +491,7 @@ h2:first-child { margin-top: 0; }
 .field-row input:focus, .field-row select:focus {
   outline: none; border-color: var(--accent); }
 .field-row .unit { color: var(--text2); font-size: var(--fs-xs); white-space: nowrap; }
-.btn { background: var(--accent); color: #000; border: none; padding: 7px 20px;
+.btn { background: var(--accent); color: #fff; border: none; padding: 7px 20px;
        border-radius: 4px; cursor: pointer; font-family: inherit; font-size: var(--fs-base);
        font-weight: bold; margin-top: 8px; }
 .btn:hover { filter: brightness(1.1); }
@@ -763,8 +767,9 @@ h2:first-child { margin-top: 0; }
 .cfg-card label input,.cfg-card label select{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:.35rem .6rem;color:var(--text);font-size:.95rem}
 .cfg-toggle{flex-direction:row!important;align-items:center;gap:.6rem!important;cursor:pointer}
 .cfg-toggle input[type=checkbox]{width:1.1rem;height:1.1rem;cursor:pointer}
+.cfg-label-row{display:flex;flex-direction:row;align-items:center;gap:0}
 .subtab-btn{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:.3rem .8rem;cursor:pointer;color:var(--text);margin-right:.4rem;margin-bottom:.4rem}
-.subtab-btn.active{background:var(--accent);color:#000;border-color:var(--accent)}
+.subtab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 .trx-editor{display:grid;grid-template-columns:190px 1fr;border:0.5px solid var(--border,#444);border-radius:8px;overflow:hidden;background:var(--bg2,var(--panel))}
 .trx-sidebar{border-right:0.5px solid var(--border,#444);background:var(--bg,#1a1a1a);display:flex;flex-direction:column}
 .trx-sidebar-hdr{padding:8px 12px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;border-bottom:0.5px solid var(--border,#444)}
@@ -802,16 +807,18 @@ h2:first-child { margin-top: 0; }
 .trx-footer{display:flex;align-items:center;justify-content:space-between;padding-top:9px;border-top:0.5px solid var(--border,#444)}
 .trx-btn{padding:6px 11px;font-size:12px;border-radius:5px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:0.5px solid var(--border,#444);background:var(--bg2,#222);color:var(--text)}
 .trx-btn:hover{background:var(--panel)}
-.trx-btn-primary{background:var(--accent,#4a9eff);color:#000;border-color:var(--accent,#4a9eff)}
+.trx-btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .trx-btn-primary:hover{opacity:.88}
+[data-theme="dark"] .trx-btn-primary{color:#000}
 .trx-btn-danger{color:var(--red,#f44336);border-color:var(--red,#f44336)}
 .trx-btn-danger:hover{background:rgba(244,67,54,.1)}
 .trx-empty{color:var(--text2);font-size:.9rem;padding:1rem 0}
 .cfg-info{display:inline-flex;align-items:center;justify-content:center;
-  width:15px;height:15px;border-radius:50%;border:1px solid var(--border,#555);
-  font-size:10px;font-weight:500;color:var(--text2);cursor:help;
-  margin-left:5px;vertical-align:middle;flex-shrink:0}
-.cfg-info:hover{background:var(--bg2,#222);color:var(--text)}
+  width:15px;height:15px;border-radius:50%;
+  border:1px solid var(--accent);
+  font-size:10px;font-weight:600;color:var(--accent);cursor:help;
+  margin-left:5px;vertical-align:middle;flex-shrink:0;opacity:.75}
+.cfg-info:hover{background:var(--accent);color:#000;opacity:1}
 .cfg-field-row{display:flex;align-items:center;gap:4px}
 .auth-editor{display:grid;grid-template-columns:170px 1fr;gap:0;
   border:0.5px solid var(--border,#444);border-radius:8px;overflow:hidden;
@@ -1417,7 +1424,7 @@ h2:first-child { margin-top: 0; }
             </h3>
             <label>Host<input id="cfg-web-host" type="text" placeholder="0.0.0.0"></label>
             <label>Port<input id="cfg-web-port" type="number" min="1024" max="65535"></label>
-            <div style="margin-top:.8rem"><button onclick="cfgSaveGeneral()">💾 Speichern</button></div>
+            <div style="margin-top:.8rem"><button class="btn" onclick="cfgSaveGeneral()">💾 Speichern</button></div>
           </div>
         </div>
 
@@ -1467,7 +1474,7 @@ h2:first-child { margin-top: 0; }
 
           </div>
           <div style="margin-top:.8rem">
-            <button onclick="cfgSaveGatewayTx()">💾 Speichern</button>
+            <button class="btn" onclick="cfgSaveGatewayTx()">💾 Speichern</button>
           </div>
         </div>
 
@@ -1513,7 +1520,7 @@ h2:first-child { margin-top: 0; }
               </label>
             </div>
             <div style="margin-top:.8rem">
-              <button onclick="cfgSaveAudioRx()">💾 Speichern</button>
+              <button class="btn" onclick="cfgSaveAudioRx()">💾 Speichern</button>
             </div>
           </div>
         </div>
@@ -1724,7 +1731,7 @@ h2:first-child { margin-top: 0; }
 
           </div>
           <div style="margin-top:.8rem">
-            <button onclick="cfgSaveSdr()">💾 Speichern</button>
+            <button class="btn" onclick="cfgSaveSdr()">💾 Speichern</button>
           </div>
         </div>
 
@@ -1813,50 +1820,93 @@ h2:first-child { margin-top: 0; }
               color:var(--success,#4caf50)">
           </div>
 
+          <!-- ── 2-Spalten-Grid: Bridge-Verbindung (links) · Companion Node (rechts) ── -->
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:start">
 
-            <!-- ── Karte 1: Bridge-Verbindung ── -->
+            <!-- ── Block 1: Bridge-Verbindung + Verhalten ── -->
             <div class="cfg-card">
               <h3>Bridge-Verbindung</h3>
 
               <label class="cfg-toggle">
                 <input id="mc-enabled" type="checkbox">
-                MeshCore Bridge aktiviert
+                <span class="cfg-label-row">MeshCore Bridge aktiviert
                 <span class="cfg-info"
                   title="Aktiviert die gust_meshcore_bridge.py beim Daemon-Start.
 Erfordert 'enabled: true' in gateway.json unter 'meshcore'.
-Änderung wird beim nächsten Daemon-Neustart wirksam.">i</span>
+Änderung wird beim nächsten Daemon-Neustart wirksam.">i</span></span>
               </label>
 
               <label style="margin-top:.6rem">
-                meshcore.json Pfad
+                <span class="cfg-label-row">meshcore.json Pfad
                 <span class="cfg-info"
                   title="Pfad zur meshcore.json — enthält Kanalschlüssel.
-Nicht ins Git-Repo einchecken (.gitignore prüfen).">i</span>
+Nicht ins Git-Repo einchecken (.gitignore prüfen).">i</span></span>
                 <input id="mc-config-path" type="text"
                        placeholder="meshcore.json"
                        style="font-family:monospace;font-size:12px">
               </label>
 
-              <div style="margin-top:.8rem">
-                <button onclick="mcSaveBridge()">💾 Speichern</button>
-              </div>
+              <hr style="border:none;border-top:1px solid var(--border);margin:.9rem 0 .7rem">
 
-              <!-- Live-Status (aus loadStatus()) -->
-              <div id="mc-live-status" style="
-                  margin-top:.8rem;
-                  padding:.4rem .7rem;
-                  border-radius:4px;
-                  font-size:.8rem;
-                  background:var(--bg3,#1c2330);
-                  border:1px solid var(--border,#30363d);
-                  display:none">
-                <span id="mc-live-dot">●</span>
-                <span id="mc-live-text">—</span>
-              </div>
+              <label>
+                <span class="cfg-label-row">Auto-Fetch-Intervall (s)
+                <span class="cfg-info"
+                  title="Wie oft der Companion-Node nach wartenden
+Nachrichten abgefragt wird. Standard: 5 s.">i</span></span>
+                <input id="mc-fetch-interval" type="number"
+                       min="1" max="60" value="5" style="width:80px">
+              </label>
+
+              <label style="margin-top:.4rem">
+                <span class="cfg-label-row">Verbindungs-Timeout (s)
+                <span class="cfg-info"
+                  title="Timeout beim Verbindungsaufbau zum Companion-Node.">i</span></span>
+                <input id="mc-timeout" type="number"
+                       min="1" max="120" value="10" style="width:80px">
+              </label>
+
+              <label style="margin-top:.4rem">
+                <span class="cfg-label-row">Reconnect-Delay (s)
+                <span class="cfg-info"
+                  title="Wartezeit nach Verbindungsabbruch vor dem
+nächsten Verbindungsversuch.">i</span></span>
+                <input id="mc-reconnect-delay" type="number"
+                       min="5" max="300" value="30" style="width:80px">
+              </label>
+
+              <label class="cfg-toggle" style="margin-top:.7rem">
+                <input id="mc-forward-public" type="checkbox">
+                <span class="cfg-label-row">Public Channel nach HF
+                <span class="cfg-info"
+                  title="Empfohlen: Aus. Der Public Channel enthält
+viel Fremdverkehr und ist für HF-Übertragung ungeeignet.">i</span></span>
+              </label>
+
+              <label class="cfg-toggle" style="margin-top:.4rem">
+                <input id="mc-log-raw" type="checkbox">
+                <span class="cfg-label-row">Raw-Frame-Logging
+                <span class="cfg-info"
+                  title="Nur für Protokoll-Analyse. Erzeugt sehr viel
+Log-Output — nicht im Dauerbetrieb aktivieren.">i</span></span>
+              </label>
+
+              <label style="margin-top:.5rem">
+                <span class="cfg-label-row">Unbekannter Absender
+                <span class="cfg-info"
+                  title="Wenn kein Rufzeichen aus dem MeshCore-Node-Namen
+extrahierbar ist:
+  pubkey_prefix: erste 6 Hex-Zeichen als Pseudo-Rufzeichen
+  skip:          Nachricht verwerfen
+  placeholder:   UNKNWN als Rufzeichen verwenden">i</span></span>
+                <select id="mc-unknown-sender">
+                  <option value="pubkey_prefix">pubkey_prefix</option>
+                  <option value="skip">skip — verwerfen</option>
+                  <option value="placeholder">placeholder — UNKNWN</option>
+                </select>
+              </label>
             </div>
 
-            <!-- ── Karte 2: Companion Node ── -->
+            <!-- ── Block 2: Companion Node ── -->
             <div class="cfg-card">
               <h3>Companion Node</h3>
 
@@ -1868,113 +1918,40 @@ Nicht ins Git-Repo einchecken (.gitignore prüfen).">i</span>
               </label>
 
               <label style="margin-top:.5rem">
-                Erwarteter Node-Name
+                <span class="cfg-label-row">Erwarteter Node-Name
                 <span class="cfg-info"
                   title="GUST loggt eine Warnung wenn beim Verbinden ein
-abweichender Node-Name erkannt wird. Leer = keine Prüfung.">i</span>
+abweichender Node-Name erkannt wird. Leer = keine Prüfung.">i</span></span>
                 <input id="mc-node-name" type="text"
                        placeholder="AT-HL-OE3GAS-🦚">
               </label>
 
               <label style="margin-top:.5rem">
-                Serieller Port
+                <span class="cfg-label-row">Serieller Port
                 <span class="cfg-info"
                   title="COM-Port des Companion-Nodes (Windows: COM18,
 Linux: /dev/ttyUSB0). Wird in meshcore.json gespeichert,
-nicht in gateway.json.">i</span>
+nicht in gateway.json.">i</span></span>
                 <input id="mc-port" type="text"
                        placeholder="COM18"
-                       style="font-family:monospace;width:120px">
+                       style="font-family:monospace">
               </label>
 
               <label style="margin-top:.5rem">
                 Baudrate
-                <select id="mc-baudrate" style="width:120px">
+                <select id="mc-baudrate">
                   <option value="115200" selected>115200</option>
                   <option value="57600">57600</option>
                   <option value="38400">38400</option>
                 </select>
               </label>
-
-              <div style="margin-top:.8rem">
-                <button onclick="mcSaveNode()">💾 Speichern</button>
-              </div>
             </div>
 
-          </div><!-- /grid row 1 -->
+          </div><!-- /2-Spalten-Grid -->
 
-          <!-- ── Karte 3: Bridge-Verhalten (volle Breite) ── -->
-          <div class="cfg-card" style="margin-top:1rem">
-            <h3>Bridge-Verhalten</h3>
-
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem">
-
-              <label>
-                Auto-Fetch-Intervall (s)
-                <span class="cfg-info"
-                  title="Wie oft der Companion-Node nach wartenden
-Nachrichten abgefragt wird. Standard: 5 s.">i</span>
-                <input id="mc-fetch-interval" type="number"
-                       min="1" max="60" value="5" style="width:80px">
-              </label>
-
-              <label>
-                Verbindungs-Timeout (s)
-                <span class="cfg-info"
-                  title="Timeout beim Verbindungsaufbau zum Companion-Node.">i</span>
-                <input id="mc-timeout" type="number"
-                       min="1" max="120" value="10" style="width:80px">
-              </label>
-
-              <label>
-                Reconnect-Delay (s)
-                <span class="cfg-info"
-                  title="Wartezeit nach Verbindungsabbruch vor dem
-nächsten Verbindungsversuch.">i</span>
-                <input id="mc-reconnect-delay" type="number"
-                       min="5" max="300" value="30" style="width:80px">
-              </label>
-
-            </div>
-
-            <div style="margin-top:.7rem">
-
-              <label class="cfg-toggle">
-                <input id="mc-forward-public" type="checkbox">
-                Public Channel (Slot 0) nach HF weiterleiten
-                <span class="cfg-info"
-                  title="Empfohlen: Aus. Der Public Channel enthält
-viel Fremdverkehr und ist für HF-Übertragung ungeeignet.">i</span>
-              </label>
-
-              <label class="cfg-toggle" style="margin-top:.4rem">
-                <input id="mc-log-raw" type="checkbox">
-                Raw-Frame-Logging (alle MeshCore-Binärframes ins Debug-Log)
-                <span class="cfg-info"
-                  title="Nur für Protokoll-Analyse. Erzeugt sehr viel
-Log-Output — nicht im Dauerbetrieb aktivieren.">i</span>
-              </label>
-
-            </div>
-
-            <label style="margin-top:.7rem">
-              Unbekannter Absender
-              <span class="cfg-info"
-                title="Wenn kein Rufzeichen aus dem MeshCore-Node-Namen
-extrahierbar ist:
-  pubkey_prefix: erste 6 Hex-Zeichen als Pseudo-Rufzeichen
-  skip:          Nachricht verwerfen
-  placeholder:   UNKNWN als Rufzeichen verwenden">i</span>
-              <select id="mc-unknown-sender" style="max-width:260px">
-                <option value="pubkey_prefix">pubkey_prefix — erste 6 Hex-Byte</option>
-                <option value="skip">skip — Nachricht verwerfen</option>
-                <option value="placeholder">placeholder — "UNKNWN"</option>
-              </select>
-            </label>
-
-            <div style="margin-top:.8rem">
-              <button onclick="mcSaveBehaviour()">💾 Speichern</button>
-            </div>
+          <!-- ── Gemeinsamer Speichern-Button für alle 3 Karten ── -->
+          <div style="margin-top:1rem">
+            <button class="btn" onclick="mcSaveAll()">💾 Einstellungen speichern</button>
           </div>
 
           <!-- ── Karte 4: Kanäle (Slots, read-only Übersicht) ── -->
@@ -1998,6 +1975,9 @@ extrahierbar ist:
                                           font-size:.85rem">
             </div>
 
+            <div style="margin-top:.8rem">
+              <button class="btn" onclick="mcSaveChannelForwards()">💾 Forwarding-Regeln speichern</button>
+            </div>
             <div style="margin-top:.6rem;font-size:.78rem;
                         color:var(--text2,#8b949e)">
               ⚠ Kanalschlüssel werden in
@@ -2015,7 +1995,7 @@ extrahierbar ist:
                            color:var(--text2,#8b949e);margin-left:.5rem">
                 live vom Companion — nur sichtbar wenn Bridge verbunden
               </span>
-              <button onclick="mcLoadNeighbours()"
+              <button class="btn secondary" onclick="mcLoadNeighbours()"
                       style="float:right;font-size:.75rem;
                              padding:2px 8px;margin-top:0">
                 ↻ Aktualisieren
@@ -2589,42 +2569,47 @@ async function mcLoad() {
 
 // ── Speicher-Funktionen ──────────────────────────────────────
 
+// Einzelfunktionen bleiben als interne Helfer erhalten (für programmatischen Aufruf),
+// werden aber nicht mehr direkt auf Buttons gelegt.
+
 async function mcSaveBridge() {
-  try {
-    await cfgPatch('meshcore', {
-      enabled: document.getElementById('mc-enabled')?.checked ?? false,
-      config:  document.getElementById('mc-config-path')?.value.trim() || 'meshcore.json',
-    });
-    cfgBanner('MeshCore Bridge-Einstellungen gespeichert — Neustart erforderlich');
-  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+  await cfgPatch('meshcore', {
+    enabled: document.getElementById('mc-enabled')?.checked ?? false,
+    config:  document.getElementById('mc-config-path')?.value.trim() || 'meshcore.json',
+  });
 }
 
 async function mcSaveNode() {
-  // Node-Einstellungen landen in gateway.json > meshcore.node_*
-  // (wird von gust_meshcore_bridge.py beim Start ausgewertet)
-  try {
-    await cfgPatch('meshcore', {
-      node_callsign:        (document.getElementById('mc-callsign')?.value || '').trim().toUpperCase(),
-      node_name:            (document.getElementById('mc-node-name')?.value || '').trim(),
-      connection_port:      (document.getElementById('mc-port')?.value || '').trim(),
-      connection_baudrate:  parseInt(document.getElementById('mc-baudrate')?.value || '115200'),
-    });
-    cfgBanner('Companion-Node-Einstellungen gespeichert — Neustart erforderlich');
-  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+  await cfgPatch('meshcore', {
+    node_callsign:        (document.getElementById('mc-callsign')?.value || '').trim().toUpperCase(),
+    node_name:            (document.getElementById('mc-node-name')?.value || '').trim(),
+    connection_port:      (document.getElementById('mc-port')?.value || '').trim(),
+    connection_baudrate:  parseInt(document.getElementById('mc-baudrate')?.value || '115200'),
+  });
 }
 
 async function mcSaveBehaviour() {
+  await cfgPatch('meshcore.bridge', {
+    auto_fetch_interval_s:  parseInt(document.getElementById('mc-fetch-interval')?.value || '5'),
+    timeout_s:              parseInt(document.getElementById('mc-timeout')?.value || '10'),
+    reconnect_delay_s:      parseInt(document.getElementById('mc-reconnect-delay')?.value || '30'),
+    forward_public_channel: document.getElementById('mc-forward-public')?.checked ?? false,
+    log_raw_frames:         document.getElementById('mc-log-raw')?.checked ?? false,
+    unknown_sender_policy:  document.getElementById('mc-unknown-sender')?.value || 'pubkey_prefix',
+  });
+}
+
+async function mcSaveAll() {
+  // Speichert alle drei Karten in einer Aktion.
+  // Beide cfgPatch-Aufrufe sequenziell — zweiter wartet auf ersten.
   try {
-    await cfgPatch('meshcore.bridge', {
-      auto_fetch_interval_s:  parseInt(document.getElementById('mc-fetch-interval')?.value || '5'),
-      timeout_s:              parseInt(document.getElementById('mc-timeout')?.value || '10'),
-      reconnect_delay_s:      parseInt(document.getElementById('mc-reconnect-delay')?.value || '30'),
-      forward_public_channel: document.getElementById('mc-forward-public')?.checked ?? false,
-      log_raw_frames:         document.getElementById('mc-log-raw')?.checked ?? false,
-      unknown_sender_policy:  document.getElementById('mc-unknown-sender')?.value || 'pubkey_prefix',
-    });
-    cfgBanner('Bridge-Verhalten gespeichert');
-  } catch(e) { cfgBanner('Fehler: ' + e.message, false); }
+    await mcSaveBridge();
+    await mcSaveNode();
+    await mcSaveBehaviour();
+    cfgBanner('✅ MeshCore-Einstellungen gespeichert — Neustart erforderlich');
+  } catch(e) {
+    cfgBanner('Fehler beim Speichern: ' + e.message, false);
+  }
 }
 
 // ── Kanal-Tabelle ─────────────────────────────────────────────
@@ -2641,26 +2626,46 @@ function mcRenderChannels(channels) {
     return;
   }
 
-  let html = '<table style="width:100%;border-collapse:collapse;font-size:.82rem">';
-  html += '<thead><tr style="color:var(--text2);font-size:.78rem;text-transform:uppercase;letter-spacing:.5px">' +
-          '<th style="padding:4px 8px;text-align:left;border-bottom:1px solid var(--border)">Slot</th>' +
-          '<th style="padding:4px 8px;text-align:left;border-bottom:1px solid var(--border)">Name</th>' +
-          '<th style="padding:4px 8px;text-align:left;border-bottom:1px solid var(--border)">→ HF-Forward</th>' +
-          '</tr></thead><tbody>';
+  // Daten für mcSaveChannelForwards() merken
+  window._mcChannels = channels;
+
+  const thStyle = 'padding:5px 8px;text-align:left;border-bottom:1px solid var(--border);' +
+                  'color:var(--text2);font-size:.78rem;text-transform:uppercase;letter-spacing:.5px;' +
+                  'font-weight:normal';
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:.85rem">';
+  html += `<thead><tr>` +
+          `<th style="${thStyle};width:52px">Slot</th>` +
+          `<th style="${thStyle}">Name</th>` +
+          `<th style="${thStyle};width:110px;text-align:center">GUST-Aufnahme</th>` +
+          `<th style="${thStyle};width:110px;text-align:center">HF-Forward</th>` +
+          `</tr></thead><tbody>`;
 
   channels.forEach((ch, i) => {
-    const fwd = ch.gust_forward;
-    const fwdHtml = fwd
-      ? '<span style="color:var(--success,#3fb950)">✓ HF</span>'
-      : '<span style="color:var(--text2,#8b949e)">✗ Aus</span>';
-    const nameStyle = ch.name === 'GUST'
-      ? 'color:var(--mc,#9f7aea);font-weight:bold'
-      : '';
-    const bg = i % 2 === 0 ? '' : 'background:var(--bg3,#1c2330)';
+    const idx        = ch.index ?? i;
+    const nameStyle  = ch.name === 'GUST' ? 'color:var(--accent);font-weight:bold' : '';
+    const bg         = i % 2 === 0 ? '' : 'background:var(--bg3,#1c2330)';
+    const gfChk      = ch.gust_forward ? 'checked' : '';
+    const hfChk      = ch.hf_forward   ? 'checked' : '';
+    // Public-Kanal (Slot 0): gust_forward immer editierbar; hf_forward dort wenig sinnvoll
+    const hfTitle    = idx === 0
+      ? 'title="Public Channel: HF-Forward wird durch forward_public_channel gesteuert"'
+      : 'title="Nachrichten dieses Kanals auf HF weiterleiten (nur bei Daemon mit TX)"';
+
     html += `<tr style="${bg}">` +
-            `<td style="padding:4px 8px;font-family:monospace">${ch.index ?? i}</td>` +
-            `<td style="padding:4px 8px;${nameStyle}">${_esc(ch.name || '?')}</td>` +
-            `<td style="padding:4px 8px">${fwdHtml}</td>` +
+            `<td style="padding:5px 8px;font-family:monospace;color:var(--text2)">${idx}</td>` +
+            `<td style="padding:5px 8px;${nameStyle}">${_esc(ch.name || '?')}</td>` +
+            `<td style="padding:5px 8px;text-align:center">` +
+              `<input type="checkbox" ${gfChk} ` +
+              `id="mc-ch-gf-${idx}" ` +
+              `title="In GUST aufnehmen und im Monitor anzeigen" ` +
+              `style="width:1rem;height:1rem;cursor:pointer;accent-color:var(--accent)">` +
+            `</td>` +
+            `<td style="padding:5px 8px;text-align:center">` +
+              `<input type="checkbox" ${hfChk} ` +
+              `id="mc-ch-hf-${idx}" ` +
+              `${hfTitle} ` +
+              `style="width:1rem;height:1rem;cursor:pointer;accent-color:var(--accent)">` +
+            `</td>` +
             `</tr>`;
   });
   html += '</tbody></table>';
@@ -2668,6 +2673,43 @@ function mcRenderChannels(channels) {
 
   // Karten-Links bauen (Nodes mit Position)
   mcRenderMapLinks(channels);
+}
+
+// ── Forwarding-Regeln speichern ───────────────────────────────
+
+async function mcSaveChannelForwards() {
+  const channels = window._mcChannels;
+  if (!channels || channels.length === 0) {
+    cfgBanner('Keine Kanäle geladen — zuerst MeshCore-Tab öffnen', false);
+    return;
+  }
+
+  const updates = channels.map(ch => {
+    const idx = ch.index ?? 0;
+    return {
+      index:        idx,
+      gust_forward: !!(document.getElementById(`mc-ch-gf-${idx}`)?.checked),
+      hf_forward:   !!(document.getElementById(`mc-ch-hf-${idx}`)?.checked),
+    };
+  });
+
+  try {
+    // apiFetch setzt den X-API-Key-Header (aus meta-Tag) und parst JSON;
+    // wirft bei !ok mit "HTTP <status>: <text>".
+    const data = await apiFetch('/api/meshcore/channels', {
+      method:  'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify(updates),
+    });
+    cfgBanner(`Forwarding-Regeln gespeichert (${data.updated} Kanal/Kanäle)`);
+    // channel_map in window._mcChannels aktualisieren
+    updates.forEach(u => {
+      const ch = (window._mcChannels || []).find(c => (c.index ?? 0) === u.index);
+      if (ch) { ch.gust_forward = u.gust_forward; ch.hf_forward = u.hf_forward; }
+    });
+  } catch(e) {
+    cfgBanner('Fehler beim Speichern: ' + e.message, false);
+  }
 }
 
 // ── Karten-Links ──────────────────────────────────────────────
@@ -4015,6 +4057,10 @@ function applyStatusPush(data) {
           ? `MeshCore Bridge aktiv — ${mc.port}`
           : `MeshCore Bridge getrennt — ${mc.port}`;
       }
+    }
+    // Hook für MeshCore-Konfig-Tab (mcUpdateLiveStatus)
+    if (typeof window._mcStatusHandler === 'function') {
+      window._mcStatusHandler(mc);
     }
   }
 }
@@ -6099,7 +6145,8 @@ class WebServer:
     def __init__(self, config: dict,
                  event_bus=None,
                  gateway=None,
-                 config_path: Optional[str] = None):
+                 config_path: Optional[str] = None,
+                 meshcore_bridge=None):
         web_cfg = config.get("web", {})
         self._host     = web_cfg.get("host", "0.0.0.0")
         self._port     = int(web_cfg.get("port", 8080))
@@ -6116,6 +6163,7 @@ class WebServer:
 
         self._event_bus = event_bus
         self._gateway   = gateway
+        self._mc_bridge = meshcore_bridge   # MeshCoreBridge | None
 
         # rigctld-Prozess-Handle (Popen) — nur gesetzt, wenn GUST rigctld
         # selbst gestartet hat. Nur dann darf /api/hamlib/stop ihn beenden;
@@ -6207,6 +6255,7 @@ class WebServer:
         app.router.add_get("/api/lang/{code}", self._handle_lang)
         app.router.add_get("/api/config",    self._handle_config)
         app.router.add_patch("/api/config",  self._handle_config_patch)
+        app.router.add_patch("/api/meshcore/channels", self._handle_meshcore_channels_patch)
         app.router.add_post("/api/config",   self._handle_config_post)
         app.router.add_get("/api/log",       self._handle_log)
         app.router.add_post("/api/tx/weather",   self._handle_tx_weather)
@@ -6361,7 +6410,107 @@ class WebServer:
         web_safe = {k: v for k, v in self._config.get("web", {}).items()
                     if k != "api_key"}
         safe["web"] = web_safe
+
+        # meshcore_channels — Kanal-Slots aus MeshCoreBridge.channel_map
+        # Schlüssel werden NICHT mitgeliefert (Sicherheit).
+        if self._mc_bridge is not None:
+            safe["meshcore_channels"] = [
+                {
+                    "index":        idx,
+                    "name":         slot.get("name", ""),
+                    "gust_forward": bool(slot.get("gust_forward", False)),
+                    "hf_forward":   bool(slot.get("hf_forward",   False)),
+                }
+                for idx, slot in sorted(self._mc_bridge.channel_map.items())
+            ]
+        else:
+            safe["meshcore_channels"] = []
+
         return web.json_response(safe)
+
+    async def _handle_meshcore_channels_patch(self,
+                                               request: web.Request) -> web.Response:
+        """
+        PATCH /api/meshcore/channels
+        Aktualisiert gust_forward + hf_forward pro Kanal-Slot in meshcore.json.
+        Ändert NIEMALS Name oder Key — nur Forwarding-Flags.
+
+        Body: [{"index": 0, "gust_forward": false, "hf_forward": false}, ...]
+        """
+        import pathlib, json as _json
+
+        try:
+            updates = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text='{"error":"Ungültiger JSON-Body"}',
+                content_type="application/json"
+            )
+
+        if not isinstance(updates, list):
+            raise web.HTTPBadRequest(
+                text='{"error":"Array erwartet"}',
+                content_type="application/json"
+            )
+
+        # meshcore.json Pfad aus Config
+        mc_cfg      = self._config.get("meshcore", {})
+        mc_json_path = pathlib.Path(mc_cfg.get("config", "meshcore.json"))
+
+        if not mc_json_path.exists():
+            raise web.HTTPNotFound(
+                text='{"error":"meshcore.json nicht gefunden"}',
+                content_type="application/json"
+            )
+
+        async with self._config_write_lock:
+            try:
+                mc_data = _json.loads(mc_json_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"meshcore.json lesen fehlgeschlagen: {exc}"}}',
+                    content_type="application/json"
+                )
+
+            slots = mc_data.get("channels", {}).get("slots", [])
+            # Index-Map für schnellen Zugriff
+            slot_by_idx = {s.get("index"): s for s in slots if "index" in s}
+
+            changed = 0
+            for upd in updates:
+                idx = upd.get("index")
+                if idx is None or idx not in slot_by_idx:
+                    continue
+                slot = slot_by_idx[idx]
+                if "gust_forward" in upd:
+                    slot["gust_forward"] = bool(upd["gust_forward"])
+                if "hf_forward" in upd:
+                    slot["hf_forward"] = bool(upd["hf_forward"])
+                changed += 1
+
+            try:
+                mc_json_path.write_text(
+                    _json.dumps(mc_data, ensure_ascii=False, indent=2),
+                    encoding="utf-8"
+                )
+            except Exception as exc:
+                raise web.HTTPInternalServerError(
+                    text=f'{{"error":"meshcore.json schreiben fehlgeschlagen: {exc}"}}',
+                    content_type="application/json"
+                )
+
+        # channel_map in der laufenden Bridge sofort aktualisieren
+        if self._mc_bridge is not None:
+            for upd in updates:
+                idx = upd.get("index")
+                if idx is not None and idx in self._mc_bridge.channel_map:
+                    if "gust_forward" in upd:
+                        self._mc_bridge.channel_map[idx]["gust_forward"] = bool(upd["gust_forward"])
+                    if "hf_forward" in upd:
+                        self._mc_bridge.channel_map[idx]["hf_forward"]   = bool(upd["hf_forward"])
+
+        log.info("MC Channels: %d Slot(s) aktualisiert (gust_forward/hf_forward)", changed)
+        return web.json_response({"ok": True, "updated": changed})
 
     async def _handle_config_patch(self, request: web.Request) -> web.Response:
         """
