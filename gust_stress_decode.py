@@ -23,6 +23,7 @@ Autor: OE3GAS — GUST-Projekt
 
 import argparse
 import csv
+import json
 import os
 import sys
 from datetime import datetime
@@ -385,65 +386,85 @@ def write_result_csv(path: str, found: list, stats: dict):
 # AUTH-FRAME-VERIFIKATION
 # ═══════════════════════════════════════════════════════════════════════
 
-def verify_auth_frames(found: list, expected_rows: list, key: bytes) -> dict:
+def verify_auth_frames(found: list, expected_rows: list, known_keys: dict) -> dict:
     """
-    Prüft AUTH-Frames (0x50) gegen die referenzierten Daten-Frames.
+    Klassifiziert empfangene AUTH-Frames (0x50) in known/unknown und
+    verifiziert die bekannten gegen die referenzierten Daten-Frames.
 
-    found:          dekodierte Frames (inkl. '_raw_frame_body').
-    expected_rows:  CSV-Zeilen (für die 'Erwartet'-Zählung; darf [] sein).
-    key:            32-Byte HMAC-Schlüssel (gleiche Ableitung wie Generator).
+    found:         dekodierte Frames (inkl. '_raw_frame_body').
+    expected_rows: CSV-Zeilen (Spalte 'auth_frame' = known/unknown; darf [] sein).
+    known_keys:    dict callsign.upper() -> (key_id, key_bytes) aus gateway.json.
 
-    Rückgabe-dict: expected, received, verified, failed.
+    Klassifikation pro empfangenem AUTH-Frame:
+      • Rufzeichen IN known_keys  → verifizieren (known_verified / known_failed)
+      • Rufzeichen NICHT bekannt  → korrekt abgewiesen (unk_received)
 
-    Daten-Frame-Bodies werden je (callsign, type_name) gepuffert; bei
-    mehrfachen gleichartigen Frames desselben Senders gewinnt der jüngste
-    (analog zur retroaktiven WebGUI-Auth-Logik) — daher kann die Rate < 100 %
-    liegen, wenn ein Sender denselben Frame-Typ mehrmals sendet.
+    Pro (callsign, type_name) werden ALLE Daten-Frame-Bodies gepuffert;
+    ein AUTH-Frame verifiziert, sobald irgendeiner der Kandidaten passt —
+    so kollidieren mehrfache gleichartige Frames desselben Senders nicht.
+
+    Rückgabe-dict: known_expected, unk_expected, known_received,
+                   known_verified, known_failed, unk_received.
     """
     from gust_frame import decode_auth, verify_auth, frame_type_name
 
-    auth_expected = [r for r in (expected_rows or [])
-                     if r.get("frame_type", "") == "AUTH"]
+    auth_known_expected = [r for r in (expected_rows or [])
+                           if r.get("auth_frame") == "known"]
+    auth_unk_expected   = [r for r in (expected_rows or [])
+                           if r.get("auth_frame") == "unknown"]
 
-    # (callsign, type_name) -> roher Daten-Frame-Body
+    # (callsign, type_name) -> Liste roher Daten-Frame-Bodies (alle Kandidaten)
     auth_buf = {}
     for f in found:
         if f.get("frame_type") == "AUTH":
             continue
         raw = f.get("_raw_frame_body")
         if raw:
-            auth_buf[(f.get("callsign"), f.get("frame_type"))] = raw
+            auth_buf.setdefault((f.get("callsign"), f.get("frame_type")), []).append(raw)
 
-    received = verified = failed = 0
+    known_received = known_verified = known_failed = unk_received = 0
     for f in found:
         if f.get("frame_type") != "AUTH":
             continue
-        received += 1
+        cs = (f.get("callsign") or "").upper()
+        if cs not in known_keys:
+            unk_received += 1   # Rufzeichen nicht vereinbart → korrekt abgewiesen
+            continue
+        known_received += 1
+        _, key = known_keys[cs]
         try:
             body = f.get("_raw_frame_body")
             # AUTH-Body = TYPE(1)+CHANNEL(1)+FROM(4)+PAYLOAD(20)+CRC(2) = 28 B
             if not body or len(body) < 28:
-                failed += 1
+                known_failed += 1
                 continue
             auth     = decode_auth(body[6:-2])   # Header+CRC strippen → 20-B-Payload
             ts       = auth["timestamp"]
             ref_type = auth["ref_type"]
             hmac_tag = auth["hmac_tag"]           # hex-String (verify_auth akzeptiert)
             ref_name = frame_type_name(ref_type)
-            ref_body = auth_buf.get((f.get("callsign"), ref_name))
-            if ref_body is None:
-                failed += 1
+            candidates = auth_buf.get((cs, ref_name), [])
+            if not candidates:
+                known_failed += 1
                 continue
-            # Replay-Schutz weit gefasst — Stresstest-WAV kann beliebig alt sein
-            if verify_auth(ref_body, ts, hmac_tag, key, max_age_s=10**9):
-                verified += 1
+            # Replay-Schutz weit gefasst — Stresstest-WAV kann beliebig alt sein.
+            # Verifiziert, sobald irgendein Kandidaten-Body passt.
+            if any(verify_auth(rb, ts, hmac_tag, key, max_age_s=10**9)
+                   for rb in candidates):
+                known_verified += 1
             else:
-                failed += 1
+                known_failed += 1
         except Exception:
-            failed += 1
+            known_failed += 1
 
-    return {"expected": len(auth_expected), "received": received,
-            "verified": verified, "failed": failed}
+    return {
+        "known_expected": len(auth_known_expected),
+        "unk_expected":   len(auth_unk_expected),
+        "known_received": known_received,
+        "known_verified": known_verified,
+        "known_failed":   known_failed,
+        "unk_received":   unk_received,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -467,13 +488,9 @@ def main() -> int:
                    help="Schrittweite in Sekunden (Standard: 2.0)")
     p.add_argument("--auth", action="store_true",
                    help="AUTH-Frame Verifikation pruefen "
-                        "(Schluessel aus Seed deterministisch abgeleitet)")
-    p.add_argument("--auth-key", type=str, default=None, metavar="HEX",
-                   help="HMAC-Schluessel (64 Hex-Zeichen). "
-                        "Standard: aus Seed deterministisch abgeleitet")
-    p.add_argument("--auth-seed", type=int, default=None,
-                   help="Seed zur Schluesselrekonstruktion "
-                        "(Standard: aus WAV-Dateinamen, z.B. *_s42.wav)")
+                        "(known/unknown anhand gateway.json)")
+    p.add_argument("--config", type=str, default="gateway.json",
+                   help="gateway.json fuer Auth-Keys (Standard: gateway.json)")
     args = p.parse_args()
 
     # ── Eingaben prüfen ─────────────────────────────────────────────
@@ -525,18 +542,26 @@ def main() -> int:
 
     # ── AUTH-Verifikation (optional) ────────────────────────────────
     if args.auth:
-        import hashlib, re
-        seed_for_key = args.auth_seed
-        if seed_for_key is None and not args.auth_key:
-            # Aus WAV-Dateinamen extrahieren (z.B. "baseline_s42.wav" -> 42)
-            stem = os.path.splitext(os.path.basename(args.wav))[0]
-            m = re.search(r'[_-]s(\d+)', stem)
-            seed_for_key = int(m.group(1)) if m else 0
-        if args.auth_key:
-            auth_key = bytes.fromhex(args.auth_key)
-        else:
-            auth_key = hashlib.sha256(
-                f"GUST-STRESSTEST-KEY-seed{seed_for_key}".encode()).digest()
+        # ── Echte Auth-Keys aus gateway.json laden ───────────────────
+        known_keys = {}   # callsign.upper() -> (key_id, key_bytes)
+        cfg_path = args.config
+        if not os.path.isfile(cfg_path):
+            cfg_path = os.path.join(os.path.dirname(__file__),
+                                    os.path.basename(cfg_path))
+        try:
+            with open(cfg_path, encoding="utf-8") as f:
+                gw_cfg = json.load(f)
+            for entry in gw_cfg.get("auth", {}).get("keys", []):
+                try:
+                    cs  = str(entry.get("callsign", "")).strip().upper()
+                    key = bytes.fromhex(entry["key_hex"])
+                    kid = int(entry.get("key_id", 1))
+                    if cs:
+                        known_keys[cs] = (kid, key)
+                except Exception:
+                    continue
+        except Exception as e:
+            print(f"  WARNUNG: gateway.json Lesefehler: {e}")
 
         # Erwartete AUTH-Frames aus CSV (falls vorhanden)
         expected_rows = []
@@ -546,19 +571,22 @@ def main() -> int:
             except Exception:
                 expected_rows = []
 
-        ar = verify_auth_frames(found, expected_rows, auth_key)
-        print("\n  AUTH-Verifikation:")
-        if not args.auth_key:
-            src = "Argument" if args.auth_seed is not None else "Dateiname"
-            print(f"    Schluessel-Seed:  {seed_for_key}  (Quelle: {src})")
-        print(f"    Erwartet (CSV):   {ar['expected']}")
-        print(f"    Empfangen:        {ar['received']}")
-        print(f"    Verifiziert:      {ar['verified']}")
-        print(f"    Fehlgeschlagen:   {ar['failed']}")
-        if ar["received"] > 0:
-            print(f"    Verifikationsrate: {ar['verified']/ar['received']:.1%}")
-        if ar["expected"] > 0:
-            print(f"    Empfangsrate:     {ar['received']/ar['expected']:.1%}")
+        ar = verify_auth_frames(found, expected_rows, known_keys)
+
+        print(f"\n  AUTH-Keys (gateway.json): {len(known_keys)} bekannte Stationen")
+        print("\n  AUTH-Ergebnis (bekannte Stationen):")
+        print(f"    Erwartet (CSV):   {ar['known_expected']}")
+        print(f"    Empfangen:        {ar['known_received']}")
+        print(f"    Verifiziert:      {ar['known_verified']}")
+        print(f"    Fehlgeschlagen:   {ar['known_failed']}")
+        if ar["known_received"] > 0:
+            print(f"    Verifikationsrate: "
+                  f"{ar['known_verified']/ar['known_received']:.1%}")
+
+        print("\n  AUTH-Ergebnis (unbekannte Stationen — sollen abgelehnt werden):")
+        print(f"    Erwartet (CSV):   {ar['unk_expected']}")
+        ok_mark = "✓" if ar["unk_received"] >= ar["unk_expected"] * 0.7 else "?"
+        print(f"    Empfangen+abgew.: {ar['unk_received']}  ({ok_mark})")
 
     # ── Ergebnis-CSV ────────────────────────────────────────────────
     if args.out:
