@@ -1935,13 +1935,15 @@ h2:first-child { margin-top: 0; }
                         <option>19200</option><option>38400</option><option>57600</option>
                       </select>
                     </div>
-                    <div class="trx-field">
-                      <label>Host</label>
-                      <input type="text" id="trx-edit-host" value="127.0.0.1">
-                    </div>
-                    <div class="trx-field">
-                      <label>Port</label>
-                      <input type="number" id="trx-edit-port" value="4532">
+                    <div class="trx-field" style="grid-column:span 2">
+                      <label>Hamlib-Host / rigctld</label>
+                      <input type="text" id="trx-edit-hostport"
+                             value="127.0.0.1:4532"
+                             style="color:var(--text2);background:var(--bg2,#1e1e1e)"
+                             placeholder="127.0.0.1:4532">
+                      <span style="font-size:11px;color:var(--text2);margin-top:2px">
+                        Format: host:port — Standard 127.0.0.1:4532
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -6175,43 +6177,43 @@ let _trxAudioDevices = [];
 
 async function trxLoadAudioDevices() {
   try {
-    // Versuch: /api/audio/devices (falls vorhanden)
     const r = await fetch('/api/audio/devices');
     if (r.ok) {
       const d = await r.json();
-      _trxAudioDevices = d.devices || d || [];
+      _trxAudioDevices = (d.devices || []).map(dev => ({
+        id:   dev.id,
+        name: dev.name,
+        ins:  dev.inputs  || 0,
+        outs: dev.outputs || 0,
+      }));
       return;
     }
   } catch(_) {}
-  // Fallback: /api/config für bekannte IDs aus trx_profiles
-  try {
-    const cfg = await apiFetch('/api/config');
-    const seen = new Set();
-    const devs = [];
-    (cfg.trx_profiles || []).forEach(p => {
-      [p.audio_device_tx, p.audio_device_rx].forEach(id => {
-        if (id != null && !seen.has(id)) {
-          seen.add(id);
-          devs.push({id, name: `Gerät ${id}`});
-        }
-      });
-    });
-    _trxAudioDevices = devs;
-  } catch(_) {}
+  _trxAudioDevices = [];
 }
 
 function trxRigOptions(currentId) {
   const sel = document.getElementById('trx-edit-rigmodel');
   if (!sel) return;
   const cur = parseInt(currentId) || 0;
-  // Bekannte Modelle
-  let html = TRX_RIG_MODELS.map(m =>
+  // Sofort mit statischer Liste befüllen (kein Flash)
+  _trxSetRigOptions(sel, cur, TRX_RIG_MODELS);
+  // Asynchron per API nachladen
+  fetch('/api/hamlib/models').then(r => r.ok ? r.json() : null).then(d => {
+    if (d && d.models && d.models.length) {
+      _trxSetRigOptions(sel, parseInt(sel.value) || cur, d.models);
+    }
+  }).catch(() => {});
+}
+
+function _trxSetRigOptions(sel, cur, models) {
+  let html = models.map(m =>
     `<option value="${m.id}" ${m.id===cur?'selected':''}>
        ${m.id} — ${m.name}
      </option>`
   ).join('');
-  // Falls aktueller Wert nicht in Liste: als erstes einfügen
-  if (cur && !TRX_RIG_MODELS.find(m => m.id===cur)) {
+  // Unbekannten Wert erhalten
+  if (cur && !models.find(m => m.id === cur)) {
     html = `<option value="${cur}" selected>${cur} — (benutzerdefiniert)</option>` + html;
   }
   sel.innerHTML = html;
@@ -6221,21 +6223,22 @@ function trxAudioOptions(selId, currentVal) {
   const sel = document.getElementById(selId);
   if (!sel) return;
   const cur = parseInt(currentVal);
-  let html = '';
-  if (!_trxAudioDevices.length) {
-    // Nur aktuellen Wert anzeigen
-    html = `<option value="${cur||0}" selected>${cur != null ? cur : '—'}</option>`;
-  } else {
-    html = _trxAudioDevices.map(d => {
-      const id = d.id ?? d.index ?? d;
-      const name = d.name || d.label || `Gerät ${id}`;
-      return `<option value="${id}" ${id===cur?'selected':''}>${id} — ${name}</option>`;
-    }).join('');
-    // Aktuellen Wert einfügen falls nicht in Liste
-    if (cur != null && !_trxAudioDevices.find(d=>(d.id??d.index??d)===cur)) {
-      html = `<option value="${cur}" selected>${cur} — (ID ${cur})</option>` + html;
-    }
+  const isTx = selId.includes('audiotx');
+  // TX: Ausgabegeräte (outputs > 0); RX: Eingabegeräte (inputs > 0)
+  const filtered = _trxAudioDevices.filter(d =>
+    isTx ? d.outs > 0 : d.ins > 0
+  );
+  const list = filtered.length ? filtered : _trxAudioDevices;
+  let html = list.map(d =>
+    `<option value="${d.id}" ${d.id===cur?'selected':''}>
+       ${d.id} — ${d.name}
+     </option>`
+  ).join('');
+  // Aktuellen Wert einfügen falls nicht in gefilterter Liste
+  if (!isNaN(cur) && !list.find(d => d.id === cur)) {
+    html = `<option value="${cur}" selected>${cur} — (ID ${cur})</option>` + html;
   }
+  if (!html) html = `<option value="${cur||0}">${cur != null ? cur : '—'}</option>`;
   sel.innerHTML = html;
 }
 
@@ -6296,8 +6299,9 @@ function trxSelectIdx(idx) {
   // Felder befüllen
   document.getElementById('trx-edit-name').value         = p.name || '';
   document.getElementById('trx-edit-device').value       = p.device || '';
-  document.getElementById('trx-edit-host').value         = p.host || p.hamlib_host || '127.0.0.1';
-  document.getElementById('trx-edit-port').value         = p.port || p.hamlib_port || 4532;
+  const _h = p.host || p.hamlib_host || '127.0.0.1';
+  const _p = p.port || p.hamlib_port || 4532;
+  document.getElementById('trx-edit-hostport').value = `${_h}:${_p}`;
   document.getElementById('trx-edit-pttdelay').value     = p.ptt_delay_ms ?? 250;
   document.getElementById('trx-edit-level').value        = p.level ?? 30;
   document.getElementById('trx-edit-autostart').checked  = !!p.auto_start;
@@ -6323,8 +6327,13 @@ function trxReadForm() {
     rig_model:       parseInt(document.getElementById('trx-edit-rigmodel').value),
     device:          document.getElementById('trx-edit-device').value.trim(),
     baud:            parseInt(document.getElementById('trx-edit-baud').value),
-    hamlib_host:     document.getElementById('trx-edit-host').value.trim(),
-    hamlib_port:     parseInt(document.getElementById('trx-edit-port').value),
+    ...(() => {
+      const hp = (document.getElementById('trx-edit-hostport').value || '127.0.0.1:4532').trim();
+      const sep = hp.lastIndexOf(':');
+      const h = sep > 0 ? hp.substring(0, sep) : hp;
+      const p = sep > 0 ? parseInt(hp.substring(sep+1)) || 4532 : 4532;
+      return {hamlib_host: h, hamlib_port: p};
+    })(),
     audio_device_tx: parseInt(document.getElementById('trx-edit-audiotx').value),
     audio_device_rx: parseInt(document.getElementById('trx-edit-audiorx').value),
     ptt_backend:     document.getElementById('trx-edit-ptt').value,
