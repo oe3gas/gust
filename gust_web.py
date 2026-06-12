@@ -840,6 +840,17 @@ h2:first-child { margin-top: 0; }
   padding-top:9px;border-top:0.5px solid var(--border,#444)}
 .sdr-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 @media(max-width:700px){.sdr-grid{grid-template-columns:1fr}}
+.rig-search-wrap{position:relative;width:100%}
+.rig-search-input{width:100%;padding:5px 8px;font-size:13px;
+  border:0.5px solid var(--border,#444);border-radius:5px 5px 0 0;
+  background:var(--bg,#111);color:var(--text);box-sizing:border-box}
+.rig-search-input:focus{outline:none;border-color:var(--accent,#4a9eff)}
+.rig-search-select{width:100%;padding:4px 8px;font-size:13px;
+  border:0.5px solid var(--border,#444);border-top:none;
+  border-radius:0 0 5px 5px;background:var(--bg,#111);
+  color:var(--text);min-width:0;
+  max-height:220px}
+.rig-search-hint{font-size:11px;color:var(--text2);margin-top:2px}
 </style>
 </head>
 <body>
@@ -1527,8 +1538,20 @@ h2:first-child { margin-top: 0; }
                   <div class="trx-grid trx-g21">
                     <div class="trx-field">
                       <label>Rig-Modell</label>
-                      <select id="trx-edit-rigmodel" onchange="trxOnRigChange()">
-                      </select>
+                      <div class="rig-search-wrap">
+                        <input class="rig-search-input"
+                               id="trx-rig-search"
+                               type="text"
+                               placeholder="Suche: Icom, Yaesu, Kenwood, ID…"
+                               oninput="rigSearchFilter()"
+                               autocomplete="off">
+                        <select id="trx-edit-rigmodel"
+                                class="rig-search-select"
+                                size="6"
+                                onchange="trxOnRigChange();rigSearchCommit()">
+                        </select>
+                      </div>
+                      <div class="rig-search-hint" id="trx-rig-hint"></div>
                     </div>
                     <div class="trx-field">
                       <label>COM-Port</label>
@@ -4905,6 +4928,8 @@ function trxRigOptions(currentId) {
     .catch(() => {});
 }
 
+let _rigAllModels = [];
+
 function _trxSetRigOptions(sel, cur, models) {
   function _lbl(m) {
     if (m.name) return m.id + ' — ' + m.name;
@@ -4919,13 +4944,17 @@ function _trxSetRigOptions(sel, cur, models) {
     }
     return String(m.id);
   }
-  let html = models.map(m =>
-    `<option value="${m.id}" ${m.id===cur?'selected':''}>${_lbl(m)}</option>`
-  ).join('');
+  // Gesamtliste für Suche cachen
+  _rigAllModels = models.map(m => ({id: m.id, _label: _lbl(m)}));
   if (cur && !models.find(m => m.id === cur)) {
-    html = `<option value="${cur}" selected>${cur} — (benutzerdefiniert)</option>` + html;
+    _rigAllModels.unshift({id: cur, _label: `${cur} — (benutzerdefiniert)`});
   }
-  sel.innerHTML = html;
+  // Suchfeld leeren und gefilterte Liste rendern
+  const searchInp = document.getElementById('trx-rig-search');
+  if (searchInp) searchInp.value = '';
+  rigSearchFilter();
+  // Aktuelle Auswahl im Select setzen
+  if (sel) sel.value = String(cur);
 }
 
 function trxAudioOptions(selId, currentVal) {
@@ -4956,6 +4985,45 @@ function trxAudioOptions(selId, currentVal) {
   }
   if (!html) html = `<option value="${cur||0}">${cur != null ? cur : '—'}</option>`;
   sel.innerHTML = html;
+}
+
+function rigSearchFilter() {
+  const q    = (document.getElementById('trx-rig-search')?.value || '')
+                .toLowerCase().trim();
+  const sel  = document.getElementById('trx-edit-rigmodel');
+  const hint = document.getElementById('trx-rig-hint');
+  if (!sel) return;
+  const cur  = parseInt(sel.value) || 0;
+  const list = q
+    ? _rigAllModels.filter(m => {
+        const lbl = (m._label||'').toLowerCase();
+        return lbl.includes(q) || String(m.id).startsWith(q);
+      })
+    : _rigAllModels;
+  let html = list.map(m =>
+    `<option value="${m.id}" ${m.id===cur?'selected':''}>${m._label}</option>`
+  ).join('');
+  if (!html) html = `<option disabled>Keine Treffer</option>`;
+  sel.innerHTML = html;
+  // Größe anpassen: min 3, max 8 sichtbare Einträge
+  sel.size = Math.min(8, Math.max(3, list.length));
+  if (hint) hint.textContent = list.length < _rigAllModels.length
+    ? `${list.length} von ${_rigAllModels.length} Modellen`
+    : `${_rigAllModels.length} Modelle`;
+}
+
+function rigSearchCommit() {
+  // Gewähltes Modell ins Suchfeld schreiben
+  const sel = document.getElementById('trx-edit-rigmodel');
+  const inp = document.getElementById('trx-rig-search');
+  if (!sel || !inp) return;
+  const chosen = _rigAllModels.find(m => m.id === parseInt(sel.value));
+  if (chosen) inp.value = chosen._label;
+  // Filter zurücksetzen → volle Liste zeigen
+  setTimeout(() => {
+    document.getElementById('trx-rig-search').value = '';
+    rigSearchFilter();
+  }, 100);
 }
 
 function trxOnRigChange() {
@@ -6885,7 +6953,8 @@ class WebServer:
 
         Parst die tabellarische Ausgabe (erste Spalte = Modell-ID = Integer,
         Rest der Zeile = Label). Filtert case-insensitive nach `q`, gibt max.
-        50 Treffer zurück. Modell 1 (Hamlib Dummy) ist immer der erste Eintrag.
+        2000 Treffer zurück (volle Hamlib-Liste, ~400+). Modell 1 (Hamlib
+        Dummy) ist immer der erste Eintrag.
         Ist rigctld nicht im PATH, kommt eine leere Liste + Fehlerfeld zurück.
         """
         q = (request.query.get("q") or "").strip().lower()
@@ -6895,7 +6964,7 @@ class WebServer:
             try:
                 proc = subprocess.run(
                     ["rigctld", "--list"],
-                    capture_output=True, text=True, timeout=10,
+                    capture_output=True, text=True, timeout=15,
                 )
             except FileNotFoundError:
                 return None, "rigctld nicht im PATH gefunden"
@@ -6932,7 +7001,7 @@ class WebServer:
             if q and q not in label.lower() and q not in str(model_id):
                 continue
             models.append(entry)
-            if len(models) >= 50:
+            if len(models) >= 2000:
                 break
 
         # Modell 1 immer als ersten Eintrag (unabhängig von q)
