@@ -774,12 +774,13 @@ h2:first-child { margin-top: 0; }
 .trx-sec{margin-bottom:2px}
 .trx-sec-lbl{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}
 .trx-grid{display:grid;gap:8px 10px}
-.trx-g2{grid-template-columns:1fr 1fr}
-.trx-g3{grid-template-columns:1fr 1fr 1fr}
-.trx-g21{grid-template-columns:2fr 1fr}
-.trx-field{display:flex;flex-direction:column;gap:3px}
+.trx-g2{grid-template-columns:1fr 1fr;min-width:0}
+.trx-g3{grid-template-columns:1fr 1fr 1fr;min-width:0}
+.trx-g21{grid-template-columns:2fr 1fr;min-width:0}
+.trx-field{display:flex;flex-direction:column;gap:3px;min-width:0}
 .trx-field label{font-size:12px;color:var(--text2)}
-.trx-field input,.trx-field select{padding:5px 8px;font-size:13px;border:0.5px solid var(--border,#444);border-radius:5px;background:var(--bg,#111);color:var(--text);width:100%}
+.trx-field input,.trx-field select{padding:5px 8px;font-size:13px;border:0.5px solid var(--border,#444);border-radius:5px;background:var(--bg,#111);color:var(--text);width:100%;min-width:0}
+.trx-field select{width:100%;min-width:0}
 .trx-field input:focus,.trx-field select:focus{outline:none;border-color:var(--accent,#4a9eff)}
 .trx-toggle-row{display:flex;align-items:center;gap:9px;padding:4px 0;font-size:13px;color:var(--text2)}
 .trx-tog{position:relative;width:32px;height:17px;flex-shrink:0}
@@ -1399,40 +1400,52 @@ h2:first-child { margin-top: 0; }
         </div>
 
         <div class="cfgedit-sub" id="cfgsub-gateway_tx" style="display:none">
-          <div class="cfg-card">
-            <h3>Sendezyklus</h3>
-            <label>Intervall (s)<input id="cfg-gw-interval" type="number" min="10" max="3600"></label>
-            <label>Min. TX-Abstand (s)<input id="cfg-gw-gap" type="number" min="0" max="300"></label>
-            <h3 style="margin-top:1rem">Datenquelle</h3>
-            <label>
-              <span class="cfg-field-row">
-                Datenquelle / Adapter
-                <span class="cfg-info" title="Woher der Gateway seine Sendedaten bezieht. 'sim': Simulator erzeugt synthetische Wetter/Position/Text-Frames — kein echtes Gerät nötig, ideal für Tests. 'mqtt': Daten kommen von einem MQTT-Broker (Phase 6). 'null': Kein automatischer TX — nur manuell über Web-UI auslösen.">i</span>
-              </span>
-              <select id="cfg-src-adapter">
-                <option value="sim">sim</option>
-                <option value="mqtt">mqtt</option>
-                <option value="null">null</option>
-              </select>
-            </label>
-            <h3 style="margin-top:1rem">Simulator (source.sim)</h3>
-            <label>Wetter-Intervall (s)<input id="cfg-sim-weather" type="number" min="10"></label>
-            <label>Position-Intervall (s)<input id="cfg-sim-position" type="number" min="10"></label>
-            <label>Text-Intervall (s)<input id="cfg-sim-text" type="number" min="10"></label>
-            <label>Latitude<input id="cfg-sim-lat" type="number" step="0.0001"></label>
-            <label>Longitude<input id="cfg-sim-lon" type="number" step="0.0001"></label>
-            <label>Höhe (m)<input id="cfg-sim-alt" type="number"></label>
-            <label class="cfg-toggle">
-              <input id="cfg-sim-emergency" type="checkbox">
-              Emergency aktiviert
-              <span class="cfg-info" title="Sendet periodisch einen Test-Notfall-Frame (Frame-Typ 0x20). Ausschließlich für Entwicklung und Tests — niemals im echten Betrieb aktivieren. Notfall-Frames haben höchste Sendepriorität und werden sofort übertragen.">i</span>
-            </label>
-            <label class="cfg-toggle">
-              <input id="cfg-sim-drift" type="checkbox">
-              Drift-Simulation
-              <span class="cfg-info" title="Lässt die simulierten GPS-Koordinaten leicht driften — simuliert eine bewegte Station. Nützlich um Position-Frame-Updates im Monitor zu testen. Nur im Simulator-Modus (Adapter = sim) wirksam.">i</span>
-            </label>
-            <div style="margin-top:.8rem"><button onclick="cfgSaveGatewayTx()">💾 Speichern</button></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;
+                      gap:1rem;align-items:start">
+
+            <div class="cfg-card" style="margin:0">
+              <h3>Sendezyklus</h3>
+              <label>Intervall (s)<input id="cfg-gw-interval" type="number" min="10" max="3600"></label>
+              <label>Min. TX-Abstand (s)<input id="cfg-gw-gap" type="number" min="0" max="300"></label>
+            </div>
+
+            <div class="cfg-card" style="margin:0">
+              <h3>Datenquelle</h3>
+              <label>
+                <span class="cfg-field-row">Datenquelle / Adapter
+                  <span class="cfg-info" title="Woher der Gateway seine Sendedaten bezieht. 'sim': Simulator erzeugt synthetische Wetter/Position/Text-Frames — kein echtes Gerät nötig, ideal für Tests. 'mqtt': Daten kommen von einem MQTT-Broker (Phase 6). 'null': Kein automatischer TX — nur manuell über Web-UI auslösen.">i</span>
+                </span>
+                <select id="cfg-src-adapter">
+                  <option value="sim">sim</option>
+                  <option value="mqtt">mqtt</option>
+                  <option value="null">null</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="cfg-card" style="margin:0">
+              <h3>Simulator (source.sim)</h3>
+              <label>Wetter-Intervall (s)<input id="cfg-sim-weather" type="number" min="10"></label>
+              <label>Position-Intervall (s)<input id="cfg-sim-position" type="number" min="10"></label>
+              <label>Text-Intervall (s)<input id="cfg-sim-text" type="number" min="10"></label>
+              <label>Latitude<input id="cfg-sim-lat" type="number" step="0.0001"></label>
+              <label>Longitude<input id="cfg-sim-lon" type="number" step="0.0001"></label>
+              <label>Höhe (m)<input id="cfg-sim-alt" type="number"></label>
+              <label class="cfg-toggle">
+                <input id="cfg-sim-emergency" type="checkbox">
+                Emergency aktiviert
+                <span class="cfg-info" title="Sendet periodisch einen Test-Notfall-Frame (Frame-Typ 0x20). Ausschließlich für Entwicklung und Tests — niemals im echten Betrieb aktivieren.">i</span>
+              </label>
+              <label class="cfg-toggle">
+                <input id="cfg-sim-drift" type="checkbox">
+                Drift-Simulation
+                <span class="cfg-info" title="Lässt die simulierten GPS-Koordinaten leicht driften — simuliert eine bewegte Station.">i</span>
+              </label>
+            </div>
+
+          </div>
+          <div style="margin-top:.8rem">
+            <button onclick="cfgSaveGatewayTx()">💾 Speichern</button>
           </div>
         </div>
 
@@ -1872,8 +1885,12 @@ function applyTheme(key) {
   const sel = document.getElementById('cfg-theme');
   if (sel) sel.value = key;
   // Swimlane neu zeichnen wenn aktiv (Canvas-Farben sind theme-abhängig)
-  if (typeof slRedraw === 'function') slRedraw();
-  else if (typeof slDraw === 'function') slDraw();
+  try {
+    if (typeof sl !== 'undefined' && sl !== null) {
+      if (typeof slRedraw === 'function') slRedraw();
+      else if (typeof slDraw === 'function') slDraw();
+    }
+  } catch(_) {}
 }
 
 function cycleTheme() {
@@ -4868,31 +4885,43 @@ async function trxLoadAudioDevices() {
 }
 
 function trxRigOptions(currentId) {
-  const sel = document.getElementById('trx-edit-rigmodel');
+  const sel = document.getElementById('trx2-edit-rigmodel')
+           || document.getElementById('trx-edit-rigmodel');
   if (!sel) return;
   const cur = parseInt(currentId) || 0;
-  // Sofort mit statischer Liste befüllen damit Feld nicht leer ist
+  // Sofort mit statischer Liste befüllen
   _trxSetRigOptions(sel, cur, TRX_RIG_MODELS);
-  // Async nachladen — beim Fertigladen aktuellen Wert beibehalten
+  // Async rigctld-Liste nachladen — beim Laden immer aktuellen
+  // DOM-Wert lesen (nicht cur) damit zwischenzeitliche Änderungen
+  // nicht überschrieben werden
   fetch('/api/hamlib/models')
     .then(r => r.ok ? r.json() : null)
     .then(d => {
       if (!d || !d.models || !d.models.length) return;
-      // Aktuell selektierten Wert aus dem DOM lesen (nicht aus cur —
-      // könnte inzwischen geändert worden sein)
-      const selected = parseInt(sel.value) || cur;
-      _trxSetRigOptions(sel, selected, d.models);
+      // Aktuell selektierten Wert aus DOM — nicht aus cur
+      const nowSel = parseInt(sel.value) || cur;
+      _trxSetRigOptions(sel, nowSel, d.models);
     })
     .catch(() => {});
 }
 
 function _trxSetRigOptions(sel, cur, models) {
+  function _lbl(m) {
+    if (m.name) return m.id + ' — ' + m.name;
+    if (m.label) {
+      const flat = String(m.label).replace(/[\r\n\t]+/g,' ').trim();
+      const parts = flat.split(/\s{2,}/);
+      const mfr   = (parts[0]||'').trim();
+      const model = (parts[1]||'').trim();
+      if (mfr && model) return m.id + ' — ' + mfr + ' ' + model;
+      const words = flat.split(/\s+/);
+      return m.id + ' — ' + words.slice(0,2).join(' ');
+    }
+    return String(m.id);
+  }
   let html = models.map(m =>
-    `<option value="${m.id}" ${m.id===cur?'selected':''}>
-       ${m.id} — ${m.name}
-     </option>`
+    `<option value="${m.id}" ${m.id===cur?'selected':''}>${_lbl(m)}</option>`
   ).join('');
-  // Unbekannten Wert erhalten
   if (cur && !models.find(m => m.id === cur)) {
     html = `<option value="${cur}" selected>${cur} — (benutzerdefiniert)</option>` + html;
   }
