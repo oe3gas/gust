@@ -754,18 +754,63 @@ UTF-8-Zeichengrenzen werden respektiert.
 
 ---
 
+### T-MC-06 MeshCore mc_sender-Extraktion + vollständiger Text (IT) ✅
+**Status:** ✅ PASS (Juni 2026)
+**Infrastruktur:** Browser, Daemon mit MeshCore-Bridge
+
+**Methode:** MC-Nachricht empfangen, Modal öffnen
+
+**Ergebnis:**
+- frame.from = echter Node-Name (nicht Gateway-Rufzeichen): ✅
+- Modal: lila Header, vollständiger Text ohne Truncation: ✅
+- dest = Kanal-Name statt BROADCAST: ✅
+
+---
+
 ### Offene Tests
 
 | ID | Titel | Voraussetzung |
 |---|---|---|
-| T-MC-06 | CHANNEL_MSG_RECV bei BLE-Companion | Gerät mit companion_radio_ble |
-| T-MC-07 | TX-Pfad GUST → MeshCore | P6-20 implementiert |
-| T-MC-08 | Repeater-Steuerung via CLI | P6-22 dokumentiert |
-| T-MC-09 | Auto-Reconnect nach Verbindungsabbruch | Companion kurz trennen |
+| T-MC-07 | CHANNEL_MSG_RECV bei BLE-Companion | Gerät mit companion_radio_ble |
+| T-MC-08 | TX-Pfad GUST → MeshCore | P6-20 implementiert |
+| T-MC-09 | Repeater-Steuerung via CLI | P6-22 dokumentiert |
+| T-MC-10 | Auto-Reconnect nach Verbindungsabbruch | Companion kurz trennen |
+
+---
+
+## Modul 13 — AUTH-Frame-Authentifizierung (`gust_frame.py` / `gust_rx.py`)
+
+### T-AUTH-02 HMAC-Verifikation Short-/Deep-Decoder + pending_auth_buf (IT) ✅
+**Status:** ✅ PASS (Juni 2026)
+
+**Methode:** `py gust_tx_test.py --auth --count 6 --audio-device 15`
+
+**Ergebnis:**
+- OE1XTU (Short-Decoder): ✓ authentifiziert
+- OE1ABC (Deep-Decoder + Fix): ✓ authentifiziert (🔑🔍)
+- OE4DUS (pending_auth_buf): ✓ rückwirkend authentifiziert
+- OE7DRV/OE7RAO (KEY_ID=99): ✗ korrekt abgewiesen
+- Deep-Decoder AUTH-Fix (`elif _tn=="AUTH"`): validiert
+
+---
+
+## Modul 14 — WebGUI-Redesign (visuell)
+
+### T-GUI-01 WebGUI Modal + TX-Layout + Farbschema (IT, visuell) ✅
+**Status:** ✅ PASS (Juni 2026)
+
+**Methode:** Browser-Test nach Daemon-Start + TX-Test
+
+**Ergebnis:**
+- Modal: 2-zeilige Titelleiste, Typ-Farben, Fußzeile: ✅
+- TX-Tab: Zwei-Spalten, Schedule-Hint, Navigation blau: ✅
+- Farbschema: WEATHER grün, POSITION blau, STATION_TLM grün: ✅
+- RX-Filter: HF/MC/Typ/Rufzeichen kombinierbar: ✅
+- Swimlane: 🔑-Badge, MC-Blöcke lila, Clock-Domain-Fix: ✅
 
 ---
 
 *Dokument: gust_testplan.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — T-10.5 Live-Decoder VAC-Stresstest + Deep-Decoder (86–90 % PASS) · Modul 12 SDR-Profile-System (T-12.1–T-12.5); davor: Phase 7 Empfänger-Robustheit + SNR-Baseline (T-10.2); Modul 9 Connector Layer / MQTT (T-9.1–T-9.10): 3-Ebenen-Teststrategie (offline / öffentlicher Broker / amqtt lokal)*
+*Stand: Juni 2026 — T-AUTH-02 HMAC Short-/Deep-Decoder + pending_auth_buf · T-GUI-01 WebGUI-Redesign · T-MC-06 mc_sender-Extraktion · T-10.5 Live-Decoder VAC-Stresstest + Deep-Decoder (86–90 % PASS) · Modul 12 SDR-Profile-System (T-12.1–T-12.5); davor: Phase 7 Empfänger-Robustheit + SNR-Baseline (T-10.2); Modul 9 Connector Layer / MQTT (T-9.1–T-9.10): 3-Ebenen-Teststrategie (offline / öffentlicher Broker / amqtt lokal)*
 *Gilt für: Phase 1–10*
