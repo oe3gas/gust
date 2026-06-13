@@ -1,6 +1,6 @@
 # GUST — Testplan
 **OE3GAS — Systematische Verifikation aller Komponenten**
-*Stand: Mai 2026 — Phase 7 On-Air-Test abgeschlossen · Phase 9 Tests definiert*
+*Stand: Juni 2026 — Phase 7 On-Air-Test abgeschlossen · Phase 9 Tests definiert · AUTH (T-AUTH-02) + WebGUI-Redesign (T-GUI-01) + MeshCore mc_sender (T-MC-06)*
 
 ---
 
