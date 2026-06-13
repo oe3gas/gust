@@ -1,6 +1,6 @@
 # GUST — Backlog
 **OE3GAS — Generic Universal Shortwave Telemetry**
-*Stand: Juni 2026 — ADR-29–32 SDR-Profil-System · Phase 10 History & Logging (P10-01/P10-02) · Swimlane: laufende Zeitachse, Canvas-Scroll, Pause-Snapshot, Frame-Klick*
+*Stand: Juni 2026 — ADR-29–32 SDR-Profil-System · Phase 10 History & Logging (P10-01/P10-02) · Swimlane: laufende Zeitachse, Canvas-Scroll, Pause-Snapshot, Frame-Klick · ADR-38 Rufzeichen-Lookup AUTH · P8-15–20 AUTH/GUI/MC/i18n*
 
 ---
 
@@ -336,7 +336,12 @@ Heltec V4, Stand Juni 2026). Siehe gust_knowledge.md §31.
 | P8-11 | 🟢 | feature | AUTH 0x50 — HMAC-SHA256 Frame-Authentifizierung (GUST-S) | Bilaterale Authentifizierung: 0x50 AUTH-Frame (TIMESTAMP + REF_TYPE + KEY_ID + HMAC-14 = 20 B), HMAC-SHA256 truncated, 60-s-Replay über TIMESTAMP (kein seq-Feld nötig), Schlüsselverwaltung in gateway.json. Spec §3.4/§3.5, gust_knowledge.md §28. Gegenstück: AUTH_EX (P8-12). | ✅ |
 | P8-12 | 🟢 | feature | GUST-X Protokollvariante — 9-Symbol-SYNC + LDPC + 44B Payload | GUST-X v1 implementieren: 9-Symbol-SYNC Erkennung, LDPC n=256 Integration, Timestamp-Pflichtfeld, neue Frame-Typen 0x81-0x87 (inkl. AUTH_EX 2-Frame ECDSA), gateway.json `protocol.variant`. Voraussetzung: Soft-Output-Demodulator (P8-13). Spec §3.9, ADR-37. | 🔲 |
 | P8-13 | 🟢 | research | Soft-Output-Demodulator für LDPC | _fft_detect_symbol() gibt LLR-Array statt Hard-Symbol zurück. Bin-Energien → bitweise Log-Likelihood-Ratios. Voraussetzung für LDPC SNR-Gewinn. | 🔲 |
-| P8-15 | ⚪ | feature | ~~Frame-Sequencing für AUTH-RX~~ | **Obsolet** seit AUTH 0x50 auf TIMESTAMP statt REF_SEQ umgestellt wurde (P8-11) — AUTH-RX braucht kein seq-Feld mehr. Frame-Sequencing nur noch relevant falls für andere Zwecke gewünscht (z.B. BUG-08 Frame-Contention) — dann neu fassen. | ❌ obsolet |
+| P8-15 | 🔴 | feature | AUTH 0x50 vollständig — Deep-Decoder + Rufzeichen-Lookup + pending_auth_buf | Deep-Decoder-Fix (elif _tn=="AUTH"), rufzeichenbasierter Lookup (ADR-38, KEY_ID=RESERVED), rückwirkende Verifikation (_pending_auth_buf, 60-s-TTL), --auth-pause Default 1.5s. T-AUTH-02 bestanden. Commit d7638c8, 885cb6e, Refactoring-Commit. (Ersetzt die obsolete Frame-Sequencing-Aufgabe — AUTH-RX nutzt TIMESTAMP statt REF_SEQ, P8-11.) | ✅ |
+| P8-16 | 🟡 | refactor | CQ-Frame (0x41) entfernt | Frame-Typ 0x41 (CQ-Anruf) entfernt aus gust_frame.py, gust_stresstest.py, gust_web.py, gust_tx_test.py, gust_spec.md. Byte 0x41 = RESERVED. CQ via TEXT 0x40 + BROADCAST. | ✅ |
+| P8-17 | 🟡 | feature | Stresstest AUTH mit echten gateway.json Keys | gust_stresstest.py --auth lädt echte Keys aus gateway.json. known/unknown AUTH-Frames, auth_frame-Spalte im CSV. Verifikationsrate ≥ 80% bestätigt (seed 42, 120s). Branch feat/stresstest-auth in main gemergt. | ✅ |
+| P8-18 | 🟡 | feature | WebGUI-Redesign (Modal, TX-Layout, Farbschema, Filter) | Modal: 2-zeilige Titelleiste, Typ-Farben, Fußzeile SNR/Offset. TX: Zwei-Spalten mit Schedule-Hint. Farbschema: WEATHER↔POSITION getauscht, STATION_TLM→grün. RX-Feed: Display-Filter (Quelle/Typ/Rufzeichen). Feed-Höhe Dropdown. Kachel-Klick→Modal. Swimlane: 🔑-Badge, dunklere Farben, MC-Blöcke lila, Clock-Domain-Fix. Darstellungsoptionen im Konfig/Allgemein. | ✅ |
+| P8-19 | 🟡 | feature | MeshCore: mc_sender-Extraktion + Truncation-Fix | Pfad A: mc_sender aus Text extrahiert (SenderName: Nachricht). frame.from = mc_sender. payload_decoded.text = vollständige Nachricht (kein 14-Byte-Limit). MC-Modal: lila, ohne Fragment-Felder. Live Feed: .from 160px, no-wrap. | ✅ |
+| P8-20 | 🟢 | docs | i18n aktualisiert (de.json/en.json) | 28 neue Keys (Filter, TX-Panel, Darstellungs-Card, Feed-Höhe). 5 veraltete Keys entfernt (CQ, Sensor, Rotor, Resource, Station). Beide Dateien synchron, 250 Keys. | ✅ |
 
 ### P8-10: FEC-Backend-Abstraktion + LDPC-Evaluierung
 

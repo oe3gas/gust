@@ -2395,6 +2395,116 @@ JSON von Hand bearbeitet). Der Sync bringt beide in Einklang.
 
 ---
 
+## 39. WebGUI-Verbesserungen Session Juni 2026
+
+### Farbschema (final, konsistent in Swimlane + Modal + TX-Formulare)
+
+Semantische Kategorien:
+  TELEMETRIE (WEATHER, STATION_TLM) = GRÜN  #1A7A42
+  NAVIGATION (POSITION)             = BLAU  #2E6BA8
+  KOMMUNIKATION (TEXT)              = ORANGE #C07D0A
+  NOTFALL (EMERG_BEACON, EMERG_RSRC)= ROT   #A93226
+  MeshCore                          = LILA  #5B2D8E
+
+Bisherige Fehler (korrigiert):
+- WEATHER war blau (#2E6BA8), POSITION war grün (#1A7A42) — getauscht
+- STATION_TLM war lila (#6B2D8B) — jetzt grün wie WEATHER (beide TELEMETRIE)
+
+Alle drei Stellen synchron: SL_COLORS (Swimlane), MODAL_COLORS (Modal-Header),
+.tx-form.form-p* (TX-Formular-Rahmen).
+
+### Modal-Redesign
+
+Neue 2-zeilige Titelleiste:
+  Zeile 1: Rufzeichen groß (weiß auf Typ-Farbe)
+  Zeile 2: Frame-Typ · Kanal/MC · Zeit (kleiner, opacity 0.85)
+Fußzeile: SNR links, Offset rechts.
+Entfernt aus Body: Typ, Von, Kanal, RS-Fehler.
+Konstante: MODAL_COLORS (synchron mit SL_COLORS, plus MODAL_MC_COLOR=#5B2D8E).
+
+### TX-Tab Zwei-Spalten-Layout
+
+Links: Kategorien-Auswahl (TELEMETRIE/NAVIGATION/KOMMUNIKATION/NOTFALL)
+       ohne Prio-Text (der ist jetzt im rechten Panel)
+Rechts: aktives Formular mit:
+  - farbigem 3px Rahmen (Typ-Farbe)
+  - Titelleiste (z.B. "KOMMUNIKATION") in Typ-Farbe
+  - Schedule-Hinweis darunter (P4: Countdown, P2: "≤ 30 s", P1: "sofort")
+Responsive: unter 640px einspaltig.
+
+TX_PANEL_CONFIG = {weather, position, text, emergency} mit label, color, hint().
+_tickTxCountdown() aktualisiert auch den Panel-Hint für weather/position.
+
+### RX-Feed Display-Filter
+
+Filterleiste direkt unter "LIVE RX FEED":
+  [Alle] [HF] [MC] [MQTT°]  |  Typ-Dropdown  |  Ruf-Textfeld [✕]
+
+Implementierung: rein clientseitig, alle Frames bleiben im DOM.
+_frameData an jeder .frame-row — bei Filteränderung: applyRxFilter()
+setzt style.display = '' oder 'none'.
+MQTT-Button deaktiviert (opacity 0.35, nicht implementiert).
+EMERG fasst EMERG_BEACON + EMERG_RSRC zusammen.
+
+### Feed-Höhe Dropdown
+
+Neben Auto-Scroll: Klein/Mittel/Groß/Sehr groß (200/320/550/800px).
+setFeedHeight(px) → style.height (nicht max-height, das verliert gegen height).
+localStorage: 'gust_feed_height'.
+
+### Kanal-Kacheln
+
+- SNR + Zeit in einer Zeile (ch-info, SNR farbig)
+- Kachel-Klick → Frame-Detail-Modal (_lastFrame gespeichert, hover-CSS)
+- cursor:pointer + :hover Akzent-Rand + Box-Shadow
+
+### Swimlane-Verbesserungen
+
+- 🔑-Badge auf authentifizierten Blöcken (ctx.save/restore, oben rechts)
+- Farben ~25% abgedunkelt (bessere Lesbarkeit weißer Text + 🔑)
+- MC-Blöcke lila (#5B2D8E statt TEXT-Farbe)
+- Clock-Domain-Fix: slAddFrame() nutzt data.ts statt data.tx_start_s
+  (tx_start_s = monoton, ts = Unix — unterschiedliche Domains = MC-Frames
+  verschwanden bei Offset von ~1,78 Mrd. Sekunden)
+
+### Darstellungsoptionen im Konfig-Tab Allgemein
+
+Neue "Darstellung"-Card in cfgsub-general (unter "Station"):
+  Theme, Schriftart, Schriftgröße, Sprache
+Dropdowns mit IDs cfg-theme, cfg-font, cfg-fontsize, cfg-lang.
+cfgLoad() synchronisiert Dropdowns aus localStorage beim Tab-Öffnen.
+Alle Funktionen (applyTheme, applyFont, applyFontSize, loadLang)
+existierten bereits — nur die HTML-Steuerelemente fehlten.
+
+### CQ-Frame (0x41) entfernt
+
+CQ als eigenständiger Frame-Typ ist obsolet. Ein CQ-Ruf erfolgt via
+TEXT (0x40) mit dest=BROADCAST. Byte 0x41 = RESERVED.
+Entfernt aus: gust_frame.py, gust_stresstest.py, gust_web.py,
+gust_tx_test.py, gust_spec.md.
+
+### MeshCore: Echter Sender + Truncation-Fix
+
+MeshCore Channel-Messages haben das Format "SenderName: Nachricht".
+Pfad A (WebGUI-Anzeige) extrahiert jetzt:
+  mc_sender  = text[:colon_pos]     (z.B. "🌳TOM_CHzP🌲")
+  mc_message = text[colon_pos + 2:] (eigentliche Nachricht)
+
+frame.from = mc_sender (für Live Feed, Modal, Swimlane).
+payload_decoded.dest = ch_name (Kanal-Name, nicht "BROADCAST").
+payload_decoded.text = mc_message (vollständig, kein 14-Byte-Limit).
+
+Warum kein Limit: Pfad A ist ein synthetisches Event (kein echter HF-Frame).
+Das 14-Byte-Limit gilt nur für HF-Übertragung (Pfad B via TxGateway).
+
+Modal für MC-Frames: lila Header (#5B2D8E), frag_index/frag_total/last_frag/
+seq_nr ausgeblendet, dest = Kanal-Name.
+
+Live Feed: .frame-row.meshcore .from: width 160px, white-space:nowrap,
+text-overflow:ellipsis (MeshCore Node-Namen max. 32 Zeichen).
+
+---
+
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · §32 P8-14 LDPC-Soft schlägt RS bei −10 dB (Juni 2026) · §33 MeshCore Bridge-Repeater & KISS (Juni 2026) · §34 Web-UI Darstellungs-Details (Juni 2026) · §35 Web-UI Tab-Struktur (Juni 2026, P5-24) · §36 MeshCore WebGUI-Konfigurationsseite (Juni 2026) · §37 WebGUI UI-Verbesserungen Button-Konsistenz & Layout (Juni 2026) · §38 MeshCore Kanal-Sync Companion → meshcore.json (Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*
+*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · §32 P8-14 LDPC-Soft schlägt RS bei −10 dB (Juni 2026) · §33 MeshCore Bridge-Repeater & KISS (Juni 2026) · §34 Web-UI Darstellungs-Details (Juni 2026) · §35 Web-UI Tab-Struktur (Juni 2026, P5-24) · §36 MeshCore WebGUI-Konfigurationsseite (Juni 2026) · §37 WebGUI UI-Verbesserungen Button-Konsistenz & Layout (Juni 2026) · §38 MeshCore Kanal-Sync Companion → meshcore.json (Juni 2026) · §39 WebGUI-Verbesserungen (Modal/TX-Layout/Farbschema/Filter/MeshCore-Sender/CQ entfernt, Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*

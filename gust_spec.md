@@ -147,13 +147,13 @@ GUST unterstützt ab v0.5 zwei unabhängige Empfangspfade:
 0x01  Wetter-Telemetrie
 0x02  Position (APRS-kompatibel)
 0x03  Stations-Telemetrie
-0x10  Rotor-Status
-0x11  Rotor-Steuerbefehl
+0x10  RESERVED (war: Rotor-Status — nie implementiert)
+0x11  RESERVED (war: Rotor-Steuerbefehl — nie implementiert)
 0x20  Notfall-Beacon
 0x21  Notfall-Ressourcenstatus
-0x30  Generische Messung (Sensor-TLV)
+0x30  RESERVED (war: Generische Messung/Sensor-TLV — nie implementiert)
 0x40  Freitext / QSO-Fragment
-0x41  RESERVED (war: CQ-Anruf — CQ als TEXT 0x40 mit dest=BROADCAST)
+0x41  RESERVED (CQ-Anruf entfernt — ein CQ-Ruf erfolgt via TEXT 0x40 mit dest=BROADCAST)
 0x50  AUTH — HMAC-SHA256 Frame-Authentifizierung (GUST-S, siehe 3.5)
 0x80–0xCF  GUST-X Frame-Typen (Extended, 9-Symbol-SYNC erforderlich, siehe 3.9)
 0xF0  Protokoll-Management (Kanalzuweisung, Timing)
@@ -362,6 +362,18 @@ Rufzeichen der Gegenstelle. Kein mehrstufiger Handshake nötig.
   "_comment": "Bilateraler Schlüssel mit OE1XTU"
 }
 ```
+
+### Schlüssel-Lookup via Rufzeichen (ADR-38, Juni 2026)
+
+Der Daemon sucht den HMAC-Schlüssel anhand des Absender-Rufzeichens
+(FROM-Feld des AUTH-Frames), nicht per KEY_ID.
+
+Begründung: KEY_ID erfordert bilaterale Koordination (welche ID verwendet
+der Partner?). Das Rufzeichen ist immer eindeutig vorhanden.
+
+Wire-Format: Byte 5 bleibt als RESERVED=0x00 im Frame. Rückwärtskompatibel.
+Das zugehörige `auth.keys`-Schema (callsign + key_hex + _comment) ist oben
+abgebildet — kein KEY_ID-Feld, kein ID-Austausch zwischen Partnern nötig.
 
 ### 3.6 Rufzeichen-Kodierung (Basis-40)
 
@@ -1112,6 +1124,14 @@ Phase 7 — On-Air-Tests und Decoder-Robustheit  ✅ WEITGEHEND ABGESCHLOSSEN
 
 Phase 8 — Veröffentlichung  ← AKTUELL
   ✅ GitHub Repository (OE3GAS/gust) — committed + gepusht Juni 2026
+  ✅ AUTH 0x50 HMAC-SHA256-14 vollständig — Deep-Decoder-Fix,
+     Rufzeichen-Lookup (statt KEY_ID), zweiseitiger _pending_auth_buf — Juni 2026
+  ✅ CQ-Frame (0x41) entfernt — CQ via TEXT 0x40 + BROADCAST — Juni 2026
+  ✅ WebGUI: Modal-Redesign, TX-Zwei-Spalten, Farbschema-Korrektur,
+     RX-Feed Display-Filter, Swimlane-Verbesserungen — Juni 2026
+  ✅ MeshCore: mc_sender-Extraktion, Truncation-Fix, Modal-Farbe — Juni 2026
+  ✅ Stresstest AUTH mit echten gateway.json Keys — Juni 2026
+  ✅ i18n: 28 neue Keys + 5 veraltete entfernt (de.json/en.json) — Juni 2026
   🔲 README.md für GitHub
   🔲 LICENSE (CC BY-SA 4.0)
   🔲 Installationsanleitung Raspberry Pi Gateway
@@ -1198,5 +1218,7 @@ meshtastic       — Phase 4, optional
 
 *Dokument: gust_spec.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — v0.5 · QSO-Modus · TRX-Profile · CLI-Logging · BUG-10/11/12 · 3 TRX-Profile (IC-7610, FT-818, TS-790) · §3.9 GUST-X (Entwurf) · AUTH_EX 0x85/0x86 ECDSA-64 (2-Frame)*
+*Stand: Juni 2026 — v0.5 · QSO-Modus · TRX-Profile · CLI-Logging · BUG-10/11/12 · 3 TRX-Profile (IC-7610, FT-818, TS-790) · §3.9 GUST-X (Entwurf) · AUTH_EX 0x85/0x86 ECDSA-64 (2-Frame) ·
+AUTH 0x50 rufzeichenbasierter Lookup (ADR-38) · CQ 0x41 RESERVED ·
+WebGUI-Redesign (Modal, TX-Layout, Farbschema, Filter)*
 *Lizenz: CC BY-SA 4.0 (geplant für Veröffentlichung)*
