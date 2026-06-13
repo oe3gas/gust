@@ -404,6 +404,13 @@ main { padding: 16px; max-width: 1200px; }
 .frame-row .ts   { color: var(--text2); white-space: nowrap; }
 .frame-row .ch   { color: var(--accent); width: 20px; text-align: center; }
 .frame-row .from { color: var(--blue); font-weight: bold; width: 85px; }
+/* MC-Frames: breiteres Absender-Feld (Node-Namen bis ~20 Z.), kein Umbruch */
+.frame-row.meshcore .from {
+  width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .frame-row .type { color: var(--green); width: 90px; }
 .frame-row .snr  { width: 58px; text-align: right; font-weight: bold; font-size: var(--fs-xs); white-space: nowrap; }
 .frame-row .off  { color: var(--text2); width: 52px; text-align: right; font-size: var(--fs-xs); white-space: nowrap; }
@@ -423,17 +430,43 @@ main { padding: 16px; max-width: 1200px; }
 #frame-modal { display:none; position:fixed; inset:0; z-index:1000;
   background:rgba(0,0,0,.82); align-items:center; justify-content:center; }
 #frame-modal.open { display:flex; }
-#frame-modal-box { background:var(--bg3); border:2px solid var(--accent);
+#frame-modal-box { background:var(--bg3); border:none;
   border-radius:8px; min-width:360px; max-width:560px;
   width:90vw; max-height:80vh; overflow-y:auto; position:relative; }
-#frame-modal-box h3 { font-size:var(--fs-sm); font-weight:bold; margin:0; padding:10px 40px 10px 16px;
-  color:var(--bg); background:var(--accent); border-radius:5px 5px 0 0;
-  letter-spacing:.5px; }
+/* Der farbige Header übernimmt die visuelle Rahmenfunktion */
+#frame-modal-header {
+  padding: 10px 40px 10px 16px;
+  border-radius: 6px 6px 0 0;
+  /* background wird per JS gesetzt (modalColor) */
+}
+#frame-modal-call {
+  font-size: 1.25em;
+  font-weight: bold;
+  color: #fff;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+}
+#frame-modal-subtitle {
+  font-size: var(--fs-xs);
+  color: rgba(255,255,255,0.82);
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+}
 #frame-modal-body { padding:14px 16px 16px; }
-#frame-modal-close { position:absolute; top:8px; right:12px; background:none;
-  border:none; color:var(--bg); font-size:var(--fs-lg); cursor:pointer; line-height:1;
-  opacity:.8; }
-#frame-modal-close:hover { opacity:1; }
+#frame-modal-close { position:absolute; top:10px; right:12px; background:none;
+  border:none; color:rgba(255,255,255,0.85); font-size:var(--fs-lg);
+  cursor:pointer; line-height:1; }
+#frame-modal-close:hover { color:#fff; }
+#frame-modal-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--text2);
+  background: var(--bg2);
+  border-radius: 0 0 6px 6px;
+}
 .modal-row { display:flex; gap:8px; padding:4px 0;
   border-bottom:1px solid var(--border); font-size:var(--fs-sm); }
 .modal-row:last-child { border-bottom:none; }
@@ -465,13 +498,32 @@ h2 { font-size: var(--fs-base); color: var(--text2); text-transform: uppercase;
 h2:first-child { margin-top: 0; }
 
 /* ── TX FORMS ── */
+/* Zwei-Spalten-Layout: links Kategorien, rechts aktives Formular */
+.tx-layout { display: grid; grid-template-columns: 220px 1fr; gap: 12px;
+             align-items: stretch; }
+.tx-selector { display: flex; flex-direction: column; }
+.tx-panel { display: flex; flex-direction: column; gap: 0; }
+/* Farbige Titelleiste oben im Panel (Hintergrund per JS gesetzt) */
+.tx-panel-header { border-radius: 6px 6px 0 0; padding: 8px 14px; margin-bottom: 0; }
+.tx-panel-header span { font-size: var(--fs-sm); font-weight: 600; color: #fff;
+                        letter-spacing: 0.05em; text-transform: uppercase; }
+/* Schedule-Hinweis direkt unter der Titelleiste (kein Abstand) */
+.tx-panel-hint { font-size: var(--fs-xs); color: var(--text2);
+                 padding: 5px 14px 8px 14px; border-left: 3px solid transparent;
+                 background: var(--bg2); margin-bottom: 4px; }
 .tx-form { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
-           padding: 16px; max-width: 520px; }
+           padding: 16px; max-width: 100%; }
 .tx-form.hidden { display: none; }
-.tx-form.form-p4 { border-color: var(--green); }
-.tx-form.form-p3 { border-color: var(--blue);  }
-.tx-form.form-p2 { border-color: var(--orange);}
-.tx-form.form-p1 { border-color: var(--red);   }
+/* Aktives Formular: dickerer farbiger Rahmen */
+.tx-form:not(.hidden) { border-width: 3px; }
+.tx-form.form-p4 { border-color: #1A7A42; }  /* grün — Telemetrie */
+.tx-form.form-p3 { border-color: #2E6BA8; }  /* blau — Navigation */
+.tx-form.form-p2 { border-color: #C07D0A; }  /* orange — Kommunikation */
+.tx-form.form-p1 { border-color: #A93226; }  /* rot — Notfall */
+/* Responsive: unter 640px wieder einspaltig */
+@media (max-width: 640px) {
+  .tx-layout { grid-template-columns: 1fr; }
+}
 .tx-unavailable { background: rgba(255,166,87,.12); border: 1px solid var(--orange);
   border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; color: var(--orange);
   font-size: var(--fs-sm); }
@@ -503,10 +555,13 @@ h2:first-child { margin-top: 0; }
 #tx-result.err { background: rgba(248,81,73,.15); color: var(--red); }
 /* ── TX GRUPPEN-SELEKTOR ── */
 .tx-groups { margin-bottom: 14px; display: flex; flex-direction: column; gap: 16px; }
+/* Linke Spalte füllt die Panel-Höhe; Gruppen teilen sich die Höhe gleichmäßig */
+.tx-selector .tx-groups { flex: 1; margin-bottom: 0; }
 .tx-group { background: var(--bg2); border: 1px solid var(--border);
-  border-radius: 6px; padding: 10px 12px; }
+  border-radius: 6px; padding: 10px 12px;
+  flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
 .tx-group.p4-group { border-left: 3px solid var(--green); }
-.tx-group.p3-group { border-left: 3px solid var(--blue); }
+.tx-group.p3-group { border-left: 3px solid #2E6BA8; }
 .tx-group.p2-group { border-left: 3px solid var(--orange); }
 .tx-group.p1-group { border-left: 3px solid var(--red); }
 .tx-group-hdr { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
@@ -521,7 +576,7 @@ h2:first-child { margin-top: 0; }
 .tx-btn.active   { border-color: var(--accent); color: var(--accent); }
 .tx-btn.p1-btn.active { border-color: var(--red);    color: var(--red); }
 .p4-col { color: var(--green); }   .p4-dot { background: var(--green); }
-.p3-col { color: var(--blue); }    .p3-dot { background: var(--blue); }
+.p3-col { color: #2E6BA8; }    .p3-dot { background: #2E6BA8; }
 .p2-col { color: var(--orange); }  .p2-dot { background: var(--orange); }
 .p1-col { color: var(--red); }     .p1-dot { background: var(--red); }
 
@@ -991,7 +1046,6 @@ h2:first-child { margin-top: 0; }
       <option value="TEXT">Text</option>
       <option value="POSITION">Position</option>
       <option value="EMERG">Emergency</option>
-      <option value="CQ">CQ</option>
     </select>
     <span style="color:var(--border-secondary,#444);margin:0 2px">│</span>
     <span style="color:var(--text2)">Ruf:</span>
@@ -1039,6 +1093,12 @@ h2:first-child { margin-top: 0; }
               onclick="slTogglePause()"
               style="min-width:90px">⏸ Pause</button>
 
+      <!-- MC-Lane Toggle -->
+      <button id="sl-mc-toggle" class="btn secondary"
+              onclick="slToggleMcLane()"
+              style="display:none"
+              title="MeshCore-Spalte ein-/ausblenden">🔷 MC-Spalte</button>
+
       <!-- PNG Export -->
       <button class="btn secondary"
               onclick="slExport()">⬇ PNG</button>
@@ -1076,13 +1136,15 @@ h2:first-child { margin-top: 0; }
     <code>py gust.py daemon</code>
   </div>
   <h2>One-Shot TX</h2>
+<div class="tx-layout">
+  <div class="tx-selector">
 <div class="tx-groups">
 
   <div class="tx-group p4-group">
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p4-dot"></span>
       <span class="tx-prio-name p4-col" data-i18n="send.group.telemetry">Telemetrie</span>
-      <span class="tx-prio-info">P4 · <span data-i18n="send.p4.schedule">Schedule: alle</span> <span id="p4-interval">5 min</span> <span data-i18n="send.p4.next">— nächster Schedule in</span> <span class="cd" id="p4-next">–</span></span>
+      <span class="tx-prio-info" style="display:none">P4 · <span data-i18n="send.p4.schedule">Schedule: alle</span> <span id="p4-interval">5 min</span> <span data-i18n="send.p4.next">— nächster Schedule in</span> <span class="cd" id="p4-next">–</span></span>
     </div>
     <div class="tx-btn-row">
       <button class="tx-btn active" onclick="selectTxType('weather',this)" data-i18n="tab.send.weather">🌤 Wetter</button>
@@ -1093,7 +1155,7 @@ h2:first-child { margin-top: 0; }
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p3-dot"></span>
       <span class="tx-prio-name p3-col" data-i18n="send.group.navigation">Navigation</span>
-      <span class="tx-prio-info">P3 · <span data-i18n="send.p3.next">nächster Schedule in</span> <span class="cd" id="p3-next">–</span></span>
+      <span class="tx-prio-info" style="display:none">P3 · <span data-i18n="send.p3.next">nächster Schedule in</span> <span class="cd" id="p3-next">–</span></span>
     </div>
     <div class="tx-btn-row">
       <button class="tx-btn" onclick="selectTxType('position',this)" data-i18n="tab.send.position">📍 Position</button>
@@ -1104,7 +1166,7 @@ h2:first-child { margin-top: 0; }
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p2-dot"></span>
       <span class="tx-prio-name p2-col" data-i18n="send.group.communication">Kommunikation</span>
-      <span class="tx-prio-info" data-i18n="send.p2.label">P2 · Sendung ≤ 30 s nach Einreihung</span>
+      <span class="tx-prio-info" style="display:none" data-i18n="send.p2.label">P2 · Sendung ≤ 30 s nach Einreihung</span>
     </div>
     <div class="tx-btn-row">
       <button class="tx-btn" onclick="selectTxType('text',this)" data-i18n="tab.send.text">💬 Freitext</button>
@@ -1115,14 +1177,23 @@ h2:first-child { margin-top: 0; }
     <div class="tx-group-hdr">
       <span class="tx-prio-dot p1-dot"></span>
       <span class="tx-prio-name p1-col" data-i18n="send.group.emergency">Notfall</span>
-      <span class="tx-prio-info" data-i18n="send.p1.label">P1 · sofort — überspringt Cooldown</span>
+      <span class="tx-prio-info" style="display:none" data-i18n="send.p1.label">P1 · sofort — überspringt Cooldown</span>
     </div>
     <div class="tx-btn-row">
       <button class="tx-btn p1-btn" onclick="selectTxType('emergency',this)" data-i18n="tab.send.emergency">🆘 Notfall-Beacon</button>
     </div>
   </div>
 
-</div>
+</div><!-- /tx-groups -->
+  </div><!-- /tx-selector -->
+
+  <div class="tx-panel">
+    <!-- Farbige Titelleiste: wird von selectTxType() gesetzt -->
+    <div id="tx-panel-header" class="tx-panel-header" style="display:none">
+      <span id="tx-panel-title">–</span>
+    </div>
+    <!-- Schedule-Hinweis: wird von selectTxType() aktualisiert -->
+    <div id="tx-panel-hint" class="tx-panel-hint"></div>
 
   <!-- Wetter-Formular -->
   <div id="form-weather" class="tx-form form-p4">
@@ -1232,6 +1303,8 @@ h2:first-child { margin-top: 0; }
       <button class="btn secondary" type="button" onclick="clearForm('emergency')" data-i18n="send.btn.clear">Löschen</button>
     </div>
   </div>
+  </div><!-- /tx-panel -->
+</div><!-- /tx-layout -->
 
   <div id="tx-result"></div>
 
@@ -1425,6 +1498,56 @@ h2:first-child { margin-top: 0; }
             <label>Host<input id="cfg-web-host" type="text" placeholder="0.0.0.0"></label>
             <label>Port<input id="cfg-web-port" type="number" min="1024" max="65535"></label>
             <div style="margin-top:.8rem"><button class="btn" onclick="cfgSaveGeneral()">💾 Speichern</button></div>
+          </div>
+
+          <div class="cfg-card">
+            <h3>Darstellung</h3>
+
+            <label>
+              Theme
+              <select id="cfg-theme" onchange="applyTheme(this.value)">
+                <option value="dark">🌑 Dark</option>
+                <option value="aero">🪟 Aero</option>
+                <option value="mono">⬜ Mono</option>
+                <option value="light">☀ Light</option>
+              </select>
+            </label>
+
+            <label style="margin-top:.6rem">
+              Schriftart
+              <select id="cfg-font" onchange="applyFont(this.value)">
+                <option value="mono">Monospace (Standard)</option>
+                <option value="system">System UI</option>
+                <option value="sans">Sans-Serif (Calibri)</option>
+                <option value="serif">Serif (Georgia)</option>
+              </select>
+            </label>
+
+            <label style="margin-top:.6rem">
+              Schriftgröße
+              <select id="cfg-fontsize" onchange="applyFontSize(this.value)">
+                <option value="12">12 px (sehr klein)</option>
+                <option value="13">13 px (Standard)</option>
+                <option value="14">14 px</option>
+                <option value="15">15 px</option>
+                <option value="16">16 px (groß)</option>
+                <option value="18">18 px (sehr groß)</option>
+              </select>
+            </label>
+
+            <label style="margin-top:.6rem">
+              Sprache / Language
+              <select id="cfg-lang" onchange="loadLang(this.value)">
+                <option value="de">🇦🇹 Deutsch</option>
+                <option value="en">🇬🇧 English</option>
+              </select>
+            </label>
+
+            <p style="font-size:var(--fs-xs);color:var(--text2);margin-top:.6rem">
+              Darstellungsoptionen werden im Browser gespeichert (localStorage)
+              und beim nächsten Aufruf automatisch wiederhergestellt.
+              Keine Serververbindung erforderlich.
+            </p>
           </div>
         </div>
 
@@ -1874,14 +1997,6 @@ nächsten Verbindungsversuch.">i</span></span>
                        min="5" max="300" value="30" style="width:80px">
               </label>
 
-              <label class="cfg-toggle" style="margin-top:.7rem">
-                <input id="mc-forward-public" type="checkbox">
-                <span class="cfg-label-row">Public Channel nach HF
-                <span class="cfg-info"
-                  title="Empfohlen: Aus. Der Public Channel enthält
-viel Fremdverkehr und ist für HF-Übertragung ungeeignet.">i</span></span>
-              </label>
-
               <label class="cfg-toggle" style="margin-top:.4rem">
                 <input id="mc-log-raw" type="checkbox">
                 <span class="cfg-label-row">Raw-Frame-Logging
@@ -2230,11 +2345,59 @@ function switchTab(name, btn) {
 }
 
 // ═══════════════════════════ TX FORMS ═════════════════════════
+// Panel-Konfiguration je Formular: Titelleiste (Label+Farbe) + Schedule-Hinweis
+const TX_PANEL_CONFIG = {
+  weather: {
+    label:  'TELEMETRIE',
+    color:  '#1A7A42',
+    hint:   () => {
+      const cd = document.getElementById('p4-next')?.textContent || '–';
+      return `P4 · Schedule alle 5 min · nächster in <strong>${cd}</strong>`;
+    },
+  },
+  position: {
+    label:  'NAVIGATION',
+    color:  '#2E6BA8',
+    hint:   () => {
+      const cd = document.getElementById('p3-next')?.textContent || '–';
+      return `P3 · nächster Schedule in <strong>${cd}</strong>`;
+    },
+  },
+  text: {
+    label:  'KOMMUNIKATION',
+    color:  '#C07D0A',
+    hint:   () => 'P2 · Sendung ≤ 30 s nach Einreihung',
+  },
+  emergency: {
+    label:  'NOTFALL',
+    color:  '#A93226',
+    hint:   () => 'P1 · sofort — überspringt Cooldown',
+  },
+};
+
 function selectTxType(type, btn) {
   document.querySelectorAll('.tx-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tx-form').forEach(f => f.classList.add('hidden'));
   btn.classList.add('active');
   document.getElementById('form-' + type).classList.remove('hidden');
+
+  // Farbige Titelleiste + Schedule-Hinweis im rechten Panel aktualisieren
+  const cfg = TX_PANEL_CONFIG[type];
+  if (cfg) {
+    const hdr = document.getElementById('tx-panel-header');
+    const ttl = document.getElementById('tx-panel-title');
+    const hnt = document.getElementById('tx-panel-hint');
+
+    if (hdr) {
+      hdr.style.display    = '';
+      hdr.style.background = cfg.color;
+    }
+    if (ttl) ttl.textContent = cfg.label;
+    if (hnt) {
+      hnt.innerHTML         = cfg.hint();
+      hnt.style.borderColor = cfg.color;
+    }
+  }
 }
 
 function updateTextCounter() {
@@ -2552,7 +2715,6 @@ async function mcLoad() {
     _mcSetVal('mc-fetch-interval',    br.auto_fetch_interval_s  ?? 5);
     _mcSetVal('mc-timeout',           br.timeout_s              ?? 10);
     _mcSetVal('mc-reconnect-delay',   br.reconnect_delay_s      ?? 30);
-    _mcSetCheck('mc-forward-public',  !!br.forward_public_channel);
     _mcSetCheck('mc-log-raw',         !!br.log_raw_frames);
     _mcSetVal('mc-unknown-sender',    br.unknown_sender_policy  ?? 'pubkey_prefix');
 
@@ -2598,7 +2760,6 @@ async function mcSaveBehaviour() {
     auto_fetch_interval_s:  parseInt(document.getElementById('mc-fetch-interval')?.value || '5'),
     timeout_s:              parseInt(document.getElementById('mc-timeout')?.value || '10'),
     reconnect_delay_s:      parseInt(document.getElementById('mc-reconnect-delay')?.value || '30'),
-    forward_public_channel: document.getElementById('mc-forward-public')?.checked ?? false,
     log_raw_frames:         document.getElementById('mc-log-raw')?.checked ?? false,
     unknown_sender_policy:  document.getElementById('mc-unknown-sender')?.value || 'pubkey_prefix',
   });
@@ -2652,9 +2813,7 @@ function mcRenderChannels(channels) {
     const gfChk      = ch.gust_forward ? 'checked' : '';
     const hfChk      = ch.hf_forward   ? 'checked' : '';
     // Public-Kanal (Slot 0): gust_forward immer editierbar; hf_forward dort wenig sinnvoll
-    const hfTitle    = idx === 0
-      ? 'title="Public Channel: HF-Forward wird durch forward_public_channel gesteuert"'
-      : 'title="Nachrichten dieses Kanals auf HF weiterleiten (nur bei Daemon mit TX)"';
+    const hfTitle = 'title="Nachrichten dieses Kanals auf HF weiterleiten (nur bei Daemon mit TX)"';
 
     html += `<tr style="${bg}">` +
             `<td style="padding:5px 8px;font-family:monospace;color:var(--text2)">${idx}</td>` +
@@ -3099,10 +3258,18 @@ function appendRxFrame(frame) {
   const placeholder = feed.querySelector('[style*="color:var(--text2)"]');
   if (placeholder) placeholder.remove();
 
-  const ts  = new Date(frame.ts * 1000).toLocaleTimeString('de-AT');
-  const ch  = frame.channel ?? frame.detected_channel ?? '?';
-  const isMC = frame.source === 'meshcore';
-  const frm  = _esc(frame.from ?? '?');
+  const ts   = new Date(frame.ts * 1000).toLocaleTimeString('de-AT');
+  const isMC = frame.source === 'meshcore' || frame.source === 'meshcore_direct';
+  const isDM = frame.source === 'meshcore_direct';
+  // HF-Frames: Kanal-Nummer; MC-Frames: MC-Kanalname aus meta (kein GUST-HF-Kanal)
+  const ch   = isMC
+    ? (isDM ? 'DM' : (frame.meta?.mc_channel_name ?? 'MC'))
+    : (frame.channel ?? frame.detected_channel ?? '?');
+  const frm  = _esc(
+    (isMC && frame.meta?.mc_sender)
+      ? frame.meta.mc_sender
+      : (frame.from ?? '?')
+  );
   const typ = frame.type_name ?? '?';
   const dat = frameDataSummary(frame);
   const _ftype  = frame.frame_type ?? frame.type ?? 0;
@@ -3138,7 +3305,9 @@ function appendRxFrame(frame) {
   // Matching-Attribute für das retroaktive AUTH-Badge (frame_authenticated):
   row.dataset.from = frame.from ?? '';
   row.dataset.type = String(_ftype);
-  const mcBadge = isMC ? '<span class="mc-badge">MC</span>' : '';
+  const mcBadge = isMC
+    ? `<span class="mc-badge" title="${isDM ? 'MeshCore Direktnachricht' : 'MeshCore Kanal-Nachricht'}">${isDM ? 'DM' : 'MC'}</span>`
+    : '';
   row.innerHTML = `<span class="ts">${ts}</span>
     <span class="ch">${ch}</span>
     <span class="from">${mcBadge}${frm}</span>
@@ -3709,10 +3878,6 @@ function frameDataSummary(f) {
     return `→ ${dest}${fragBadge}  "${d.text}"`;
   }
 
-  // CQ
-  if (tn === 'CQ' || f.frame_type === 0x41)
-    return `CQ CQ CQ de ${f.from || '?'}`;
-
   // EMERGENCY BEACON / EMERG_RSRC
   if (tn === 'EMERG_BEACON' || tn === 'EMERG_RSRC'
       || f.frame_type === 0x20 || f.frame_type === 0x21) {
@@ -3864,7 +4029,15 @@ function openFrameModal(frame) {
     const el = document.getElementById('modal-content');
     if (el) {
       el.innerHTML = `<table style="border-collapse:collapse;width:100%">${tableHtml}</table>`;
-      document.getElementById('modal-title').textContent = 'TEXT-Nachricht (vollständig)';
+      const isDM_a = frame.source === 'meshcore_direct';
+      const mcLabel_a = isDM_a ? 'DM'
+          : (frame.source === 'meshcore' ? 'MC' : 'Kanal ' + (frame.channel ?? '?'));
+      document.getElementById('frame-modal-header').style.background = modalColor('TEXT');
+      document.getElementById('frame-modal-call').textContent = frame.from || '?';
+      document.getElementById('frame-modal-subtitle').textContent =
+          `TEXT · ${mcLabel_a} · ${ts}`;
+      document.getElementById('modal-footer-snr').textContent    = '';
+      document.getElementById('modal-footer-offset').textContent = '';
       document.getElementById('frame-modal').classList.add('open');
     }
     return;
@@ -3875,20 +4048,28 @@ function openFrameModal(frame) {
   const ch = frame.channel  ?? frame.detected_channel ?? '?';
   const ts = frame.ts ? new Date(frame.ts*1000).toLocaleTimeString('de-AT') : '?';
 
-  document.getElementById('modal-title').textContent =
-    `${tn} · Kanal ${ch} · ${frame.from || '?'} · ${ts}`;
+  const isDM = frame.source === 'meshcore_direct';
+  const isMC = frame.source === 'meshcore' || isDM;
+  const chLabel = isDM
+      ? 'DM'
+      : (isMC ? (frame.meta?.mc_channel_name ?? 'MC') : `Kanal ${ch}`);
+  // MC-Frames: lila Header (kein GUST-HF-Frame); sonst Typ-Farbe
+  const color = isMC ? MODAL_MC_COLOR : modalColor(tn);
+  // MC-Frames: echten Sender-Anzeigenamen bevorzugen
+  const displayFrom = (isMC && frame.meta?.mc_sender)
+      ? frame.meta.mc_sender
+      : (frame.from || '?');
+
+  document.getElementById('frame-modal-header').style.background = color;
+  document.getElementById('frame-modal-call').textContent = displayFrom;
+  document.getElementById('frame-modal-subtitle').textContent =
+      `${tn} · ${chLabel} · ${ts}`;
 
   const rows = [];
   const add = (k, v) => rows.push(`<div class="modal-row">
     <span class="modal-key">${k}</span>
     <span class="modal-val">${v !== null && v !== undefined ? v : '–'}</span></div>`);
 
-  add('Typ',      tn);
-  add('Von',      frame.from || '?');
-  add('Kanal',    ch);
-  add('SNR',      frame._snr_db != null ? `${frame._snr_db.toFixed(1)} dB` : '–');
-  add('Offset',   frame.freq_offset_hz != null ? `${frame.freq_offset_hz.toFixed(1)} Hz` : '–');
-  add('RS-Fehler', frame.rs_errors ?? '–');
   if (frame.test) add('🔬 Testframe', 'JA — Frame ist als Test gekennzeichnet');
   if (frame.authenticated)
     add('🔑 Authentifizierung',
@@ -3899,6 +4080,7 @@ function openFrameModal(frame) {
     rows.push('<div style="height:6px"></div>');
     for (const [k, v] of Object.entries(d)) {
       if (k === 'flags') continue;
+      if (isMC && MC_HIDDEN_FIELDS.has(k)) continue;  // MC: Fragment-Felder ausblenden
       let val = v;
       if (typeof v === 'number' && (k === 'lat_deg' || k === 'lon_deg'))
         val = v.toFixed(6) + '°';
@@ -3913,6 +4095,15 @@ function openFrameModal(frame) {
   if (d.lat_deg != null && d.lon_deg != null)
     mapHtml = `<a class="modal-map" href="https://www.openstreetmap.org/?mlat=${d.lat_deg}&mlon=${d.lon_deg}&zoom=15" target="_blank">
       🗺 Position auf OpenStreetMap öffnen</a>`;
+
+  const snrStr = frame._snr_db != null
+      ? `SNR: ${frame._snr_db.toFixed(1)} dB`
+      : 'SNR: –';
+  const offStr = frame.freq_offset_hz != null
+      ? `Offset: ${frame.freq_offset_hz.toFixed(1)} Hz`
+      : 'Offset: –';
+  document.getElementById('modal-footer-snr').textContent    = snrStr;
+  document.getElementById('modal-footer-offset').textContent = offStr;
 
   document.getElementById('modal-content').innerHTML = rows.join('') + mapHtml;
   document.getElementById('frame-modal').classList.add('open');
@@ -4089,6 +4280,10 @@ function applyStatusPush(data) {
     if (typeof window._mcStatusHandler === 'function') {
       window._mcStatusHandler(mc);
     }
+    // Swimlane MC-Toggle: sichtbar wenn Bridge verbunden
+    if (typeof slUpdateMcToggle === 'function') {
+      slUpdateMcToggle(!!(mc.enabled && mc.connected));
+    }
   }
 }
 
@@ -4133,6 +4328,18 @@ function _tickTxCountdown() {
   const el3 = document.getElementById('p3-next');
   if (el4) el4.textContent = _fmtCountdown(d);
   if (el3) el3.textContent = _fmtCountdown(d);
+
+  // Panel-Hinweis mitlaufen lassen, wenn weather/position aktiv ist
+  const hnt  = document.getElementById('tx-panel-hint');
+  const active = document.querySelector('.tx-form:not(.hidden)');
+  if (hnt && active) {
+    const map = {
+      'form-weather':  TX_PANEL_CONFIG.weather,
+      'form-position': TX_PANEL_CONFIG.position,
+    };
+    const cfg = map[active.id];
+    if (cfg) hnt.innerHTML = cfg.hint();
+  }
 }
 
 setInterval(_tickTxCountdown, 1000);
@@ -4484,15 +4691,37 @@ function stDownload(fmt) {
 // ═══════════════════════════════════════════════════════════
 
 const SL_COLORS = {
-  WEATHER:      '#2E6BA8',   // war #4A90D9
-  POSITION:     '#1A7A42',   // war #27AE60
-  EMERG_BEACON: '#A93226',   // war #E74C3C
-  EMERG_RSRC:   '#B0530F',   // war #E67E22
-  STATION_TLM:  '#6B2D8B',   // war #8E44AD
-  TEXT:         '#C07D0A',   // war #F39C12
-  CQ:           '#148A6E',   // war #1ABC9C
+  WEATHER:      '#1A7A42',   // grün   (TELEMETRIE)
+  POSITION:     '#2E6BA8',   // blau   (NAVIGATION)
+  EMERG_BEACON: '#A93226',   // rot    (NOTFALL)
+  EMERG_RSRC:   '#A93226',   // rot    (NOTFALL)
+  STATION_TLM:  '#1A7A42',   // grün   (TELEMETRIE, wie WEATHER)
+  TEXT:         '#C07D0A',   // orange (KOMMUNIKATION)
 };
-const SL_DEFAULT_COLOR = '#717D7E';   // war #95A5A6
+const SL_DEFAULT_COLOR = '#717D7E';   // unverändert
+
+// Frame-Detail-Modal: Titelleisten-Farbe nach Frame-Typ.
+// Spiegelt SL_COLORS (Swimlane); EMERG_RSRC teilt sich die EMERG-Farbe.
+const MODAL_COLORS = {
+  WEATHER:      '#1A7A42',   // grün   (TELEMETRIE)
+  POSITION:     '#2E6BA8',   // blau   (NAVIGATION)
+  EMERG_BEACON: '#A93226',   // rot    (NOTFALL)
+  EMERG_RSRC:   '#A93226',   // rot    (NOTFALL)
+  STATION_TLM:  '#1A7A42',   // grün   (TELEMETRIE)
+  TEXT:         '#C07D0A',   // orange (KOMMUNIKATION)
+};
+const MODAL_DEFAULT_COLOR = '#4A5568';
+const MODAL_MC_COLOR = '#5B2D8E';   // Lila — MeshCore, kein GUST-HF-Frame
+
+// MC-Frames: Fragment-/Sequenz-Felder im Modal nicht anzeigen (synthetisch)
+const MC_HIDDEN_FIELDS = new Set([
+  'frag_index', 'frag_total', 'last_frag', 'seq_nr'
+]);
+
+function modalColor(type_name) {
+  return MODAL_COLORS[type_name] || MODAL_DEFAULT_COLOR;
+}
+
 const SL_BG_LANES      = ['#1A1A2E', '#16213E'];
 const SL_BACKGROUND    = '#0D1117';
 const SL_GRID_COLOR    = 'rgba(255,255,255,0.55)';
@@ -4525,6 +4754,7 @@ const sl = {
   totalContentH:  0,        // gesamte Inhaltshöhe in px (für Scrollbar)
   frozenFrames:   null,     // snapshot bei Pause (null = live)
   frozenNowS:     0,        // nowS zum Zeitpunkt von Pause
+  mcLaneVisible:  false,    // MC-Spalte sichtbar (nur wenn Bridge verbunden)
 };
 
 // nowS: laufende Zeit relativ zum ersten Frame.
@@ -4630,8 +4860,11 @@ function slResize() {
   if (!canvas) return;
 
   const containerW = container.clientWidth || 800;
-  sl.canvasW = Math.max(containerW, SL_N_CHANNELS * 80);
-  sl.laneW   = sl.canvasW / SL_N_CHANNELS;
+  const MC_SEP    = sl.mcLaneVisible ? 8  : 0;   // Trennlücke px
+  const totalLanes = SL_N_CHANNELS + (sl.mcLaneVisible ? 1 : 0);
+  sl.canvasW = Math.max(containerW, SL_N_CHANNELS * 80 + (sl.mcLaneVisible ? 120 : 0));
+  sl.laneW   = (sl.canvasW - MC_SEP) / (totalLanes || SL_N_CHANNELS);
+  sl._mcSep  = MC_SEP;   // für slDraw()
 
   // FIXE Canvas-Höhe = 70% der Viewport-Höhe
   // (nicht dynamisch wachsend — Scroll ist intern)
@@ -4782,18 +5015,34 @@ function slAddFrame(data, isHistory = false) {
   // startS relativ zu txT0 (kann null sein beim History-Load)
   const startS = sl.txT0 !== null ? rawT - sl.txT0 : rawT;
 
-  const ch       = (data.channel != null)
-    ? parseInt(data.channel)
-    : (data.detected_channel != null
-        ? parseInt(data.detected_channel) : 0);
+  const isMcFrame = (data.source === 'meshcore' ||
+                     data.source === 'meshcore_direct');
+  // MC-Frames → Lane SL_N_CHANNELS (extra Spalte rechts)
+  // HF-Frames → Kanal 0–7 wie bisher
+  const ch = isMcFrame
+    ? SL_N_CHANNELS
+    : ((data.channel != null)
+        ? parseInt(data.channel)
+        : (data.detected_channel != null
+            ? parseInt(data.detected_channel) : 0));
   const ftype    = data.type_name || '?';
-  const callsign = data.from || '?';
+  // MC-Frames: echten Sender-Anzeigenamen verwenden (sonst eigenes Gateway)
+  const callsign = (isMcFrame && data.meta?.mc_sender)
+    ? data.meta.mc_sender
+    : (data.from || '?');
+  // MC-Label: Kanalname oder DM
+  const mcLabel = isMcFrame
+    ? (data.source === 'meshcore_direct'
+        ? 'DM'
+        : (data.meta?.mc_channel_name ?? 'MC'))
+    : null;
 
   // Frame-Dauer: aus data.duration_s oder Schätzung ~5s (typische
   // GUST-Framedauer; duration_s ist im rx_frame-Event nicht enthalten)
   const durS = data.duration_s || 5.0;
 
   sl.frames.push({ startS, durS, ch, ftype, callsign,
+                   mcLabel, isMc: isMcFrame,
                    raw: data });
 
   // History-Load: kein Clamp, kein Scroll, kein Zähler-Update
@@ -4869,6 +5118,35 @@ function slLoadHistory(frames) {
 // SWIMLANE — Zeichnen
 // ═══════════════════════════════════════════════════════════
 
+// Gibt die X-Position einer Lane zurück (berücksichtigt MC-Separator)
+function slLaneX(ch) {
+  if (ch < SL_N_CHANNELS) return ch * sl.laneW;
+  // MC-Lane: nach dem Separator
+  return SL_N_CHANNELS * sl.laneW + (sl._mcSep || 0);
+}
+
+function slToggleMcLane() {
+  sl.mcLaneVisible = !sl.mcLaneVisible;
+  const btn = document.getElementById('sl-mc-toggle');
+  if (btn) btn.classList.toggle('active', sl.mcLaneVisible);
+  slResize();
+}
+
+// Wird von applyStatusPush aufgerufen wenn Bridge-Status sich ändert
+function slUpdateMcToggle(mcConnected) {
+  const btn = document.getElementById('sl-mc-toggle');
+  if (!btn) return;
+  if (mcConnected) {
+    btn.style.display = '';      // sichtbar wenn Bridge verbunden
+  } else {
+    btn.style.display = 'none';  // ausblenden wenn keine Bridge
+    if (sl.mcLaneVisible) {
+      sl.mcLaneVisible = false;
+      slResize();
+    }
+  }
+}
+
 function slRoundRectPath(ctx, x, y, w, h, r) {
   // roundRect mit Fallback für ältere Browser
   ctx.beginPath();
@@ -4924,9 +5202,23 @@ function slDraw() {
   // (statische Möblierung: Offset kompensiert, deckt so trotz
   // Translation immer den ganzen sichtbaren Canvas ab)
   const laneBg = [_sl.bg, _sl.bgHeader];   // subtile Lane-Alternierung je Theme
+  // HF-Lanes 0–7
   for (let ch = 0; ch < SL_N_CHANNELS; ch++) {
     ctx.fillStyle = laneBg[ch % 2];
-    ctx.fillRect(ch * lW, off, lW, H);
+    ctx.fillRect(slLaneX(ch), off, lW, H);
+  }
+  // MC-Lane (wenn sichtbar): Separator-Lücke + eigene Lane
+  if (sl.mcLaneVisible) {
+    const mcX = slLaneX(SL_N_CHANNELS);
+    ctx.fillStyle = _sl.mcBg;
+    ctx.fillRect(mcX, off, lW, H);
+    // Dicker Trenner links von MC-Lane (theme-konform, 3px)
+    ctx.strokeStyle = _sl.mcBorder;
+    ctx.lineWidth   = 3;
+    ctx.beginPath();
+    ctx.moveTo(mcX - (sl._mcSep || 0) / 2, HEADER_H + off);
+    ctx.lineTo(mcX - (sl._mcSep || 0) / 2, H + off);
+    ctx.stroke();
   }
 
   // ── Zeitraster: age=0 direkt unter Header (=jetzt), ──────
@@ -4953,13 +5245,24 @@ function slDraw() {
   }
 
   // ── Swimlane-Trennlinien (vertikal) ──────────────────────
+  // HF-Trennlinien
   for (let ch = 0; ch <= SL_N_CHANNELS; ch++) {
     const isEdge = (ch === 0 || ch === SL_N_CHANNELS);
     ctx.strokeStyle = isEdge ? _sl.borderLine : _sl.gridLine;
     ctx.lineWidth = isEdge ? 2.0 : 1.2;
     ctx.beginPath();
-    ctx.moveTo(ch * lW, HEADER_H + off);
-    ctx.lineTo(ch * lW, H + off);
+    ctx.moveTo(slLaneX(ch), HEADER_H + off);
+    ctx.lineTo(slLaneX(ch), H + off);
+    ctx.stroke();
+  }
+  // MC-Lane rechte Kante
+  if (sl.mcLaneVisible) {
+    ctx.strokeStyle = _sl.borderLine;
+    ctx.lineWidth   = 2.0;
+    ctx.beginPath();
+    const mcRight = slLaneX(SL_N_CHANNELS) + lW;
+    ctx.moveTo(mcRight, HEADER_H + off);
+    ctx.lineTo(mcRight, H + off);
     ctx.stroke();
   }
 
@@ -4984,11 +5287,20 @@ function slDraw() {
 
     // Außerhalb des sichtbaren (gescrollten) Bereichs überspringen
     if (yTop + yH < HEADER_H + off || yTop > H + off) continue;
-    if (f.ch < 0 || f.ch >= SL_N_CHANNELS) continue;
+    // HF-Frames: Kanal 0–7; MC-Frames: SL_N_CHANNELS
+    if (f.ch < 0) continue;
+    if (f.ch < SL_N_CHANNELS) {
+      // HF-Frame normal
+    } else if (f.ch === SL_N_CHANNELS && !sl.mcLaneVisible) {
+      continue;   // MC-Lane ausgeblendet → Frame nicht zeichnen
+    } else if (f.ch > SL_N_CHANNELS) {
+      continue;   // unbekannte Lane
+    }
 
-    const xLeft = f.ch * lW + pad;
+    const xLeft = slLaneX(f.ch) + pad;
     const bW    = lW - 2 * pad;
-    const color = _sl.frameBg(f.ftype);
+    // MC-Frames: lila (#5B2D8E) statt TEXT-Farbe — konsistent mit MC-Badge
+    const color = f.isMc ? '#5B2D8E' : _sl.frameBg(f.ftype);
 
     // Block mit abgerundeten Ecken
     const r = 4;
@@ -5014,16 +5326,16 @@ function slDraw() {
       const cy = yTop  + yH / 2;
 
       if (yH >= 32) {
-        // Rufzeichen + Typ
         ctx.font = 'bold 9px sans-serif';
         ctx.fillText(f.callsign, cx, cy - 4);
         ctx.font      = '7px sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.80)';
-        const short = f.ftype.length > 10
-          ? f.ftype.slice(0, 10) : f.ftype;
-        ctx.fillText(short, cx, cy + 7);
+        // MC-Frames: Kanalname zeigen statt Frame-Typ
+        const subLabel = f.isMc
+          ? (f.mcLabel ?? 'MC')
+          : (f.ftype.length > 10 ? f.ftype.slice(0, 10) : f.ftype);
+        ctx.fillText(subLabel, cx, cy + 7);
       } else {
-        // Nur Rufzeichen
         ctx.font = 'bold 8px sans-serif';
         ctx.fillText(f.callsign, cx, cy + 3);
       }
@@ -5062,12 +5374,11 @@ function slDraw() {
   ctx.restore();   // Scroll-Translation aufheben
 
   // ── Kanal-Header (ZULETZT: immer oben sichtbar, über Frames) ──
+  // HF-Kanal-Header
   for (let ch = 0; ch < SL_N_CHANNELS; ch++) {
-    const x = ch * lW;
-    // Hintergrund-Balken (deckt Frame-Oberkanten ab)
+    const x  = slLaneX(ch);
     ctx.fillStyle = _sl.bgHeader;
     ctx.fillRect(x + 1, 0, lW - 2, HEADER_H);
-    // Text
     const cx = x + lW / 2;
     ctx.fillStyle = _sl.textHeader;
     ctx.font      = 'bold 12px sans-serif';
@@ -5076,6 +5387,20 @@ function slDraw() {
     ctx.font      = '9px sans-serif';
     ctx.fillStyle = _sl.textTime;
     ctx.fillText(`${SL_CH_FREQ[ch]} Hz`, cx, 27);
+  }
+  // MC-Lane Header (wenn sichtbar)
+  if (sl.mcLaneVisible) {
+    const x  = slLaneX(SL_N_CHANNELS);
+    ctx.fillStyle = _sl.bgHeader;   // gleich wie HF-Kanal-Header
+    ctx.fillRect(x + 1, 0, lW - 2, HEADER_H);
+    const cx = x + lW / 2;
+    ctx.fillStyle = _sl.textHeader;
+    ctx.font      = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🔷 MeshCore', cx, 15);
+    ctx.font      = '9px sans-serif';
+    ctx.fillStyle = _sl.textTime;
+    ctx.fillText('Direkt + Kanäle', cx, 27);
   }
 
   ctx.textAlign = 'left';  // Reset
@@ -5227,6 +5552,16 @@ async function cfgLoad() {
     document.getElementById('cfg-callsign').value = cfg.callsign ?? '';
     document.getElementById('cfg-web-host').value = (cfg.web||{}).host ?? '0.0.0.0';
     document.getElementById('cfg-web-port').value = (cfg.web||{}).port ?? 8080;
+    // Darstellung — aus localStorage lesen (kein API-Aufruf nötig)
+    const thSel   = document.getElementById('cfg-theme');
+    const ftSel   = document.getElementById('cfg-font');
+    const fsSel   = document.getElementById('cfg-fontsize');
+    const langSel = document.getElementById('cfg-lang');
+
+    if (thSel)   thSel.value   = localStorage.getItem('gust-theme')    || 'dark';
+    if (ftSel)   ftSel.value   = localStorage.getItem('gust-font')     || 'mono';
+    if (fsSel)   fsSel.value   = localStorage.getItem('gust-fontsize') || '13';
+    if (langSel) langSel.value = localStorage.getItem('gust_lang')     || 'de';
     // Gateway & TX
     document.getElementById('cfg-gw-interval').value = (cfg.gateway||{}).interval_s ?? 300;
     document.getElementById('cfg-gw-gap').value      = (cfg.gateway||{}).min_tx_gap_s ?? 10;
@@ -5430,16 +5765,20 @@ function slTheme() {
     textLabel:  '#333333',
     textTime:   '#555555',
     nowLine:    '#111111',
+    mcBg:       '#e0e0e0',   // etwas dunkler als bg
+    mcBorder:   '#888888',   // gleich wie borderLine
+    mcText:     '#111111',   // gleich wie textHeader
+    mcSubText:  '#555555',   // gleich wie textTime
     frameBg:    (ft) => ({
       WEATHER:'#555555', POSITION:'#333333',
       EMERG_BEACON:'#111111', EMERG_RSRC:'#111111',
-      STATION_TLM:'#777777', TEXT:'#444444', CQ:'#888888'
+      STATION_TLM:'#777777', TEXT:'#444444'
     })[ft] || '#555555',
     frameText:  '#ffffff',
     frameBorder:'#111111',
     legend:     (ft) => ({
       WEATHER:'#555', POSITION:'#333', EMERG_BEACON:'#111',
-      EMERG_RSRC:'#111', STATION_TLM:'#777', TEXT:'#444', CQ:'#888'
+      EMERG_RSRC:'#111', STATION_TLM:'#777', TEXT:'#444'
     })[ft] || '#555',
   };
   if (t === 'aero') return {
@@ -5452,16 +5791,20 @@ function slTheme() {
     textLabel:  '#1a2430',
     textTime:   '#556070',
     nowLine:    '#0078d4',
+    mcBg:       '#c4d2df',   // etwas dunkler als bgHeader
+    mcBorder:   '#8090a8',   // gleich wie borderLine
+    mcText:     '#1a2430',   // gleich wie textHeader
+    mcSubText:  '#556070',   // gleich wie textTime
     frameBg:    (ft) => ({
-      WEATHER:'#0078d4', POSITION:'#107c10',
-      EMERG_BEACON:'#c42b1c', EMERG_RSRC:'#ca5010',
-      STATION_TLM:'#6b3fa0', TEXT:'#ca5010', CQ:'#005fa3'
+      WEATHER:'#107c10', POSITION:'#0078d4',
+      EMERG_BEACON:'#c42b1c', EMERG_RSRC:'#c42b1c',
+      STATION_TLM:'#107c10', TEXT:'#ca5010'
     })[ft] || '#0078d4',
     frameText:  '#ffffff',
     frameBorder:'transparent',
     legend:     (ft) => ({
-      WEATHER:'#0078d4', POSITION:'#107c10', EMERG_BEACON:'#c42b1c',
-      EMERG_RSRC:'#ca5010', STATION_TLM:'#6b3fa0', TEXT:'#ca5010', CQ:'#005fa3'
+      WEATHER:'#107c10', POSITION:'#0078d4', EMERG_BEACON:'#c42b1c',
+      EMERG_RSRC:'#c42b1c', STATION_TLM:'#107c10', TEXT:'#ca5010'
     })[ft] || '#0078d4',
   };
   if (t === 'light') return {
@@ -5474,16 +5817,20 @@ function slTheme() {
     textLabel:  '#222222',
     textTime:   '#666666',
     nowLine:    '#e53935',
+    mcBg:       '#dedede',   // etwas dunkler als bgHeader
+    mcBorder:   '#aaaaaa',   // gleich wie borderLine
+    mcText:     '#222222',   // gleich wie textHeader
+    mcSubText:  '#666666',   // gleich wie textTime
     frameBg:    (ft) => ({
-      WEATHER:'#1565c0', POSITION:'#2e7d32',
-      EMERG_BEACON:'#c62828', EMERG_RSRC:'#e65100',
-      STATION_TLM:'#6a1b9a', TEXT:'#ef6c00', CQ:'#0277bd'
+      WEATHER:'#2e7d32', POSITION:'#1565c0',
+      EMERG_BEACON:'#c62828', EMERG_RSRC:'#c62828',
+      STATION_TLM:'#2e7d32', TEXT:'#ef6c00'
     })[ft] || '#1565c0',
     frameText:  '#ffffff',
     frameBorder:'transparent',
     legend:     (ft) => ({
-      WEATHER:'#1565c0', POSITION:'#2e7d32', EMERG_BEACON:'#c62828',
-      EMERG_RSRC:'#e65100', STATION_TLM:'#6a1b9a', TEXT:'#ef6c00', CQ:'#0277bd'
+      WEATHER:'#2e7d32', POSITION:'#1565c0', EMERG_BEACON:'#c62828',
+      EMERG_RSRC:'#c62828', STATION_TLM:'#2e7d32', TEXT:'#ef6c00'
     })[ft] || '#1565c0',
   };
   return {
@@ -5496,16 +5843,20 @@ function slTheme() {
     textLabel:  '#c8d8e8',
     textTime:   '#8090a8',
     nowLine:    '#e05050',
+    mcBg:       '#1e2d4a',   // etwas heller als bgHeader
+    mcBorder:   '#304060',   // gleich wie borderLine
+    mcText:     '#c8d8e8',   // gleich wie textHeader
+    mcSubText:  '#8090a8',   // gleich wie textTime
     frameBg:    (ft) => ({
-      WEATHER:'#1565c0', POSITION:'#2e7d32',
-      EMERG_BEACON:'#b71c1c', EMERG_RSRC:'#e65100',
-      STATION_TLM:'#6a1b9a', TEXT:'#e65100', CQ:'#0277bd'
+      WEATHER:'#2e7d32', POSITION:'#1565c0',
+      EMERG_BEACON:'#b71c1c', EMERG_RSRC:'#b71c1c',
+      STATION_TLM:'#2e7d32', TEXT:'#e65100'
     })[ft] || '#1565c0',
     frameText:  '#ffffff',
     frameBorder:'transparent',
     legend:     (ft) => ({
-      WEATHER:'#1e88e5', POSITION:'#43a047', EMERG_BEACON:'#e53935',
-      EMERG_RSRC:'#fb8c00', STATION_TLM:'#8e24aa', TEXT:'#fb8c00', CQ:'#039be5'
+      WEATHER:'#43a047', POSITION:'#1e88e5', EMERG_BEACON:'#e53935',
+      EMERG_RSRC:'#e53935', STATION_TLM:'#43a047', TEXT:'#fb8c00'
     })[ft] || '#1e88e5',
   };
 }
@@ -6114,10 +6465,17 @@ async function cfgAuthDelete(cs)    {
 <!-- ══ FRAME DETAIL MODAL ══ -->
 <div id="frame-modal" onclick="if(event.target===this)closeModal()">
   <div id="frame-modal-box">
-    <h3 id="modal-title">Frame Details</h3>
+    <div id="frame-modal-header">
+      <div id="frame-modal-call">–</div>
+      <div id="frame-modal-subtitle">–</div>
+    </div>
     <button id="frame-modal-close" onclick="closeModal()">✕</button>
     <div id="frame-modal-body">
       <div id="modal-content"></div>
+    </div>
+    <div id="frame-modal-footer">
+      <span id="modal-footer-snr">SNR: –</span>
+      <span id="modal-footer-offset">Offset: –</span>
     </div>
   </div>
 </div>
