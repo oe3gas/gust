@@ -429,19 +429,23 @@ main { padding: 16px; max-width: 1200px; }
 .frame-row .info {
   display: flex;
   align-items: center;
+  justify-content: flex-start;   /* Werte linksbündig packen */
   gap: 5px;
   width: 130px;
   flex-shrink: 0;
   font-size: var(--fs-xs);
   white-space: nowrap;
 }
-.frame-row .info .ch    { color: var(--accent); font-weight: 500; min-width: 12px; }
-.frame-row .info .off   { color: var(--text2); }
+/* Feste Sub-Spalten, damit die Werte bündig unter den Kopfzeilen-Labels
+   (Ch. / dB / Hz) stehen — text-align allein wirkt nicht, da content-hugging */
+.frame-row .info .ch    { color: var(--accent); font-weight: 500; width: 24px; flex-shrink: 0; text-align: left; }
+.frame-row .info .snr   { width: 46px; flex-shrink: 0; text-align: left; }
+.frame-row .info .off   { color: var(--text2); flex: 1; text-align: left; }
 .frame-row .info .ch-mc { color: var(--text2); }
 /* Diese Klassen behalten ihre Farbe/Gewichtung; Breiten steuert .info */
 .frame-row .ch   { color: var(--accent); font-weight: 500; }
-.frame-row .snr  { font-weight: bold; text-align: left; }
-.frame-row .off  { color: var(--text2); text-align: left; }
+.frame-row .snr  { font-weight: bold; text-align: left !important; }
+.frame-row .off  { color: var(--text2); text-align: left !important; }
 .frame-row .data { color: var(--text); flex: 1; }
 .frame-row.emergency .type { color: var(--red); font-weight: bold; }
 .frame-row.emergency      { background: rgba(248,81,73,.08); }
@@ -1103,7 +1107,11 @@ h2:first-child { margin-top: 0; }
     <span data-badge-col style="width:0;overflow:hidden;flex-shrink:0;transition:width .15s"></span>
     <span style="width:120px;flex-shrink:0">Sender</span>
     <span style="width:90px;flex-shrink:0">Typ</span>
-    <span style="width:130px;flex-shrink:0">Ch. · dB · Hz</span>
+    <span style="width:130px;flex-shrink:0;display:flex;gap:5px">
+      <span style="width:24px;flex-shrink:0">Ch.</span>
+      <span style="width:46px;flex-shrink:0">dB</span>
+      <span style="flex:1">Hz</span>
+    </span>
     <span style="flex:1">Text</span>
   </div>
   <div id="rx-feed">
