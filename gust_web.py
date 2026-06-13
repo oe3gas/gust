@@ -1088,6 +1088,24 @@ h2:first-child { margin-top: 0; }
                    background:transparent;border:1px solid var(--border);
                    color:var(--text2);border-radius:3px">✕</button>
   </div>
+  <div id="rx-feed-header" style="
+      display:flex;align-items:center;gap:10px;
+      padding:3px 6px;
+      font-size:var(--fs-xxs);
+      color:var(--text2);
+      text-transform:uppercase;
+      letter-spacing:.06em;
+      border-bottom:1px solid var(--border);
+      background:var(--bg2);
+      border-radius:4px 4px 0 0;
+      user-select:none;">
+    <span style="width:65px;flex-shrink:0">Zeit</span>
+    <span data-badge-col style="width:0;overflow:hidden;flex-shrink:0;transition:width .15s"></span>
+    <span style="width:120px;flex-shrink:0">Sender</span>
+    <span style="width:90px;flex-shrink:0">Typ</span>
+    <span style="width:130px;flex-shrink:0">Ch. · SNR · Off.</span>
+    <span style="flex:1">Text</span>
+  </div>
   <div id="rx-feed">
     <div style="color:var(--text2);padding:8px;" data-i18n="monitor.feed.empty">Warte auf RX-Frames …</div>
   </div>
@@ -3298,7 +3316,15 @@ function appendRxFrame(frame) {
       ? frame.meta.mc_sender
       : (frame.from ?? '?')
   );
-  const typ = frame.type_name ?? '?';
+  // Display-Kürzel für zu lange Typen (nur Anzeige; frame.type_name bleibt
+  // unverändert für Farb-Lookup, Filter, Modal etc.)
+  const TYPE_SHORT = {
+    'STATION_TLM':  'TELEMTR',
+    'EMERG_BEACON': 'EMRGNCY',
+    'EMERG_RSRC':   'EMRGNCY',
+  };
+  const typRaw = frame.type_name ?? '?';
+  const typ    = TYPE_SHORT[typRaw] ?? typRaw;
   const dat = frameDataSummary(frame);
   const _ftype  = frame.frame_type ?? frame.type ?? 0;
   const isEmerg = (_ftype === 0x20 || _ftype === 0x21
@@ -3313,9 +3339,11 @@ function appendRxFrame(frame) {
   ].filter(Boolean).join(' · ');
   activityLog('rx', typ, frm, _actExtra);
   const off  = frame.freq_offset_hz ?? frame.offset_hz ?? null;
-  const offStr  = off  != null ? (off > 0 ? '+' : '') + off.toFixed(0) + ' Hz' : '';
+  // Offset ohne "Hz"; leer wenn nicht vorhanden (spart Platz, kein "–")
+  const offStr  = off  != null ? (off >= 0 ? '+' : '') + off.toFixed(1) : '';
   const snrCls  = snrClass(snr);
-  const snrStr  = snr != null ? snrLabel(snr) : '';
+  // SNR ohne "dB"; toFixed() liefert bei negativen Werten automatisch '-'
+  const snrStr  = snr != null ? (snr >= 0 ? '+' : '') + snr.toFixed(1) : '–';
 
   const row = document.createElement('div');
   row._frameData = frame;   // für Display-Filter (applyRxFilter)
@@ -5170,8 +5198,17 @@ function slToggleMcLane() {
 // Wird von applyStatusPush aufgerufen wenn Bridge-Status sich ändert
 // Blendet die MC-Badge-Spalte im RX-Feed ein/aus (analog zur Swimlane MC-Spalte)
 function rxFeedUpdateMcCol(mcActive) {
-  const feed = document.getElementById('rx-feed');
+  const feed   = document.getElementById('rx-feed');
+  const header = document.getElementById('rx-feed-header');
   if (feed) feed.classList.toggle('mc-active', !!mcActive);
+  // Badge-Span in Kopfzeile: gleiche Breite wie .badge-col
+  if (header) {
+    const badgeSpan = header.querySelector('[data-badge-col]');
+    if (badgeSpan) {
+      badgeSpan.style.width    = mcActive ? '34px' : '0';
+      badgeSpan.style.overflow = mcActive ? ''     : 'hidden';
+    }
+  }
 }
 
 function slUpdateMcToggle(mcConnected) {
