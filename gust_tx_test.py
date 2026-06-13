@@ -540,7 +540,7 @@ def run(args):
             key = os.urandom(32)   # unbekannte Station → Empfänger verwirft
         ts_val       = int(time.time())
         tag          = auth_tag(frame_body, ts_val, key)
-        auth_payload = encode_auth(ts_val, data_ft_int, 0, tag)
+        auth_payload = encode_auth(ts_val, data_ft_int, tag)
         auth_hdr = (f"{ts()}  AUTH #{tx_count:3d}  {data_callsign:<8}  "
                     f"[AUTH      ]  Kanal {channel}  TS={ts_val}")
         if args.dry_run:

@@ -153,7 +153,7 @@ GUST unterstützt ab v0.5 zwei unabhängige Empfangspfade:
 0x21  Notfall-Ressourcenstatus
 0x30  Generische Messung (Sensor-TLV)
 0x40  Freitext / QSO-Fragment
-0x41  QSO-CQ / Anruf
+0x41  RESERVED (war: CQ-Anruf — CQ als TEXT 0x40 mit dest=BROADCAST)
 0x50  AUTH — HMAC-SHA256 Frame-Authentifizierung (GUST-S, siehe 3.5)
 0x80–0xCF  GUST-X Frame-Typen (Extended, 9-Symbol-SYNC erforderlich, siehe 3.9)
 0xF0  Protokoll-Management (Kanalzuweisung, Timing)
@@ -272,7 +272,8 @@ Daten-Frame und referenziert ihn über dessen TIMESTAMP.
 Offset  Größe  Inhalt
   0       4    TIMESTAMP  Unix-Timestamp des Daten-Frames (uint32, big-endian)
   4       1    REF_TYPE   Frame-Typ des Daten-Frames (z.B. 0x01 für WEATHER)
-  5       1    KEY_ID     Schlüssel-Identifier (welcher gemeinsame Schlüssel)
+  5       1    RESERVED   Früher KEY_ID, jetzt 0x00 — Schlüssel-Lookup via
+                          Rufzeichen (FROM-Feld), keine separate KEY_ID nötig
   6      14    HMAC       HMAC-SHA256(key, frame_body + TIMESTAMP), 14 Byte
 ```
 Gesamt: 20 Byte — füllt die GUST-S-Payload exakt aus.
@@ -389,7 +390,6 @@ Die Länge eines GUST-Frames hängt vom Payload-Typ ab:
 
 | Frame-Typ | Payload | Symbole (RS+SYNC) | Audiodauer |
 |---|---|---|---|
-| CQ (0x41) | 5 Byte | 44 | ~1,4 s |
 | STATION_TLM (0x03) | 10 Byte | 48 | ~1,5 s |
 | WEATHER (0x01) | 14 Byte | 60 | ~1,9 s |
 | POSITION (0x02) | 18 Byte | 64 | ~2,1 s |
@@ -659,7 +659,7 @@ public_key  = private_key.public_key()
 ```
 
 Bestehende GUST-S Typen (0x01–0x4F) sind auch in GUST-X gültig —
-eine GUST-X Station kann kurze Frames (z.B. CQ 0x41) ohne den
+eine GUST-X Station kann kurze Frames (z.B. WEATHER 0x01) ohne den
 GUST-X Overhead senden, indem sie den 8-Symbol-SYNC verwendet.
 
 #### Payload-Kapazität GUST-X

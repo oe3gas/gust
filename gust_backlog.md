@@ -253,7 +253,7 @@ Heltec V4, Stand Juni 2026). Siehe gust_knowledge.md §31.
 | P6-20 | 🟢 | feature | MeshCore HF-Forward: MC → GUST → HF | Zwei-Pfad-Architektur in `_process_channel_msg()`: Pfad A (immer) = 1 × RX_FRAME (frag_total=1) für WebGUI/Inbox/MQTT ohne Fragment-Lärm. Pfad B (opt-in) = HF-Forward via `TxGateway.enqueue()` wenn `hf_forward: true` im Kanal-Slot. Drei Entscheidungsebenen: `gust_forward` (aufnehmen), implizit WebGUI, `hf_forward` (HF senden, Default false). Wiring: `bridge._gateway = gateway` in gust.py (ADR-18). meshcore.json manuell um `hf_forward`-Felder ergänzen. **Umgesetzt Juni 2026.** | ✅ |
 | P6-20b | 🟢 | feature | WebGUI-Antwort auf MC-Nachrichten | Antwort-Funktion im Monitor-Tab: `send_chan_msg()` aus WebGUI auslösen. Neuer API-Endpunkt `POST /api/meshcore/tx/channel`. Voraussetzung: P6-20 ✅. | 🔲 |
 | P6-20c | 🟡 | task | meshcore.json hf_forward manuell setzen | Slot 6 (GUST): `"hf_forward": true` in meshcore.json eintragen. Danach Browser-Test: MC-Nachricht auf #GUST → HF-Forward via TxGateway prüfen. | 🔲 |
-| P6-23 | 🟡 | feature | MeshCore Kanal-Management aus WebGUI | `set_channel`/`get_channel` direkt aus Konfig-Tab statt nur über meshcore-cli. Neue Buttons in Kanal-Card 3. Voraussetzung: P6-20 ✅. | 🔲 |
+| P6-23 | 🟡 | feature | MeshCore Kanal-Management aus WebGUI | Kanal-Sync via `get_channels_from_companion()` + `POST /api/meshcore/channels/sync` implementiert (Juni 2026): Button „↻ Kanalliste aktualisieren" liest Slots vom Companion, sync mit meshcore.json (Companion = Source of Truth), GUST-Flags erhalten. Offen: `set_channel` zum Schreiben neuer Kanäle direkt aus WebGUI. | 🔶 |
 | P6-24 | 🟡 | task | node_* Migration gateway.json → Single Source | `node_callsign`, `node_name`, `connection_port`, `connection_baudrate` aktuell in gateway.json gespeichert, Bridge liest noch aus meshcore.json. Migration auf gateway.json als Single-Source-of-Truth. | 🔲 |
 | P6-22 | 🟢 | feature | Repeater-Steuerung via Text-CLI | Zweiter Heltec V4 (COM19) läuft als Repeater-Firmware. Steuerung nur via `meshcore-cli -r -s COM19` (Text-CLI). Nicht über meshcore-Python-Library ansprechbar. Dokumentation der CLI-Befehle in `gust_knowledge.md`. | 🔲 |
 
@@ -262,7 +262,7 @@ Heltec V4, Stand Juni 2026). Siehe gust_knowledge.md §31.
 | ID | Typ | Beschreibung | Status |
 |---|---|---|---|
 | BUG-MC-01 | bug | `self_info` hat keinen `ver`-Key — Firmware-Version aus `send_device_query().payload['ver']` lesen, nicht aus self_info | 🔲 |
-| BUG-MC-02 | bug | `get_channel(i)`-Loop bricht nicht bei leeren Slots ab — Abbruch wenn `channel_name == ""` implementieren | 🔲 |
+| BUG-MC-02 | bug | `get_channel(i)`-Loop bricht nicht bei leeren Slots ab — **BEHOBEN** in `get_channels_from_companion()` (Juni 2026): Abbruch bei `channel_name == ""` oder leerem payload. | ✅ |
 | BUG-MC-03 | bug | UTF-8-Schnitt mitten in Multibyte-Zeichen (Emoji) — **BEHOBEN** in `gust_meshcore_bridge.py` (Juni 2026). `fragment_text()` in `gust_frame.py` noch nicht gefixt (chunk_size=14 Zeichen statt Bytes). | ✅ Bridge-Fix |
 | BUG-MC-04 | bug | Channel-Messages haben kein `pubkey_prefix` im Wire-Format — Sender-Auflösung basiert auf Kontaktliste. Bei unbekanntem Sender: Fallback auf `unknown_sender_policy`. Kein Bug, dokumentiertes MeshCore-Verhalten. | ℹ️ Won't fix |
 

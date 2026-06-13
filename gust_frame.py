@@ -10,7 +10,7 @@ Inhalt dieses Moduls:
   • FrameType        — Alle Frame-Typ-Konstanten mit Namen
   • Rufzeichen-Codec — Basis-40 Encoder/Decoder (4 Byte, 6 Zeichen)
   • CRC-16/CCITT     — Prüfsumme über TYPE + FROM + PAYLOAD
-  • Payload-Encoder  — Für jeden definierten Frame-Typ (0x01–0x41)
+  • Payload-Encoder  — Für jeden definierten Frame-Typ (0x01–0x50)
   • Payload-Decoder  — Rückrichtung: bytes → Python-Dict
   • Frame-Builder    — Vollständiger Frame-Aufbau inkl. CRC
   • Frame-Parser     — Empfang: bytes → validiertes Dict
@@ -74,7 +74,7 @@ class FrameType:
     EMERG_RSRC     = 0x21   # Notfall-Ressourcenstatus    ( 8 Byte)
     SENSOR         = 0x30   # Generische Sensor-TLV       (variabel)
     TEXT           = 0x40   # Freitext / QSO-Fragment     (variabel)
-    CQ             = 0x41   # CQ-Anruf                    ( 5 Byte)
+    # 0x41  RESERVED (war: CQ-Anruf, entfernt — CQ via TEXT 0x40 + BROADCAST)
     AUTH           = 0x50   # HMAC-SHA256 Authentifizierung (bilateral, 20 Byte)
     MGMT           = 0xF0   # Protokoll-Management        (variabel)
 
@@ -216,32 +216,41 @@ def verify_auth(frame_body: bytes, timestamp: int,
 
 
 def encode_auth(timestamp: int, ref_type: int,
-                key_id: int, hmac_tag: bytes) -> bytes:
+                hmac_tag) -> bytes:
     """
     Kodiert den AUTH-Frame Payload (0x50), 20 Byte.
 
-    Aufbau: TIMESTAMP(4) | REF_TYPE(1) | KEY_ID(1) | HMAC(14)
+    Aufbau: TIMESTAMP(4) | REF_TYPE(1) | RESERVED(1)=0x00 | HMAC(14)
+
+    Byte 5 (ehemals KEY_ID) ist RESERVED = 0x00. Der Schlüssel-Lookup
+    erfolgt über das Rufzeichen im FROM-Feld des Daten-Frames; eine
+    separate KEY_ID ist überflüssig (ADR Juni 2026).
 
     Args:
         timestamp: Unix-Timestamp des Daten-Frames (uint32)
         ref_type:  Frame-Typ des Daten-Frames (z.B. 0x01 für WEATHER)
-        key_id:    Schlüssel-Identifier (0–255, bilateral vereinbart)
-        hmac_tag:  14-Byte HMAC-SHA256 (Ausgabe von auth_tag())
+        hmac_tag:  14-Byte HMAC-SHA256 (Ausgabe von auth_tag()) — bytes
+                   oder hex-String
 
     Returns:
         bytes: 20 Byte Payload
     """
+    if isinstance(hmac_tag, str):
+        hmac_tag = bytes.fromhex(hmac_tag)
     if len(hmac_tag) != 14:
         raise ValueError(f"hmac_tag muss 14 Byte sein, erhalten: {len(hmac_tag)}")
-    return struct.pack(">IBB", timestamp, ref_type, key_id) + hmac_tag
+    return struct.pack(">IBB", timestamp, ref_type, 0x00) + hmac_tag
 
 
 def decode_auth(payload: bytes) -> dict:
     """
     Dekodiert den AUTH-Frame Payload (0x50).
 
+    Byte 5 (ehemals KEY_ID) ist RESERVED und wird ignoriert — der
+    Schlüssel-Lookup erfolgt über das Rufzeichen (FROM-Feld).
+
     Returns:
-        dict mit: timestamp, ref_type, key_id, hmac_tag
+        dict mit: timestamp, ref_type, hmac_tag
 
     hmac_tag wird als hex-String (28 Zeichen) zurückgegeben, nicht als bytes —
     damit das Dict (über payload_decoded) JSON-serialisierbar bleibt und den
@@ -249,11 +258,11 @@ def decode_auth(payload: bytes) -> dict:
     """
     if len(payload) < 20:
         raise ValueError(f"AUTH-Payload zu kurz: {len(payload)} < 20 Byte")
-    timestamp, ref_type, key_id = struct.unpack(">IBB", payload[:6])
+    timestamp, ref_type = struct.unpack_from(">IB", payload, 0)
+    # Byte 5 = RESERVED (ehemals KEY_ID), ignorieren
     return {
         "timestamp": timestamp,
         "ref_type":  ref_type,
-        "key_id":    key_id,
         "hmac_tag":  payload[6:20].hex(),
     }
 
@@ -804,27 +813,9 @@ def reassemble_text(fragments: list) -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# 0x41  CQ-ANRUF  (5 Byte)
-#
-#   0–3  FROM-Rufzeichen (zur Redundanz, auch im Frame-Header)
-#   4    CQ-Flags (bit0=DX, bit1=Contest, bit2=Emergency)
+# 0x41  RESERVED (war: CQ-Anruf, entfernt)
+#   CQ-Rufe werden als TEXT-Frame (0x40) mit dest=BROADCAST gesendet.
 # ──────────────────────────────────────────────────────────────────────
-CQ_FLAG_DX        = 0x01
-CQ_FLAG_CONTEST   = 0x02
-CQ_FLAG_EMERGENCY = 0x04
-
-def encode_cq(callsign: str, flags: int = 0) -> bytes:
-    """Frame 0x41 — CQ-Anruf (5 Byte)."""
-    return encode_callsign(callsign) + bytes([int(flags) & 0xFF])
-
-def decode_cq(payload: bytes) -> dict:
-    return {
-        "from":      decode_callsign(payload[:4]),
-        "flags":     payload[4],
-        "cq_dx":     bool(payload[4] & CQ_FLAG_DX),
-        "cq_contest":bool(payload[4] & CQ_FLAG_CONTEST),
-        "emergency": bool(payload[4] & CQ_FLAG_EMERGENCY),
-    }
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -892,7 +883,6 @@ def decode_payload(frame_type: int, payload: bytes) -> Optional[dict]:
         FrameType.EMERG_BEACON: decode_emergency_beacon,
         FrameType.EMERG_RSRC:   decode_emerg_rsrc,
         FrameType.TEXT:         decode_text_fragment,
-        FrameType.CQ:           decode_cq,
         FrameType.AUTH:         decode_auth,
     }
     decoder = decoders.get(frame_type)

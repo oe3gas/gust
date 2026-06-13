@@ -49,9 +49,13 @@ Kernänderungen gegenüber v0.2:
 | Parallelkanal-Diversity (RX-Dedup, Diversity-Gewinn bestätigt 100% vs ~90%) | ✅ |
 | TX-Pipeline IC-7610 via USB-Audio + hamlib PTT | ✅ |
 | SNR-Schätzer adaptiv (BUG-06 gefixt, alle Kanäle konsistent) | ✅ |
-| Web-UI (aiohttp, REST + WebSocket, 4 Tabs + cfgedit-Tab, Dark/Light Theme) | ✅ |
+| Web-UI (aiohttp, REST + WebSocket, 7 Tabs: Monitor/Senden/Komm/Status/Log/Stresstest/Konfig) | ✅ |
 | Web-/REST-TX (TxGateway: Slot-Scheduling, Cooldown, Notfall-Vordrang) | ✅ |
-| gateway.json Editor im Web-UI (cfgedit-Tab, 6 Sub-Sektionen, alle Modi) | ✅ |
+| gateway.json Editor (cfgedit-Tab, 6 Sub-Sektionen inkl. WSJT-X-Style TRX-Editor, AUTH-Keys) | ✅ |
+| TRX-Editor: Rig-Typeahead (312 Modelle), Audio alle APIs (MME/DS/WASAPI/WDM), Sidebar | ✅ |
+| 4 Themes: Dark/Aero/Mono/Light, Cycle-Button, Swimlane theme-aware | ✅ |
+| JSON-Startup-Validierung: gateway.json + meshcore.json mit Zeilennummer-Fehler | ✅ |
+| Log in Status-Tab integriert (6 Tabs statt 7) | ✅ |
 | TX-Slot-Disziplin: P4/P3 → Stations-Slot, P2 → ≤30 s, P1 → sofort | ✅ |
 | Notfall-Frames via Web-TX als Dual-Kanal (Heimatkanal + home+5, ADR-12) | ✅ |
 | Web-UI TX-Warteschlange mit Per-Frame-Countdown (/api/tx/queue) | ✅ |

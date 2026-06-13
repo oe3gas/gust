@@ -1050,7 +1050,6 @@ Sendedauer = (⌈Bytes·8/3⌉ + 8 SYNC) × 32 ms:
 
 | Frame-Typ    | Payload | RS(255,223)     | RS(255,191)     | Verlängerung |
 |---|---|---|---|---|
-| CQ           |  5 Byte | 45 B → 4,10 s | 77 B → 6,85 s |    +67 %     |
 | EMERG_RSRC   |  8 Byte | 48 B → 4,35 s | 80 B → 7,10 s |    +63 %     |
 | STATION_TLM  | 10 Byte | 50 B → 4,54 s | 82 B → 7,26 s |    +60 %     |
 | WEATHER      | 14 Byte | 54 B → 4,86 s | 86 B → 7,62 s |    +57 %     |
@@ -1419,8 +1418,8 @@ Voraussetzungen für eine sinnvolle LDPC-Integration:
 2. **Blockgröße n=256:** `gust_ldpc.py` neu parametrisieren.
 
 3. **Frame-Aggregation:** Bei n=256 und Rate 3/4 sind 192 Datenbits
-   (24 Byte) pro Block verfügbar. Kurze Payloads (CQ: 5 Byte) benötigen
-   mehrere Blöcke oder Zero-Padding-Strategie.
+   (24 Byte) pro Block verfügbar. Kurze Payloads (EMERG_RSRC: 8 Byte)
+   benötigen mehrere Blöcke oder Zero-Padding-Strategie.
 
 ### Aktueller Status der LDPC-Dateien
 
@@ -2091,6 +2090,25 @@ auf `self._mc_bridge.channel_map`, `self._mc_bridge.mc.self_info` und
 **ADR-18:** `WebServer` bekommt externe Objekte per Parameter/Post-Init,
 nie per globaler Variable. Muster analog zu `self._gateway`.
 
+**ADR-19 (Juni 2026): GUST schreibt keine Kanäle zum Companion zurück.**
+Kanal-Konfiguration (set_channel, Kanal-Keys) liegt ausschliesslich beim
+Operator via meshcore-cli oder MeshCore-App. GUST ist passiver Leser.
+
+Definierte Aktionen GUST ↔ MeshCore Companion:
+
+| # | Aktion | Richtung | Status |
+|---|---|---|---|
+| 1 | Kanäle abrufen (`get_channel(i)`-Loop → meshcore.json sync) | Companion → GUST | ✅ |
+| 2 | Kanal-Nachrichten empfangen (`CHANNEL_MSG_RECV`) | Companion → GUST | ✅ |
+| 3 | Direktnachrichten empfangen (`CONTACT_MSG_RECV`) | Companion → GUST | ✅ |
+| 4 | MC-Nachrichten beantworten (`send_chan_msg`, `send_msg`) | GUST → Companion | 🔲 P6-20b |
+| 5 | HF→MC-Weiterleitung (Kriterien noch zu definieren) | GUST → Companion | 🔲 offen |
+
+Was GUST bewusst **nicht** tut:
+- `set_channel()` aufrufen — Kanalverwaltung ist Operator-Aufgabe
+- Kanal-Keys schreiben oder lesen (Sicherheit)
+- Companion-Konfiguration ändern (Name, Radio-Parameter, TX-Power)
+
 ### Implementierte Komponenten
 
 **gust_web.py — HTML (cfgsub-meshcore, finales 2-Block-Layout):**
@@ -2339,8 +2357,44 @@ werden nie verändert. `channel_map` wird in-memory sofort aktualisiert.
 {"index": 6, "name": "GUST", "gust_forward": true, "hf_forward": true}
 ```
 
+### Kanal-Sync: Companion als einzige Wahrheit (Juni 2026)
+
+**Funktion:** Button „↻ Kanalliste aktualisieren" in der Kanal-Card liest
+alle belegten Slots vom Companion via `get_channel(i)`-Loop und
+synchronisiert `meshcore.json`.
+
+**Neue Methode `get_channels_from_companion()`** in `gust_meshcore_bridge.py`:
+```python
+async def get_channels_from_companion(self) -> list[dict]:
+    # Loop get_channel(i) bis leerer Slot
+    # Key normalisiert als lowercase Hex (bytes oder str)
+    # → [{index, name, key}, ...]
+```
+
+**Neuer Endpunkt `POST /api/meshcore/channels/sync`:**
+
+Merge-Logik — Companion ist die Wahrheit für Index/Name/Key:
+
+| Situation | name + key | gust_forward | hf_forward |
+|---|---|---|---|
+| Slot bekannt (index match) | vom Companion | aus JSON erhalten | aus JSON erhalten |
+| Slot neu im Companion | vom Companion | `true` (Default) | `false` (sicher) |
+| Slot in JSON, nicht im Companion | — | → gelöscht | → gelöscht |
+
+`channel_map` der laufenden Bridge wird sofort in-memory ersetzt —
+kein Daemon-Neustart nötig. `meshcore.json` wird atomar unter
+`_config_write_lock` geschrieben.
+
+Response: `{ok, slots, added, removed, total}` →
+`mcRenderChannels(slots)` rendert die Tabelle sofort neu.
+
+**Warum Companion = Wahrheit:** Die Kanalliste im Companion ist der
+einzig zuverlässige Zustand — meshcore.json kann veraltet sein
+(Kanal manuell via CLI gesetzt, nicht in JSON eingetragen, oder
+JSON von Hand bearbeitet). Der Sync bringt beide in Einklang.
+
 ---
 
 *Dokument: gust_knowledge.md*
 *Autor: OE3GAS*
-*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · §32 P8-14 LDPC-Soft schlägt RS bei −10 dB (Juni 2026) · §33 MeshCore Bridge-Repeater & KISS (Juni 2026) · §34 Web-UI Darstellungs-Details (Juni 2026) · §35 Web-UI Tab-Struktur (Juni 2026, P5-24) · §36 MeshCore WebGUI-Konfigurationsseite (Juni 2026) · §37 WebGUI UI-Verbesserungen Button-Konsistenz & Layout (Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*
+*Stand: Juni 2026 — §25 Logging-Architektur (VITAL) · §26 Deep-Decoder Thread-Priorität (ctypes 64-bit) · §27 LDPC Blocklängen-Evaluation (Juni 2026) · §28 AUTH-Frame Design-Entscheidungen (Entwurf, Juni 2026) · §29 GUST-X Design-Entscheidungen (Entwurf, Juni 2026) · §30 MQTT als zentrale Drehscheibe (Juni 2026) · §31 MeshCore-Anbindung + API-Erkenntnisse + UTF-8-Fix (Juni 2026) · §32 P8-14 LDPC-Soft schlägt RS bei −10 dB (Juni 2026) · §33 MeshCore Bridge-Repeater & KISS (Juni 2026) · §34 Web-UI Darstellungs-Details (Juni 2026) · §35 Web-UI Tab-Struktur (Juni 2026, P5-24) · §36 MeshCore WebGUI-Konfigurationsseite (Juni 2026) · §37 WebGUI UI-Verbesserungen Button-Konsistenz & Layout (Juni 2026) · §38 MeshCore Kanal-Sync Companion → meshcore.json (Juni 2026) · AUTH: 0x50 HMAC / 0x85+0x86 ECDSA-64 (2-Frame) · Phase 9: Costas-SYNC · 8-Kanal-Plan · IQ-Eingang · Docker-Deployment*

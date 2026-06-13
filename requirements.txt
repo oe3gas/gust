@@ -9,6 +9,9 @@ scipy
 # Reed-Solomon FEC
 reedsolo
 
+# ECDSA-Authentifizierung (AUTH_EX 0x85/0x86, GUST-X / P8-12)
+# cryptography     # auskommentiert — erst bei AUTH_EX-Implementierung nötig
+
 # Audio I/O (Gateway-Betrieb)
 sounddevice
 
