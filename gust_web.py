@@ -401,19 +401,47 @@ main { padding: 16px; max-width: 1200px; }
 .frame-row { padding: 4px 6px; border-bottom: 1px solid var(--border); display: flex;
              gap: 10px; align-items: baseline; font-size: var(--fs-sm); }
 .frame-row:last-child { border-bottom: none; }
-.frame-row .ts   { color: var(--text2); white-space: nowrap; }
-.frame-row .ch   { color: var(--accent); width: 20px; text-align: center; }
-.frame-row .from { color: var(--blue); font-weight: bold; width: 85px; }
-/* MC-Frames: breiteres Absender-Feld (Node-Namen bis ~20 Z.), kein Umbruch */
-.frame-row.meshcore .from {
-  width: 160px;
+.frame-row .ts   { color: var(--text2); white-space: nowrap; width: 65px; flex-shrink: 0; }
+/* MC-Badge-Spalte: standardmäßig ausgeblendet, sichtbar wenn MC-Bridge aktiv */
+.frame-row .badge-col {
+  width: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: width 0.15s;
+}
+#rx-feed.mc-active .frame-row .badge-col {
+  width: 34px;
+}
+.frame-row .from {
+  color: var(--blue);
+  font-weight: bold;
+  width: 120px;
+  flex-shrink: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .frame-row .type { color: var(--green); width: 90px; }
-.frame-row .snr  { width: 58px; text-align: right; font-weight: bold; font-size: var(--fs-xs); white-space: nowrap; }
-.frame-row .off  { color: var(--text2); width: 52px; text-align: right; font-size: var(--fs-xs); white-space: nowrap; }
+/* Info-Spalte: Kanal · SNR · Offset (GUST) bzw. Kanal-Name (MC) */
+.frame-row .info {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 130px;
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.frame-row .info .ch    { color: var(--accent); font-weight: 500; min-width: 12px; }
+.frame-row .info .off   { color: var(--text2); }
+.frame-row .info .ch-mc { color: var(--text2); }
+/* Diese Klassen behalten ihre Farbe/Gewichtung; Breiten steuert .info */
+.frame-row .ch   { color: var(--accent); font-weight: 500; }
+.frame-row .snr  { font-weight: bold; }
+.frame-row .off  { color: var(--text2); }
 .frame-row .data { color: var(--text); flex: 1; }
 .frame-row.emergency .type { color: var(--red); font-weight: bold; }
 .frame-row.emergency      { background: rgba(248,81,73,.08); }
@@ -3287,6 +3315,7 @@ function appendRxFrame(frame) {
   const off  = frame.freq_offset_hz ?? frame.offset_hz ?? null;
   const offStr  = off  != null ? (off > 0 ? '+' : '') + off.toFixed(0) + ' Hz' : '';
   const snrCls  = snrClass(snr);
+  const snrStr  = snr != null ? snrLabel(snr) : '';
 
   const row = document.createElement('div');
   row._frameData = frame;   // für Display-Filter (applyRxFilter)
@@ -3308,12 +3337,17 @@ function appendRxFrame(frame) {
   const mcBadge = isMC
     ? `<span class="mc-badge" title="${isDM ? 'MeshCore Direktnachricht' : 'MeshCore Kanal-Nachricht'}">${isDM ? 'DM' : 'MC'}</span>`
     : '';
+  // Info-Spalte: MC = Kanal-Name; GUST = Kanal · SNR · Offset
+  const infoStr = isMC
+    ? `<span class="ch-mc">${ch}</span>`
+    : `<span class="ch">${ch}</span>` +
+      (snrStr ? `<span class="snr ${snrCls}">${snrStr}</span>` : '') +
+      (offStr ? `<span class="off">${offStr}</span>` : '');
   row.innerHTML = `<span class="ts">${ts}</span>
-    <span class="ch">${ch}</span>
-    <span class="from">${mcBadge}${frm}</span>
-    <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0"><span class="type" style="width:auto">${typ}</span><span class="badge-container" style="display:flex;align-items:center;gap:3px">${isTest ? '<span class="test-pill">TEST</span>' : ''}${authBadge}${deepBadge}</span></span>
-    <span class="snr ${snrCls}">${snr != null ? snrLabel(snr) : '–'}</span>
-    <span class="off">${offStr}</span>
+    <span class="badge-col">${isMC ? mcBadge : ''}</span>
+    <span class="from">${frm}</span>
+    <span style="display:flex;align-items:center;gap:5px;width:90px;flex-shrink:0"><span class="type" style="width:auto">${typ}</span><span class="badge-container" style="display:flex;align-items:center;gap:3px">${isTest ? '<span class="test-pill">TEST</span>' : ''}${authBadge}${deepBadge}</span></span>
+    <span class="info">${infoStr}</span>
     <span class="data">${dat}</span>`;
   row.addEventListener('click', () => openFrameModal(frame));
   feed.appendChild(row);
@@ -3393,13 +3427,12 @@ function appendRxFrame(frame) {
         toggleBtn.title = 'Einzelframes ein-/ausklappen';
 
         arow.innerHTML = `<span class="ts">${cached.ts}</span>
-          <span class="ch">${cached.ch}</span>
-          <span class="from">${mcBadgeA}${_esc(cached.frm)}</span>
-          <span style="display:flex;align-items:center;gap:5px;width:122px;flex-shrink:0">
+          <span class="badge-col">${isMCassembled ? mcBadgeA : ''}</span>
+          <span class="from">${_esc(cached.frm)}</span>
+          <span style="display:flex;align-items:center;gap:5px;width:90px;flex-shrink:0">
             <span class="type" style="width:auto;color:var(--green)">TEXT ✓</span>
           </span>
-          <span class="snr">–</span>
-          <span class="off"></span>
+          <span class="info"></span>
           <span class="data">→ ${_esc(cached.dest)}  "${_esc(assembled)}"
             <span style="color:var(--text2);font-size:var(--fs-xxs)">[${total}/${total} Frg. ✓]</span>
           </span>`;
@@ -4284,6 +4317,8 @@ function applyStatusPush(data) {
     if (typeof slUpdateMcToggle === 'function') {
       slUpdateMcToggle(!!(mc.enabled && mc.connected));
     }
+    // RX-Feed MC-Badge-Spalte: gleiche Logik wie Swimlane MC-Spalte
+    rxFeedUpdateMcCol(!!(mc.enabled && mc.connected));
   }
 }
 
@@ -5133,6 +5168,12 @@ function slToggleMcLane() {
 }
 
 // Wird von applyStatusPush aufgerufen wenn Bridge-Status sich ändert
+// Blendet die MC-Badge-Spalte im RX-Feed ein/aus (analog zur Swimlane MC-Spalte)
+function rxFeedUpdateMcCol(mcActive) {
+  const feed = document.getElementById('rx-feed');
+  if (feed) feed.classList.toggle('mc-active', !!mcActive);
+}
+
 function slUpdateMcToggle(mcConnected) {
   const btn = document.getElementById('sl-mc-toggle');
   if (!btn) return;
