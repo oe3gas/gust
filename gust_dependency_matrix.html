@@ -1,0 +1,133 @@
+
+<style>
+.dep-wrap { overflow-x: auto; padding: 1rem 0; }
+table.dep {
+  border-collapse: collapse;
+  font-size: 12px;
+  font-family: var(--font-sans);
+}
+table.dep th, table.dep td {
+  border: 0.5px solid var(--color-border-secondary);
+  text-align: center;
+  padding: 0;
+}
+table.dep td { width: 28px; height: 28px; min-width: 28px; }
+table.dep th.row-label {
+  text-align: right;
+  padding: 2px 8px 2px 4px;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  border-right: 1.5px solid var(--color-border-primary);
+}
+table.dep th.col-header {
+  height: 130px;
+  width: 28px;
+  min-width: 28px;
+  vertical-align: bottom;
+  padding: 0;
+  border-bottom: 1.5px solid var(--color-border-primary);
+}
+table.dep th.col-header div {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--color-text-primary);
+  padding: 6px 8px 6px 4px;
+  text-align: left;
+}
+table.dep th.corner {
+  border-right: 1.5px solid var(--color-border-primary);
+  border-bottom: 1.5px solid var(--color-border-primary);
+}
+.col-even { background: rgba(128,128,128,0.08); }
+.col-odd  { background: transparent; }
+.cell-dot { color: #378ADD; font-size: 16px; line-height: 1; }
+.cell-self { background: rgba(128,128,128,0.18); }
+.row-self td, .row-self th { opacity: 0.5; }
+</style>
+
+<div class="dep-wrap">
+<table class="dep">
+<thead>
+<tr>
+  <th class="corner"></th>
+  <th class="col-header col-odd"><div>gust</div></th>
+  <th class="col-header col-even"><div>g_audio</div></th>
+  <th class="col-header col-odd"><div>g_beacon</div></th>
+  <th class="col-header col-even"><div>g_decode</div></th>
+  <th class="col-header col-odd"><div>g_eventbus</div></th>
+  <th class="col-header col-even"><div>g_frame</div></th>
+  <th class="col-header col-odd"><div>g_gateway</div></th>
+  <th class="col-header col-even"><div>g_hackrf</div></th>
+  <th class="col-header col-odd"><div>g_hackrf_diag</div></th>
+  <th class="col-header col-even"><div>g_iq_rx</div></th>
+  <th class="col-header col-odd"><div>g_modulator</div></th>
+  <th class="col-header col-even"><div>g_msg_sim</div></th>
+  <th class="col-header col-odd"><div>g_rx</div></th>
+  <th class="col-header col-even"><div>g_soapy_tx</div></th>
+  <th class="col-header col-odd"><div>g_stress_dec</div></th>
+  <th class="col-header col-even"><div>g_stresstest</div></th>
+  <th class="col-header col-odd"><div>g_tx_test</div></th>
+  <th class="col-header col-even"><div>g_visualize</div></th>
+  <th class="col-header col-odd"><div>g_wav_tx</div></th>
+  <th class="col-header col-even"><div>g_web</div></th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+
+<script>
+const mods = [
+  'gust','g_audio','g_beacon','g_decode','g_eventbus','g_frame',
+  'g_gateway','g_hackrf','g_hackrf_diag','g_iq_rx','g_modulator',
+  'g_msg_sim','g_rx','g_soapy_tx','g_stress_dec','g_stresstest',
+  'g_tx_test','g_visualize','g_wav_tx','g_web'
+];
+
+const deps = {
+  'gust':        ['g_audio','g_eventbus','g_frame','g_gateway','g_iq_rx','g_msg_sim','g_rx','g_soapy_tx','g_web'],
+  'g_audio':     ['g_frame','g_modulator'],
+  'g_beacon':    ['g_audio','g_eventbus','g_frame','g_modulator','g_tx_test'],
+  'g_decode':    ['g_frame','g_modulator'],
+  'g_eventbus':  [],
+  'g_frame':     [],
+  'g_gateway':   ['g_eventbus'],
+  'g_hackrf':    ['g_frame','g_modulator'],
+  'g_hackrf_diag':['g_frame','g_hackrf','g_modulator'],
+  'g_iq_rx':     ['g_frame','g_modulator'],
+  'g_modulator': ['g_frame'],
+  'g_msg_sim':   ['g_frame'],
+  'g_rx':        ['g_frame'],
+  'g_soapy_tx':  [],
+  'g_stress_dec':['g_frame','g_modulator'],
+  'g_stresstest':['g_frame','g_modulator'],
+  'g_tx_test':   ['g_audio','g_frame','g_hackrf','g_modulator','g_soapy_tx'],
+  'g_visualize': ['g_frame','g_modulator'],
+  'g_wav_tx':    ['g_audio','g_modulator'],
+  'g_web':       ['g_eventbus','g_soapy_tx'],
+};
+
+const tbody = document.getElementById('tbody');
+mods.forEach((row, ri) => {
+  const tr = document.createElement('tr');
+  const th = document.createElement('th');
+  th.className = 'row-label';
+  th.textContent = row;
+  tr.appendChild(th);
+  mods.forEach((col, ci) => {
+    const td = document.createElement('td');
+    td.className = ci % 2 === 0 ? 'col-odd' : 'col-even';
+    if (row === col) {
+      td.style.background = 'rgba(128,128,128,0.2)';
+    } else if ((deps[row] || []).includes(col)) {
+      td.innerHTML = '<span class="cell-dot">●</span>';
+    }
+    tr.appendChild(td);
+  });
+  tbody.appendChild(tr);
+});
+</script>
