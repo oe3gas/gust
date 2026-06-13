@@ -55,7 +55,6 @@ try:
         encode_station_tlm,
         encode_emergency_beacon,
         encode_emerg_rsrc,
-        encode_cq,
         fragment_text,
         frame_to_symbol_stream,
         POS_FLAG_GPS_FIX,
@@ -100,7 +99,6 @@ class FrameEvent:
     duration_s: float
     # Neu (nur für AUTH-Frames):
     auth_ref_nr:    Optional[int]   = None   # Nr. des Daten-Frames (1-basiert)
-    auth_key_id:    Optional[int]   = None   # KEY_ID
     auth_timestamp: Optional[int]   = None   # Unix-Timestamp für Verifikation
     auth_type:      Optional[str]   = None   # "known" | "unknown" | None
     # Nur intern (nicht im CSV, nicht im Mixer relevant):
@@ -208,7 +206,6 @@ FRAME_POOL = [
     ("POSITION",     FrameType.POSITION,    gen_position,     4),
     ("STATION_TLM",  FrameType.STATION_TLM, gen_station,      2),
     ("TEXT",         FrameType.TEXT,        gen_text,         3),
-    ("CQ",           FrameType.CQ,          None,             2),
     ("EMERG_RSRC",   FrameType.EMERG_RSRC,  gen_emerg_rsrc,   1),
     ("EMERG_BEACON", FrameType.EMERG_BEACON,gen_emerg_beacon, 1),
 ]
@@ -239,7 +236,7 @@ def build_channel_timeline(
     total_duration: float,
     frames_per_ch:  int,
     all_events:     List[FrameEvent],
-    auth_config:    Optional[dict] = None,   # {key,key_id,ratio,pause_s} oder None
+    auth_config:    Optional[dict] = None,   # {known_keys,ratio,ratio_known,pause_s} | None
 ):
     """
     Erzeugt `frames_per_ch` FrameEvents fuer einen Kanal.
@@ -265,9 +262,7 @@ def build_channel_timeline(
         callsign = rand_call()
 
         # Payload
-        if name == "CQ":
-            payload = encode_cq(callsign, flags=0)
-        elif fn is not None:
+        if fn is not None:
             payload = fn()
         else:
             continue
@@ -329,7 +324,7 @@ def build_channel_timeline(
         #   known   — echtes Rufzeichen + echter Key aus gateway.json
         #             → der Daemon kann verifizieren.
         #   unknown — Rufzeichen NICHT in gateway.json + Zufalls-Key
-        #             → der Daemon verwirft (key_id 99, nicht vereinbart).
+        #             → der Daemon verwirft (Rufzeichen nicht vereinbart).
         # Trägt ein „known"-AUTH ein anderes Rufzeichen als der Daten-Frame,
         # MUSS der Daten-Frame neu moduliert werden (Rufzeichen steckt
         # Base-40-kodiert im Frame-Body → auch im Audio).
@@ -343,7 +338,6 @@ def build_channel_timeline(
                 key_entry     = random.choice(known_keys)
                 auth_callsign = key_entry["callsign"]
                 key           = key_entry["key"]
-                key_id        = key_entry["key_id"]
                 auth_type     = "known"
             else:
                 # ── UNKNOWN ───────────────────────────────────────────
@@ -356,7 +350,6 @@ def build_channel_timeline(
                     auth_callsign = rand_call()
                     _tries += 1
                 key       = os.urandom(32)   # unbekannter Zufalls-Key
-                key_id    = 99               # nicht in gateway.json vereinbart
                 auth_type = "unknown"
 
             # Daten-Frame trägt dasselbe Rufzeichen wie der AUTH-Frame →
@@ -374,7 +367,10 @@ def build_channel_timeline(
             ref_nr   = len(all_events)                   # 1-basierter Index Daten-Frame
             ts       = int(time.time())                  # Timestamp für HMAC + Decoder
             hmac_tag = auth_tag(data_body, ts, key)
-            auth_pl  = encode_auth(ts, ref_type, key_id, hmac_tag)
+            # KEY_ID ist im GUST-AUTH-Design verworfen — der Schlüssel hängt am
+            # Rufzeichen (FROM). Byte 5 im Wire-Format ist RESERVED=0x00
+            # (von encode_auth gesetzt) und wird nicht ausgewertet.
+            auth_pl  = encode_auth(ts, ref_type, hmac_tag)
 
             auth_start = cursor_s + auth_config["pause_s"]   # nach Pause
             if auth_start + 5.8 <= total_duration:           # 5.8 s = AUTH-Frame-Dauer
@@ -391,7 +387,6 @@ def build_channel_timeline(
                         audio          = auth_audio,
                         duration_s     = auth_dur,
                         auth_ref_nr    = ref_nr,
-                        auth_key_id    = key_id,
                         auth_timestamp = ts,
                         auth_type      = auth_type,
                         _frame_body    = None,   # AUTH-Frames brauchen keinen body
@@ -459,7 +454,7 @@ def write_csv(path: str, events: List[FrameEvent]):
     fields = ["nr", "start_s", "end_s", "channel", "channel_b",
               "frame_type", "callsign", "duration_s",
               "auth_frame",    # "known" | "unknown" | ""
-              "auth_ref_nr", "auth_key_id", "auth_timestamp"]
+              "auth_ref_nr", "auth_timestamp"]
     rows = sorted(events, key=lambda e: e.start_s)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields)
@@ -476,7 +471,6 @@ def write_csv(path: str, events: List[FrameEvent]):
                 "duration_s":     f"{ev.duration_s:.3f}",
                 "auth_frame":     ev.auth_type if ev.auth_type else "",
                 "auth_ref_nr":    ev.auth_ref_nr    if ev.auth_ref_nr    is not None else "",
-                "auth_key_id":    ev.auth_key_id    if ev.auth_key_id    is not None else "",
                 "auth_timestamp": ev.auth_timestamp if ev.auth_timestamp is not None else "",
             })
 
@@ -536,7 +530,7 @@ def main():
     # ── AUTH-Keys aus gateway.json laden (echte bilaterale Schlüssel) ─
     # Damit kann der Daemon „known"-Frames mit seinen echten Keys
     # verifizieren; „unknown"-Frames (Zufalls-Key) verwirft er.
-    known_keys  = []   # list of {callsign, key_id, key}
+    known_keys  = []   # list of {callsign, key}
     ratio_known = max(0.0, min(1.0, args.auth_ratio_known))
     if args.auth:
         cfg_path = args.config
@@ -550,11 +544,8 @@ def main():
                 try:
                     cs  = str(entry.get("callsign", "")).strip().upper()
                     key = bytes.fromhex(entry["key_hex"])
-                    kid = int(entry.get("key_id", 1))
                     if cs and len(key) >= 16:
-                        known_keys.append({"callsign": cs,
-                                           "key_id":   kid,
-                                           "key":      key})
+                        known_keys.append({"callsign": cs, "key": key})
                 except Exception as e:
                     print(f"  WARNUNG: Auth-Key-Eintrag ungültig: {e}")
         except FileNotFoundError:

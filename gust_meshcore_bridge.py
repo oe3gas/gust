@@ -194,7 +194,8 @@ class MeshCoreBridge:
 
         bridge            = config.get("bridge", {})
         self.fetch_interval = bridge.get("auto_fetch_interval_s", 5)
-        self.fwd_public   = bridge.get("forward_public_channel", False)
+        # forward_public_channel entfernt (Juni 2026):
+        # Public-Kanal wird durch channel_map[0]["gust_forward"] gesteuert.
         self.unknown_policy = bridge.get("unknown_sender_policy", "pubkey_prefix")
 
         self.contacts     = config.get("contacts", {}).get("known", [])
@@ -270,6 +271,11 @@ class MeshCoreBridge:
         # Event-Subscribe — meshcore akzeptiert Coroutine-Callbacks direkt
         # (Dispatcher prüft iscoroutinefunction und awaitet sie).
         self.mc.subscribe(MCEventType.CHANNEL_MSG_RECV, self._on_channel_msg)
+        try:
+            self.mc.subscribe(MCEventType.CONTACT_MSG_RECV, self._on_contact_msg)
+            log.info("CONTACT_MSG_RECV abonniert (Direktnachrichten)")
+        except Exception as e:
+            log.warning("CONTACT_MSG_RECV nicht verfügbar: %s", e)
         try:
             self.mc.subscribe(MCEventType.ADVERTISEMENT, self._on_advertisement)
         except Exception:
@@ -356,6 +362,76 @@ class MeshCoreBridge:
         """Callback für CHANNEL_MSG_RECV (von meshcore als Coroutine awaited)."""
         await self._process_channel_msg(event)
 
+    async def _on_contact_msg(self, event) -> None:
+        """Callback für CONTACT_MSG_RECV — Direktnachrichten an eigenen Node."""
+        try:
+            payload = getattr(event, "payload", {})
+            if not isinstance(payload, dict):
+                return
+
+            pubkey    = payload.get("pubkey_prefix", "")
+            text      = payload.get("text", "")
+            timestamp = payload.get("sender_timestamp", 0)
+            path_len  = payload.get("path_len", 0)
+
+            if not text:
+                log.debug("Leere Direktnachricht ignoriert")
+                return
+
+            # Absender auflösen
+            from_call = resolve_sender(
+                pubkey, text, self.contacts, self.own_callsign
+            )
+
+            # Direktnachrichten mit eigenem Präfix kennzeichnen
+            full_text = f"DM/{from_call}: {text}"
+
+            log.info("MeshCore DM  from=%s  pubkey=%s  text=%r",
+                     from_call, pubkey[:12], text[:60])
+
+            # Dedup-Schlüssel (analog zu _process_channel_msg)
+            dedup_key = f"dm:{pubkey}:{timestamp}:{text[:20]}"
+            if dedup_key in self._seen:
+                log.debug("DM Duplikat ignoriert: %s", dedup_key)
+                return
+            self._seen.add(dedup_key)
+            self._seen_order.append(dedup_key)
+
+            # RX_FRAME publizieren — ein einziger Frame (frag_total=1)
+            seq = self._next_seq()
+            single_payload = encode_text_fragment(
+                "BROADCAST", full_text, seq, 0, 1
+            )
+            decoded_single = decode_text_fragment(single_payload)
+
+            frame = {
+                "frame_type":      TYPE_TEXT,
+                "type":            TYPE_TEXT,
+                "type_name":       frame_type_name(TYPE_TEXT),
+                "from":            from_call,
+                "channel":         None,   # kein GUST-HF-Kanal — Direktnachricht
+                "test":            False,
+                "crc_ok":          True,
+                "payload_decoded": decoded_single,
+                "payload_hex":     single_payload.hex(),
+                "synthetic":       True,
+                "source":          "meshcore_direct",
+                "meta": {
+                    "mc_channel_idx":  None,
+                    "mc_channel_name": None,
+                    "pubkey_prefix":   pubkey,
+                    "path_len":        path_len,
+                    "meshcore_ts":     timestamp,
+                    "direct":          True,
+                },
+            }
+            await self.bus.publish(make_rx_frame_event(frame))
+            log.debug("DM RX_FRAME publiziert: from=%s  %dB",
+                      from_call, len(single_payload))
+
+        except Exception as e:
+            log.error("Fehler in _on_contact_msg: %s", e, exc_info=True)
+
     async def _process_channel_msg(self, event) -> None:
         """Verarbeitet eine eingehende Channel-Message und publiziert RX_FRAME."""
         try:
@@ -393,12 +469,8 @@ class MeshCoreBridge:
             ch_name = ch_info.get("name", f"ch{ch_idx}")
             gust_forward = ch_info.get("gust_forward", True)
 
-            # Public-Kanal-Filter (ch 0)
-            if ch_idx == 0 and not self.fwd_public:
-                log.debug("Public-Kanal ignoriert (forward_public_channel=false)")
-                return
             if not gust_forward:
-                log.debug("Kanal %s nicht für GUST konfiguriert", ch_name)
+                log.debug("Kanal %s ignoriert (gust_forward=false)", ch_name)
                 return
 
             # Absender auflösen (Channel-Msgs: aus Text bzw. eigenes Rufzeichen)
@@ -410,37 +482,56 @@ class MeshCoreBridge:
             log.info("MeshCore MSG  ch=%s  from=%s  text=%r",
                      ch_name, from_call, text[:60])
 
+            # Echten MC-Sender und eigentliche Nachricht extrahieren.
+            # Format: "SenderName: Nachrichtentext" (MeshCore-Konvention).
+            # Nur für Pfad A (Anzeige) — Pfad B nutzt weiter from_call.
+            colon_pos = text.find(': ')
+            if 0 < colon_pos < 60:          # plausible Sender-Namenslänge
+                mc_sender  = text[:colon_pos]       # z.B. "🌳TOM_CHzP🌲"
+                mc_message = text[colon_pos + 2:]   # eigentliche Nachricht
+            else:
+                mc_sender  = from_call              # Fallback: aufgelöstes Rufzeichen
+                mc_message = text                   # Gesamttext
+
             # ── Pfad A: WebGUI / Inbox / MQTT / Logging ───────────────────
             # Ein einziges RX_FRAME-Event — kein fragment_text(), kein
             # fragCache-Lärm. frag_total=1 → WebGUI rendert direkt als
             # assembled-row ohne Zwischen-Fragmente.
+            # Pfad A ist ein SYNTHETISCHES Event (kein echter HF-Frame), daher
+            # gilt das 14-Byte-Fragment-Limit nicht — full_text direkt einsetzen.
             seq = self._next_seq()
-            single_payload = encode_text_fragment(
-                "BROADCAST", full_text, seq, 0, 1
-            )
-            decoded_single = decode_text_fragment(single_payload)
+            decoded_single = {
+                "dest":       ch_name,        # Kanal-Name statt "BROADCAST"
+                "seq_nr":     seq,
+                "frag_index": 0,
+                "frag_total": 1,
+                "last_frag":  True,
+                "text":       mc_message,     # eigentliche Nachricht, vollständig
+            }
             frame_single = {
                 "frame_type":      TYPE_TEXT,
                 "type":            TYPE_TEXT,
                 "type_name":       frame_type_name(TYPE_TEXT),
-                "from":            from_call,
-                "channel":         ch_idx,   # MeshCore-Slot, KEIN HF-Kanal
+                "from":            mc_sender,     # echter Anzeigename: "🌳TOM_CHzP🌲"
+                "channel":         None,      # kein GUST-HF-Kanal — MC-Metadaten in meta
                 "test":            False,
                 "crc_ok":          True,
                 "payload_decoded": decoded_single,
-                "payload_hex":     single_payload.hex(),
+                "payload_hex":     "",        # kein echter HF-Frame, kein Hex
                 "synthetic":       True,
                 "source":          "meshcore",
                 "meta": {
-                    "channel_idx":   ch_idx,
-                    "channel_name":  ch_name,
-                    "pubkey_prefix": pubkey,
-                    "meshcore_ts":   timestamp,
+                    "mc_channel_idx":  ch_idx,
+                    "mc_channel_name": ch_name,
+                    "mc_sender":       mc_sender,   # für WebGUI (Sender-Anzeige)
+                    "mc_gateway":      from_call,   # eigenes Gateway (HF-Forward-Kontext)
+                    "pubkey_prefix":   pubkey,
+                    "meshcore_ts":     timestamp,
                 },
             }
             await self.bus.publish(make_rx_frame_event(frame_single))
-            log.debug("RX_FRAME publiziert (single): from=%s  ch=%s  %dB",
-                      from_call, ch_name, len(single_payload))
+            log.debug("RX_FRAME publiziert (single): from=%s  ch=%s  %dZ",
+                      from_call, ch_name, len(full_text))
 
             # ── Pfad B: HF-Forward ────────────────────────────────────────
             # Nur wenn hf_forward=true im Kanal-Slot UND TxGateway verfügbar.
@@ -643,7 +734,7 @@ class StandaloneEventBus:
         data       = event.get("data", {})
         frame_type = data.get("frame_type", data.get("type", 0))
         from_call  = data.get("from", "?")
-        ch_name    = data.get("meta", {}).get("channel_name", "?")
+        ch_name    = data.get("meta", {}).get("mc_channel_name", "?")
         decoded    = data.get("payload_decoded", {})
         text       = decoded.get("text", "")
         log.info(

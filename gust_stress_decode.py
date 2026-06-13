@@ -393,7 +393,8 @@ def verify_auth_frames(found: list, expected_rows: list, known_keys: dict) -> di
 
     found:         dekodierte Frames (inkl. '_raw_frame_body').
     expected_rows: CSV-Zeilen (Spalte 'auth_frame' = known/unknown; darf [] sein).
-    known_keys:    dict callsign.upper() -> (key_id, key_bytes) aus gateway.json.
+    known_keys:    dict callsign.upper() -> key_bytes aus gateway.json
+                   (key_id verworfen — Schlüssel hängt am Rufzeichen).
 
     Klassifikation pro empfangenem AUTH-Frame:
       • Rufzeichen IN known_keys  → verifizieren (known_verified / known_failed)
@@ -431,7 +432,7 @@ def verify_auth_frames(found: list, expected_rows: list, known_keys: dict) -> di
             unk_received += 1   # Rufzeichen nicht vereinbart → korrekt abgewiesen
             continue
         known_received += 1
-        _, key = known_keys[cs]
+        key = known_keys[cs]
         try:
             body = f.get("_raw_frame_body")
             # AUTH-Body = TYPE(1)+CHANNEL(1)+FROM(4)+PAYLOAD(20)+CRC(2) = 28 B
@@ -543,7 +544,7 @@ def main() -> int:
     # ── AUTH-Verifikation (optional) ────────────────────────────────
     if args.auth:
         # ── Echte Auth-Keys aus gateway.json laden ───────────────────
-        known_keys = {}   # callsign.upper() -> (key_id, key_bytes)
+        known_keys = {}   # callsign.upper() -> key_bytes
         cfg_path = args.config
         if not os.path.isfile(cfg_path):
             cfg_path = os.path.join(os.path.dirname(__file__),
@@ -555,9 +556,8 @@ def main() -> int:
                 try:
                     cs  = str(entry.get("callsign", "")).strip().upper()
                     key = bytes.fromhex(entry["key_hex"])
-                    kid = int(entry.get("key_id", 1))
                     if cs:
-                        known_keys[cs] = (kid, key)
+                        known_keys[cs] = key   # Schlüssel hängt am Rufzeichen
                 except Exception:
                     continue
         except Exception as e:
